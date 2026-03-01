@@ -6,6 +6,7 @@ public interface IUserInterface
 {
   bool IsInteractive { get; }
   string? StatusLine { get; set; }
+  string? StaleSettingsWarning { get; set; }
   Task<string> GetUserInputAsync(CancellationToken ct = default);
   Task<bool> RequestPermissionAsync(ToolDefinition tool, string argumentsJson, CancellationToken ct = default);
   void RenderAssistantText(string text);
@@ -13,7 +14,7 @@ public interface IUserInterface
   void RenderStreamingComplete();
   void RenderThinkingStart();
   void RenderThinkingStop();
-  void RenderToolExecution(string toolName, string argumentsSummary);
+  void RenderToolExecution(string toolName, string argumentsJson);
   void RenderToolResult(string toolName, string result, bool isError);
   void RenderError(string message);
   void RenderHint(string hint);

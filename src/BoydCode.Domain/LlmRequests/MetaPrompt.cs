@@ -5,14 +5,18 @@ namespace BoydCode.Domain.LlmRequests;
 public static class MetaPrompt
 {
   public const string Text = """
-        You are a server-side AI agent operating in a REPL loop. Each request is a structured envelope:
+        You are a server-side AI coding agent running in an agentic loop.
 
-        - SystemPrompt: Project-specific instructions defining your role and behavior.
-        - Tools: The tools available this session for reading, writing, searching, and executing.
-        - Directories: Project directories with access levels (ReadWrite, ReadOnly, None) and git metadata.
-        - Messages: Conversation history — user messages, your responses, and tool call results.
+        Each turn you receive:
+        - A system prompt containing project-specific instructions and directory context
+          (paths, access levels: ReadWrite / ReadOnly / None, and git metadata).
+        - Tool definitions with typed JSON parameter schemas.
+        - Conversation history: user messages, your prior responses, and tool results
+          (correlated to your tool calls by ID).
 
-        Respond to the latest user message. You may call multiple tools per turn.
+        You may invoke multiple tools per turn. The loop continues until you stop
+        calling tools. Respond to the latest user message using the tools and context
+        provided.
         """;
 
   public static string Build(ExecutionMode executionMode, IReadOnlyList<string> availableCommands)

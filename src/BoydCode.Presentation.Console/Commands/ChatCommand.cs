@@ -160,7 +160,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       }
     }
 
-    RenderBanner(llmConfig, workingDirectory, isConfigured, project.Name, resolvedDirs, executionConfig.Mode, project.DockerImage);
+    RenderBanner(llmConfig, workingDirectory, isConfigured, project.Name, resolvedDirs, executionConfig.Mode, project.DockerImage, project.PermissionMode);
 
     if (isConfigured)
     {
@@ -215,7 +215,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     _ => null,
   };
 
-  private static void RenderBanner(LlmProviderConfig config, string workingDirectory, bool isConfigured, string projectName, IReadOnlyList<ResolvedDirectory>? resolvedDirectories, ExecutionMode executionMode, string? dockerImage)
+  private static void RenderBanner(LlmProviderConfig config, string workingDirectory, bool isConfigured, string projectName, IReadOnlyList<ResolvedDirectory>? resolvedDirectories, ExecutionMode executionMode, string? dockerImage, PermissionMode? permissionMode)
   {
     // Detect short terminals and use compact banner
     var isCompact = false;
@@ -263,38 +263,16 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     AnsiConsole.WriteLine();
 
     // Session info as a clean two-column grid (label / value / label / value)
-    var grid = new Grid();
-    grid.AddColumn(new GridColumn().PadLeft(2).PadRight(1).NoWrap());
-    grid.AddColumn(new GridColumn().PadRight(4));
-    grid.AddColumn(new GridColumn().PadRight(1).NoWrap());
-    grid.AddColumn(new GridColumn());
+    var grid = SpectreHelpers.InfoGrid();
 
-    grid.AddRow(
-        new Markup("[dim]Provider[/]"),
-        new Markup($"[cyan]{Markup.Escape(config.ProviderType.ToString())}[/]"),
-        new Markup("[dim]Project[/]"),
-        new Markup($"[cyan]{Markup.Escape(projectName)}[/]"));
-
-    grid.AddRow(
-        new Markup("[dim]Model[/]"),
-        new Markup($"[cyan]{Markup.Escape(config.Model)}[/]"),
-        new Markup("[dim]Engine[/]"),
-        new Markup($"[cyan]{Markup.Escape(executionMode.ToString())}[/]"));
-
-    // cwd gets full width (value spans remaining columns)
-    grid.AddRow(
-        new Markup("[dim]cwd[/]"),
-        new Markup($"[cyan]{Markup.Escape(workingDirectory)}[/]"),
-        new Markup(""),
-        new Markup(""));
+    SpectreHelpers.AddInfoRow(grid, "Provider", config.ProviderType.ToString(), "Project", projectName);
+    SpectreHelpers.AddInfoRow(grid, "Model", config.Model, "Engine", executionMode.ToString());
+    SpectreHelpers.AddInfoRow(grid, "Permission", permissionMode?.ToString() ?? "Default");
+    SpectreHelpers.AddInfoRow(grid, "cwd", workingDirectory);
 
     if (dockerImage is not null)
     {
-      grid.AddRow(
-          new Markup("[dim]Docker[/]"),
-          new Markup($"[cyan]{Markup.Escape(dockerImage)}[/]"),
-          new Markup(""),
-          new Markup(""));
+      SpectreHelpers.AddInfoRow(grid, "Docker", dockerImage);
     }
 
     if (resolvedDirectories is not null)
@@ -302,11 +280,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       foreach (var dir in resolvedDirectories.Where(d => d.IsGitRepository))
       {
         var branchInfo = dir.GitBranch is not null ? $" ({dir.GitBranch})" : "";
-        grid.AddRow(
-            new Markup("[dim]Git[/]"),
-            new Markup($"[cyan]{Markup.Escape(dir.RepoRoot ?? dir.Path)}{Markup.Escape(branchInfo)}[/]"),
-            new Markup(""),
-            new Markup(""));
+        SpectreHelpers.AddInfoRow(grid, "Git", $"{dir.RepoRoot ?? dir.Path}{branchInfo}");
       }
     }
 

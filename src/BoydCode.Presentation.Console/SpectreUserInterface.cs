@@ -16,6 +16,8 @@ public sealed class SpectreUserInterface : IUserInterface
 
   public string? StatusLine { get; set; }
 
+  public string? StaleSettingsWarning { get; set; }
+
   public Task<string> GetUserInputAsync(CancellationToken ct = default)
   {
     if (!IsInteractive)
@@ -27,6 +29,11 @@ public sealed class SpectreUserInterface : IUserInterface
     if (StatusLine is not null)
     {
       AnsiConsole.MarkupLine($"[dim]{Markup.Escape(StatusLine)}[/]");
+    }
+
+    if (StaleSettingsWarning is not null)
+    {
+      AnsiConsole.MarkupLine($"  [yellow]{Markup.Escape(StaleSettingsWarning)}[/]");
     }
 
     var input = AnsiConsole.Prompt(
@@ -221,9 +228,12 @@ public sealed class SpectreUserInterface : IUserInterface
     System.Console.Write("\r                    \r");
   }
 
-  public void RenderToolExecution(string toolName, string argumentsSummary)
+  public void RenderToolExecution(string toolName, string argumentsJson)
   {
-    AnsiConsole.MarkupLine($"  [dim][[{Markup.Escape(toolName)}]][/] [dim]{Markup.Escape(argumentsSummary)}[/]");
+    var preview = FormatToolPreview(toolName, argumentsJson);
+    AnsiConsole.Write(new Panel(Markup.Escape(preview))
+        .Header($"[dim]{Markup.Escape(toolName)}[/]")
+        .BorderColor(Color.Grey));
   }
 
   public void RenderToolResult(string toolName, string result, bool isError)

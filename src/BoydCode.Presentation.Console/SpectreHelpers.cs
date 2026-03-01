@@ -191,6 +191,34 @@ internal static class SpectreHelpers
     return table;
   }
 
+  internal static Grid InfoGrid()
+  {
+    var grid = new Grid();
+    grid.AddColumn(new GridColumn().PadLeft(2).PadRight(1).NoWrap());
+    grid.AddColumn(new GridColumn().PadRight(4));
+    grid.AddColumn(new GridColumn().PadRight(1).NoWrap());
+    grid.AddColumn(new GridColumn());
+    return grid;
+  }
+
+  internal static void AddInfoRow(Grid grid, string label, string value)
+  {
+    grid.AddRow(
+        new Markup($"[dim]{Markup.Escape(label)}[/]"),
+        new Markup($"[cyan]{Markup.Escape(value)}[/]"),
+        new Markup(""),
+        new Markup(""));
+  }
+
+  internal static void AddInfoRow(Grid grid, string label1, string value1, string label2, string value2)
+  {
+    grid.AddRow(
+        new Markup($"[dim]{Markup.Escape(label1)}[/]"),
+        new Markup($"[cyan]{Markup.Escape(value1)}[/]"),
+        new Markup($"[dim]{Markup.Escape(label2)}[/]"),
+        new Markup($"[cyan]{Markup.Escape(value2)}[/]"));
+  }
+
   // ──────────────────────────────────────────────
   //  COMPACT FORMATTING
   // ──────────────────────────────────────────────

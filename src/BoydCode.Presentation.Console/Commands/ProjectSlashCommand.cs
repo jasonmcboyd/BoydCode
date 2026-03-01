@@ -4,6 +4,7 @@ using BoydCode.Application.Services;
 using BoydCode.Domain.Configuration;
 using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
+using BoydCode.Domain.LlmRequests;
 using BoydCode.Domain.SlashCommands;
 using Spectre.Console;
 
@@ -16,6 +17,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
   private readonly DirectoryGuard _directoryGuard;
   private readonly ActiveProject _activeProject;
   private readonly ActiveSession _activeSession;
+  private readonly ActiveExecutionEngine _activeEngine;
   private readonly IUserInterface _ui;
 
   public ProjectSlashCommand(
@@ -24,6 +26,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
       DirectoryGuard directoryGuard,
       ActiveProject activeProject,
       ActiveSession activeSession,
+      ActiveExecutionEngine activeEngine,
       IUserInterface ui)
   {
     _projectRepository = projectRepository;
@@ -31,6 +34,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
     _directoryGuard = directoryGuard;
     _activeProject = activeProject;
     _activeSession = activeSession;
+    _activeEngine = activeEngine;
     _ui = ui;
   }
 
@@ -249,13 +253,49 @@ public sealed class ProjectSlashCommand : ISlashCommand
         && project.Execution is null;
 
     AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine($"  [bold]Project:[/]    {Markup.Escape(project.Name)}");
-    AnsiConsole.MarkupLine($"  [bold]Created:[/]    {project.CreatedAt:yyyy-MM-dd HH:mm:ss}");
-    AnsiConsole.MarkupLine($"  [bold]Last used:[/]  {project.LastAccessedAt:yyyy-MM-dd HH:mm:ss}");
 
+    // Grid section
+    var grid = SpectreHelpers.InfoGrid();
+
+    var isAmbient = name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase);
+    var displayName = isAmbient ? $"{project.Name} (ambient)" : project.Name;
+    SpectreHelpers.AddInfoRow(grid, "Project", displayName);
+
+    SpectreHelpers.AddInfoRow(grid,
+        "Created", project.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
+        "Last used", project.LastAccessedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
+
+    if (project.PermissionMode is not null || project.Execution is not null)
+    {
+      var permLabel = project.PermissionMode?.ToString() ?? "Default";
+      var engineLabel = project.Execution?.Mode.ToString() ?? "InProcess";
+      SpectreHelpers.AddInfoRow(grid, "Permission", permLabel, "Engine", engineLabel);
+    }
+
+    if (project.DockerImage is not null)
+    {
+      SpectreHelpers.AddInfoRow(grid, "Docker", project.DockerImage);
+    }
+
+    if (project.DockerImage is not null || project.RequireContainer)
+    {
+      var containerMarkup = project.RequireContainer
+          ? new Markup("[green]Required[/]")
+          : new Markup("[yellow]Optional[/]");
+      grid.AddRow(
+          new Markup("[dim]Container[/]"),
+          containerMarkup,
+          new Markup(""),
+          new Markup(""));
+    }
+
+    AnsiConsole.Write(grid);
+
+    // Directories
     if (project.Directories.Count > 0)
     {
-      SpectreHelpers.Section("Directories");
+      AnsiConsole.WriteLine();
+      AnsiConsole.MarkupLine("  [dim]Directories[/]");
 
       var resolvedDirs = _directoryResolver.Resolve(project.Directories);
 
@@ -280,47 +320,57 @@ public sealed class ProjectSlashCommand : ISlashCommand
           _ => "[dim]--[/]",
         };
 
-        dirTable.AddRow(Markup.Escape(dir.Path), accessStyle, gitInfo);
+        dirTable.AddRow($"- {Markup.Escape(dir.Path)}", accessStyle, gitInfo);
       }
 
-      AnsiConsole.Write(dirTable);
+      AnsiConsole.Write(new Padder(dirTable).PadLeft(4));
     }
 
-    SpectreHelpers.Section("System prompt");
+    // Meta prompt
+    AnsiConsole.WriteLine();
+    AnsiConsole.MarkupLine("  [dim]Meta prompt[/]");
+    AnsiConsole.WriteLine();
+    var fullMetaPrompt = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
+    foreach (var line in fullMetaPrompt.Trim().Split('\n'))
+    {
+      var trimmed = line.TrimEnd('\r');
+      AnsiConsole.MarkupLine(trimmed.Length > 0
+          ? $"    {Markup.Escape(trimmed.TrimStart())}"
+          : "");
+    }
+
+    // System prompt
+    AnsiConsole.WriteLine();
+    AnsiConsole.MarkupLine("  [dim]System prompt[/]");
+    AnsiConsole.WriteLine();
 
     if (project.SystemPrompt is not null)
     {
-      AnsiConsole.MarkupLine($"  {Markup.Escape(project.SystemPrompt)}");
+      AnsiConsole.MarkupLine($"    {Markup.Escape(project.SystemPrompt)}");
     }
     else
     {
-      AnsiConsole.MarkupLine($"  [dim](default)[/] {Markup.Escape(Project.DefaultSystemPrompt)}");
+      AnsiConsole.MarkupLine($"    [dim](default)[/] {Markup.Escape(Project.DefaultSystemPrompt)}");
     }
 
-    if (project.DockerImage is not null || project.RequireContainer)
+    // JEA profiles
+    if (project.Execution?.JeaProfiles is { Count: > 0 })
     {
-      SpectreHelpers.Section("Container");
-      AnsiConsole.MarkupLine($"  [bold]Docker image:[/]      {(project.DockerImage is not null ? Markup.Escape(project.DockerImage) : "[dim](not set)[/]")}");
-      AnsiConsole.MarkupLine($"  [bold]Require container:[/] {(project.RequireContainer ? "[green]Yes[/]" : "[yellow]No[/]")}");
-    }
-
-    if (project.PermissionMode is not null || project.Execution?.JeaProfiles is { Count: > 0 })
-    {
-      SpectreHelpers.Section("Security");
-
-      if (project.PermissionMode is not null)
-      {
-        AnsiConsole.MarkupLine($"  [bold]Permission mode:[/]     {project.PermissionMode}");
-      }
-
-      if (project.Execution?.JeaProfiles is { Count: > 0 })
-      {
-        var profiles = string.Join(", ", project.Execution.JeaProfiles.Select(Markup.Escape));
-        AnsiConsole.MarkupLine($"  [bold]JEA profiles:[/]      {profiles}");
-      }
+      AnsiConsole.WriteLine();
+      AnsiConsole.MarkupLine("  [dim]JEA profiles[/]");
+      var profiles = string.Join(", ", project.Execution.JeaProfiles.Select(p => $"[cyan]{Markup.Escape(p)}[/]"));
+      AnsiConsole.MarkupLine($"  {profiles}");
     }
 
     AnsiConsole.WriteLine();
+
+    // Stale settings footer
+    if (string.Equals(project.Name, _activeProject.Name, StringComparison.OrdinalIgnoreCase)
+        && _ui.StaleSettingsWarning is not null)
+    {
+      AnsiConsole.MarkupLine($"  [yellow]* {Markup.Escape(_ui.StaleSettingsWarning)}[/]");
+      AnsiConsole.WriteLine();
+    }
 
     if (isMinimal)
     {
@@ -416,6 +466,13 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
       await _projectRepository.SaveAsync(project, ct);
       RefreshSessionContext(project);
+
+      if (section is "Permission mode" or "Docker image" or "Require container"
+          && string.Equals(project.Name, _activeProject.Name, StringComparison.OrdinalIgnoreCase))
+      {
+        _ui.StaleSettingsWarning = "Project settings changed. Run /refresh to apply.";
+      }
+
       SpectreHelpers.Success("Project saved.");
       AnsiConsole.WriteLine();
     }

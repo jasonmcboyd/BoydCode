@@ -223,6 +223,7 @@ public sealed partial class AgentOrchestrator
         continue;
       }
 
+      var permissionShown = false;
       if (permission == PermissionLevel.Ask)
       {
         var approved = await _ui.RequestPermissionAsync(tool.Definition, toolCall.ArgumentsJson, ct);
@@ -231,10 +232,14 @@ public sealed partial class AgentOrchestrator
           session.Conversation.AddToolResult(toolCall.Id, "User denied permission for this tool execution.", isError: true);
           continue;
         }
+        permissionShown = true;
       }
 
       // Execute
-      _ui.RenderToolExecution(toolCall.Name, SummarizeArguments(toolCall.ArgumentsJson));
+      if (!permissionShown)
+      {
+        _ui.RenderToolExecution(toolCall.Name, toolCall.ArgumentsJson);
+      }
 
       var result = await tool.ExecuteAsync(toolCall.ArgumentsJson, session.WorkingDirectory, ct);
 
@@ -324,33 +329,6 @@ public sealed partial class AgentOrchestrator
     }
 
     return accumulator.ToResponse();
-  }
-
-  private static string SummarizeArguments(string argumentsJson)
-  {
-    try
-    {
-      using var doc = JsonDocument.Parse(argumentsJson);
-      var pairs = new List<string>();
-
-      foreach (var property in doc.RootElement.EnumerateObject())
-      {
-        var value = property.Value.ValueKind == JsonValueKind.String
-            ? property.Value.GetString() ?? ""
-            : property.Value.ToString();
-
-        pairs.Add($"{property.Name}: {value}");
-      }
-
-      var result = string.Join(", ", pairs);
-      if (result.Length <= 100) return result;
-      return string.Concat(result.AsSpan(0, 97), "...");
-    }
-    catch
-    {
-      if (argumentsJson.Length <= 100) return argumentsJson;
-      return string.Concat(argumentsJson.AsSpan(0, 97), "...");
-    }
   }
 
   /// <summary>

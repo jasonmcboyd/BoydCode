@@ -3,7 +3,6 @@ using BoydCode.Application.Interfaces;
 using BoydCode.Domain.Configuration;
 using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
-using BoydCode.Domain.Permissions;
 using Microsoft.Extensions.Logging;
 
 namespace BoydCode.Infrastructure.Persistence.Projects;
@@ -135,23 +134,6 @@ public sealed partial class JsonProjectRepository : IProjectRepository
       });
     }
 
-    List<PermissionRuleDocument>? permissionRules = null;
-
-    if (project.PermissionRules is { Count: > 0 })
-    {
-      permissionRules = new List<PermissionRuleDocument>(project.PermissionRules.Count);
-
-      foreach (var rule in project.PermissionRules)
-      {
-        permissionRules.Add(new PermissionRuleDocument
-        {
-          ToolName = rule.ToolName,
-          Level = rule.Level.ToString(),
-          Description = rule.Description,
-        });
-      }
-    }
-
     return new ProjectDocument
     {
       Name = project.Name,
@@ -160,8 +142,6 @@ public sealed partial class JsonProjectRepository : IProjectRepository
       DockerImage = project.DockerImage,
       RequireContainer = project.RequireContainer,
       Execution = project.Execution is not null ? ToExecutionDocument(project.Execution) : null,
-      PermissionMode = project.PermissionMode?.ToString(),
-      PermissionRules = permissionRules,
       CreatedAt = project.CreatedAt,
       LastAccessedAt = project.LastAccessedAt,
     };
@@ -229,26 +209,6 @@ public sealed partial class JsonProjectRepository : IProjectRepository
     {
       // Migration: convert legacy JeaConfig to ExecutionConfig
       project.Execution = MigrateLegacyJeaConfig(doc.JeaConfig);
-    }
-
-    if (doc.PermissionMode is not null &&
-        Enum.TryParse<PermissionMode>(doc.PermissionMode, out var permMode))
-    {
-      project.PermissionMode = permMode;
-    }
-
-    if (doc.PermissionRules is { Count: > 0 })
-    {
-      project.PermissionRules = [];
-
-      foreach (var ruleDoc in doc.PermissionRules)
-      {
-        var level = Enum.TryParse<PermissionLevel>(ruleDoc.Level, out var parsedLevel)
-            ? parsedLevel
-            : PermissionLevel.Ask;
-
-        project.PermissionRules.Add(new PermissionRule(ruleDoc.ToolName, level, ruleDoc.Description));
-      }
     }
 
     return project;

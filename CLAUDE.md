@@ -25,12 +25,11 @@ Clean Architecture with strict layer separation. Domain has zero external depend
 
 ```
 Presentation.Console          → Spectre.Console CLI, DI host, ChatCommand
-Application                   → AgentOrchestrator, ToolRegistry, PermissionEngine, interfaces
+Application                   → AgentOrchestrator, interfaces
 Infrastructure.LLM            → MEAI adapter, multi-provider (Anthropic/Gemini/OpenAI/Ollama)
-Infrastructure.Tools          → ITool implementations (Read, Write, Edit, Glob, Grep, PowerShell, Web*)
 Infrastructure.PowerShell     → ConstrainedRunspaceEngine (JEA isolation, in-process mode)
 Infrastructure.Container      → ContainerExecutionEngine (Docker-based execution, container mode)
-Infrastructure.Persistence    → JsonSessionRepository, JsonProjectRepository, FileJeaProfileStore, FileSettingsProvider, auth stores, no-op stubs
+Infrastructure.Persistence    → JsonSessionRepository, JsonProjectRepository, FileJeaProfileStore, FileSettingsProvider, auth stores
 Domain                        → Entities, records, enums, configuration models (no dependencies)
 ```
 
@@ -45,15 +44,15 @@ Domain                        → Entities, records, enums, configuration models
 - **Factory + Adapter** — `LlmProviderFactory` creates the correct LLM adapter per provider: `MeaiLlmProviderAdapter` (Anthropic/OpenAI/Ollama) or `GeminiLlmProviderAdapter` (Gemini); default provider is `gemini-2.5-pro`. `ExecutionEngineFactory` creates the correct execution engine (constrained runspace or container) based on project `ExecutionConfig`
 - **Provider capabilities** — `ProviderCapabilities` record on `ILlmProvider.Capabilities` declares what a provider supports (e.g., explicit prompt caching, streaming, extended thinking); `ProviderDefaults.For(LlmProviderType)` returns the canonical `ProviderCapabilities` for each provider; `ProviderDefaults.DefaultModelFor(LlmProviderType)` returns the default model name
 - **Provider-agnostic OAuth** — `OAuthProviderRegistry` holds per-provider `OAuthProviderConfig` entries; `ICredentialStore` is keyed by `LlmProviderType` so credentials for each provider are stored and retrieved independently
-- **No auto-invocation** — Tool calls are intercepted manually for permission checking (via `IPermissionEngine`) and hook execution (via `IHookEngine`) before the tool is invoked; the orchestrator drives the tool-call loop, not the LLM SDK
+- **Shell-only execution (ADR-0003)** — Single `Shell` tool delegates to `IExecutionEngine`; no dedicated tools, no permission engine, no hook engine. JEA profiles (in-process) and container boundaries (Docker) are the sole security mechanisms. The orchestrator drives the agentic loop directly
 - **Execution engine factory** — `IExecutionEngineFactory` creates the correct engine at session startup based on project config; keyed `ExecutionEngineCreator` delegates are registered by each infrastructure project (PowerShell registers `InProcess`, Container registers `Container`); `ActiveExecutionEngine` singleton holds the current session's engine; falls back to in-process if container is unavailable and `AllowInProcess` is true
 - **First-class container config** — `Project.DockerImage` and `Project.RequireContainer` are promoted, user-facing properties; `Project.BuildExecutionConfig()` synthesizes an `ExecutionConfig` from them at runtime (RequireContainer → Container mode + AllowInProcess=false; DockerImage → ContainerConfig); old `Execution` block remains for JEA profiles and internal use
 - **Container execution** — Docker containers provide filesystem isolation via volume mount flags (read-only vs read-write per `DirectoryAccessLevel`); `PersistentShellSession` maintains a long-lived stdin/stdout session with sentinel-framed output parsing
 - **JEA profiles** — Composable profile system via `IJeaProfileStore`; editable `_global` profile (seeded from `BuiltInJeaProfile` on first access, stored at `~/.boydcode/jea/_global.profile`) replaces the hardcoded built-in in composition; deny-always-wins when multiple profiles are merged; `/jea` slash command provides full CRUD (`list`, `show`, `create`, `edit`, `delete`), `effective` view (composed result for current session), and `assign`/`unassign` for tying profiles to projects
 - **Git-aware directory resolution** — `DirectoryResolver` enriches `ProjectDirectory` entries with filesystem existence checks and git metadata (branch, repo root) via pure filesystem reads (no git CLI); concrete `DirectoryGuard.ConfigureResolved()` stores both resolved metadata and the access-level rules (the `IDirectoryGuard` interface exposes only `GetAccessLevel`)
 - **LlmRequest envelope and prefix-cache field ordering** — `LlmRequest` sealed record (`Domain/LlmRequests/`) encapsulates all inputs to an LLM API call. Properties are declared in cache-priority tier order: Tier 1 (session-constant: `Model`, `SystemPrompt`, `Tools`, `ToolChoice`, `Directories`), Tier 2 (rarely changed: `Sampling`, `Thinking`, `Metadata`), Tier 3 (per-turn: `Messages`, `Stream`). Adapters serialize in declaration order so stable fields lead the payload and maximize provider-side prefix cache hits. Supporting value objects: `ToolChoiceStrategy` (enum: Auto/Any/None), `SamplingOptions`, `ThinkingConfig`, `RequestMetadata`. See `docs/adr/0001-prefix-cache-optimized-request-ordering.md`
-- **System prompt ownership** — `ChatCommand` sets `session.SystemPrompt` to a composite of project name, the project's custom prompt (or `Project.DefaultSystemPrompt`), and resolved directory context. `AgentOrchestrator` prepends `MetaPrompt.Text` (a static Domain constant describing the request envelope protocol) when constructing `LlmRequest.SystemPrompt` each turn — or uses `MetaPrompt.Text` alone if no session prompt is set. `Conversation` is a pure message accumulator and does not hold the system prompt
-- **Response envelope and agentic loop** — Every request includes a `tools` array (via `ChatOptions.Tools`) containing each tool's name, description, and JSON parameter schema. The model is **trained** (not prompted) to emit structured `tool_use` content blocks when it decides a tool would help. Responses mix `TextBlock` (explanatory text) and `ToolUseBlock` (tool invocation with `Id`, `Name`, `ArgumentsJson`) content blocks. The `stop_reason` field signals intent: `"tool_use"` means there are tool calls to execute (`LlmResponse.HasToolUse`), `"end_turn"` means the turn is complete. The orchestrator runs an agentic loop: stream/render text → detect tool calls → check permissions → execute tools → add `ToolResultBlock` (keyed by the `tool_use` block's `Id` for correlation) → send updated conversation back to the LLM → repeat until `stop_reason` is `"end_turn"` or max rounds reached
+- **System prompt ownership** — `ChatCommand` sets `session.SystemPrompt` to a composite of project name, the project's custom prompt (or `Project.DefaultSystemPrompt`), and resolved directory context. `AgentOrchestrator` prepends `MetaPrompt.Text` (a static Domain constant describing the shell-only execution model) when constructing `LlmRequest.SystemPrompt` each turn — or uses `MetaPrompt.Text` alone if no session prompt is set. `Conversation` is a pure message accumulator and does not hold the system prompt
+- **Response envelope and agentic loop** — Every request includes a `tools` array containing the Shell tool's name, description, and JSON parameter schema. The model emits structured `tool_use` content blocks when it decides a command would help. Responses mix `TextBlock` (explanatory text) and `ToolUseBlock` (tool invocation with `Id`, `Name`, `ArgumentsJson`) content blocks. The `stop_reason` field signals intent: `"tool_use"` means there are tool calls to execute (`LlmResponse.HasToolUse`), `"end_turn"` means the turn is complete. The orchestrator runs an agentic loop: stream/render text → detect tool calls → execute via execution engine → add `ToolResultBlock` (keyed by the `tool_use` block's `Id` for correlation) → send updated conversation back to the LLM → repeat until `stop_reason` is `"end_turn"` or max rounds reached
 - **Response streaming** — `StreamChunk` discriminated union (`TextChunk`, `ToolCallChunk`, `CompletionChunk`) enables structured streaming from `ILlmProvider.StreamAsync`; `StreamAccumulator` collects chunks into `LlmResponse` for the tool execution loop; `StreamingResponseConverter` bridges MEAI `ChatResponseUpdate` to domain `StreamChunk`; orchestrator streams by default, falls back to `SendAsync` when `SupportsStreaming` is false
 
 ## Target & Toolchain
@@ -74,7 +73,7 @@ Enforced via `.editorconfig`:
 - **Namespaces:** File-scoped (`namespace Foo;`)
 - **var:** Preferred everywhere
 - **Private fields:** `_camelCase` with underscore prefix
-- **Interfaces:** `I` prefix, PascalCase (`IToolRegistry`)
+- **Interfaces:** `I` prefix, PascalCase (`IExecutionEngine`)
 - **Types:** PascalCase; sealed when not designed for inheritance
 - **Expression-bodied:** Properties/accessors yes; methods only when single-line; constructors no
 - **Pattern matching** over `is`/`as` checks; null coalescing/propagation preferred
@@ -96,7 +95,6 @@ src/
   BoydCode.Domain/                      # Core domain models, no dependencies
   BoydCode.Application/                 # Use cases, interfaces, orchestration
   BoydCode.Infrastructure.LLM/          # LLM provider integration (MEAI + Gemini native)
-  BoydCode.Infrastructure.Tools/        # Tool implementations
   BoydCode.Infrastructure.PowerShell/   # JEA constrained runspace (in-process execution)
   BoydCode.Infrastructure.Container/    # Docker container execution engine
   BoydCode.Infrastructure.Persistence/  # Session storage, settings, stubs
@@ -107,7 +105,6 @@ src/
     BoydCode.Infrastructure.LLM.Tests/
     BoydCode.Infrastructure.PowerShell.Tests/
     BoydCode.Infrastructure.Container.Tests/
-    BoydCode.Infrastructure.Tools.Tests/
 ```
 
 ## Key Interfaces
@@ -117,11 +114,7 @@ src/
 | `ILlmProvider` | LLM communication via `LlmRequest` envelope; exposes `Capabilities` (`ProviderCapabilities`) | `MeaiLlmProviderAdapter` (Anthropic/OpenAI/Ollama), `GeminiLlmProviderAdapter` (Gemini) |
 | `IExplicitCacheProvider` | Opt-in explicit prompt caching; `CreateCacheAsync` stores content by name/TTL, `SendWithCacheAsync` references a stored cache ID alongside an `LlmRequest` | `GeminiLlmProviderAdapter` |
 | `ILlmProviderFactory` | Provider creation; selects adapter based on `LlmProviderType` | `LlmProviderFactory` |
-| `ITool` | Tool execution | `ReadTool`, `WriteTool`, `EditTool`, etc. |
-| `IToolRegistry` | Tool lookup | `ToolRegistry` |
-| `IPermissionEngine` | Permission evaluation | `PermissionEngine` |
-| `IHookEngine` | Pre/post-tool hooks | `NoOpHookEngine` (stub) |
-| `IContextCompactor` | Context window management (messages only; system prompt budget handled by caller) | `NoOpContextCompactor` (stub) |
+| `IContextCompactor` | Context window management (messages only; system prompt budget handled by caller) | `EvictionContextCompactor` |
 | `IDirectoryGuard` | Enforces per-project directory access rules; `GetAccessLevel(path)` returns `DirectoryAccessLevel` | `DirectoryGuard` |
 | `IExecutionEngine` | Command execution; exposes `InitializeAsync`, `ExecuteAsync`, `GetAvailableCommands` | `ConstrainedRunspaceEngine` (in-process), `ContainerExecutionEngine` (Docker) |
 | `IExecutionEngineFactory` | Creates the correct execution engine based on `ExecutionConfig.Mode` | `ExecutionEngineFactory` |

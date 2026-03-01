@@ -7,7 +7,9 @@ public interface IExecutionEngine : IAsyncDisposable
 {
   Task InitializeAsync(CancellationToken ct = default);
   Task<ShellExecutionResult> ExecuteAsync(
-      string command, string workingDirectory, int timeoutMs = 120_000,
+      string command, string workingDirectory,
+      Action<string>? onOutputLine = null,
       CancellationToken ct = default);
   IReadOnlyList<string> GetAvailableCommands();
+  IReadOnlyDictionary<string, string> PathMappings { get; }
 }

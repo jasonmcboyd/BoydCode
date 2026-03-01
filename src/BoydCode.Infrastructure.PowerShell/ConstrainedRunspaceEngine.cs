@@ -99,7 +99,7 @@ public sealed partial class ConstrainedRunspaceEngine : IExecutionEngine
   public async Task<ShellExecutionResult> ExecuteAsync(
       string command,
       string workingDirectory,
-      int timeoutMs = 120_000,
+      Action<string>? onOutputLine = null,
       CancellationToken ct = default)
   {
     if (_runspace is null)
@@ -129,11 +129,22 @@ public sealed partial class ConstrainedRunspaceEngine : IExecutionEngine
 
     try
     {
-      using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-      cts.CancelAfter(timeoutMs);
-
-      var results = await Task.Run(() => ps.Invoke(), cts.Token).ConfigureAwait(false);
+      using var reg = ct.Register(() => ps.Stop());
+      var results = await Task.Run(() => ps.Invoke(), ct).ConfigureAwait(false);
       sw.Stop();
+
+      // Batch-replay output lines through callback
+      if (onOutputLine is not null)
+      {
+        foreach (var r in results)
+        {
+          var line = r?.ToString() ?? string.Empty;
+          if (!string.IsNullOrEmpty(line))
+          {
+            onOutputLine(line);
+          }
+        }
+      }
 
       var output = string.Join(Environment.NewLine, results.Select(r => r?.ToString() ?? string.Empty));
       var errorOutput = ps.HadErrors
@@ -146,7 +157,7 @@ public sealed partial class ConstrainedRunspaceEngine : IExecutionEngine
     {
       ps.Stop();
       sw.Stop();
-      return new ShellExecutionResult(string.Empty, $"Command timed out after {timeoutMs}ms", HadErrors: true, sw.Elapsed);
+      return new ShellExecutionResult(string.Empty, "Command cancelled.", HadErrors: true, sw.Elapsed);
     }
     catch (Exception ex)
     {
@@ -156,6 +167,8 @@ public sealed partial class ConstrainedRunspaceEngine : IExecutionEngine
   }
 
   public IReadOnlyList<string> GetAvailableCommands() => _availableCommands.AsReadOnly();
+
+  public IReadOnlyDictionary<string, string> PathMappings { get; } = new Dictionary<string, string>();
 
   public ValueTask DisposeAsync()
   {

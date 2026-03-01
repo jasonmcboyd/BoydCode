@@ -5,14 +5,12 @@
   <Project Path="BoydCode.Infrastructure.Persistence/BoydCode.Infrastructure.Persistence.csproj" />
   <Project Path="BoydCode.Infrastructure.PowerShell/BoydCode.Infrastructure.PowerShell.csproj" />
   <Project Path="BoydCode.Infrastructure.Container/BoydCode.Infrastructure.Container.csproj" />
-  <Project Path="BoydCode.Infrastructure.Tools/BoydCode.Infrastructure.Tools.csproj" />
   <Project Path="BoydCode.Presentation.Console/BoydCode.Presentation.Console.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/BoydCode.Domain.Tests/BoydCode.Domain.Tests.csproj" />
     <Project Path="tests/BoydCode.Application.Tests/BoydCode.Application.Tests.csproj" />
     <Project Path="tests/BoydCode.Infrastructure.LLM.Tests/BoydCode.Infrastructure.LLM.Tests.csproj" />
     <Project Path="tests/BoydCode.Infrastructure.PowerShell.Tests/BoydCode.Infrastructure.PowerShell.Tests.csproj" />
-    <Project Path="tests/BoydCode.Infrastructure.Tools.Tests/BoydCode.Infrastructure.Tools.Tests.csproj" />
     <Project Path="tests/BoydCode.Infrastructure.Container.Tests/BoydCode.Infrastructure.Container.Tests.csproj" />
   </Folder>
 </Solution>

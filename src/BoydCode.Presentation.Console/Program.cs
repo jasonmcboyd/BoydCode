@@ -6,7 +6,6 @@ using BoydCode.Infrastructure.Container;
 using BoydCode.Infrastructure.LLM;
 using BoydCode.Infrastructure.Persistence;
 using BoydCode.Infrastructure.PowerShell;
-using BoydCode.Infrastructure.Tools;
 using BoydCode.Presentation.Console;
 using BoydCode.Presentation.Console.Commands;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,6 +39,12 @@ AppDomain.CurrentDomain.ProcessExit += (_, _) =>
   {
     var activeEngine = host?.Services.GetService<ActiveExecutionEngine>();
     activeEngine?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    var logger = host?.Services.GetService<IConversationLogger>();
+    if (logger is IAsyncDisposable disposable)
+    {
+      disposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
   }
   catch
   {
@@ -68,7 +73,6 @@ try
   hostBuilder.Services.AddBoydCodeLlm();
   hostBuilder.Services.AddBoydCodePowerShell();
   hostBuilder.Services.AddBoydCodeContainer();
-  hostBuilder.Services.AddBoydCodeTools();
   hostBuilder.Services.AddBoydCodePersistence();
 
   // Register UI
@@ -84,15 +88,10 @@ try
   hostBuilder.Services.AddTransient<ISlashCommand, ContextSlashCommand>();
   hostBuilder.Services.AddTransient<ISlashCommand, RefreshSlashCommand>();
   hostBuilder.Services.AddTransient<ISlashCommand, SessionsSlashCommand>();
+  hostBuilder.Services.AddTransient<ISlashCommand, ClearSlashCommand>();
+  hostBuilder.Services.AddTransient<ISlashCommand, ExpandSlashCommand>();
 
   host = hostBuilder.Build();
-
-  // Initialize tools in registry
-  var toolRegistry = host.Services.GetRequiredService<IToolRegistry>();
-  foreach (var tool in host.Services.GetServices<ITool>())
-  {
-    toolRegistry.Register(tool);
-  }
 
   // Initialize slash commands in registry
   var slashCommandRegistry = host.Services.GetRequiredService<ISlashCommandRegistry>();

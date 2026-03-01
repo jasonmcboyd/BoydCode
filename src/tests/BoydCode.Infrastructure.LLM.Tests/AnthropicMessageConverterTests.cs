@@ -40,7 +40,7 @@ public sealed class AnthropicMessageConverterTests
     };
 
   private static ToolDefinition SimpleToolDefinition(string name = "test_tool") =>
-    new(name, "A test tool", ToolCategory.FileRead, []);
+    new(name, "A test tool", []);
 
   // -------------------------------------------------------------------
   // CacheControl
@@ -66,7 +66,7 @@ public sealed class AnthropicMessageConverterTests
     // Arrange -- verify CacheControl is always set regardless of request complexity
     var tools = new List<ToolDefinition>
     {
-      new("read_file", "Reads a file", ToolCategory.FileRead,
+      new("read_file", "Reads a file",
         [new ToolParameter("path", "string", "File path", Required: true)]),
     };
     var request = MinimalRequest(
@@ -357,7 +357,7 @@ public sealed class AnthropicMessageConverterTests
     // Arrange
     var tools = new List<ToolDefinition>
     {
-      new("read_file", "Reads a file from disk", ToolCategory.FileRead,
+      new("read_file", "Reads a file from disk",
         [
           new ToolParameter("path", "string", "The file path", Required: true),
           new ToolParameter("encoding", "string", "The encoding to use"),
@@ -379,7 +379,7 @@ public sealed class AnthropicMessageConverterTests
     // Arrange
     var tools = new List<ToolDefinition>
     {
-      new("set_mode", "Sets execution mode", ToolCategory.Shell,
+      new("set_mode", "Sets execution mode",
         [
           new ToolParameter("mode", "string", "The mode", Required: true,
             EnumValues: ["fast", "slow", "balanced"]),
@@ -719,9 +719,9 @@ public sealed class AnthropicMessageConverterTests
     // Arrange
     var tools = new List<ToolDefinition>
     {
-      new("read_file", "Reads a file", ToolCategory.FileRead,
+      new("read_file", "Reads a file",
         [new ToolParameter("path", "string", "File path", Required: true)]),
-      new("write_file", "Writes a file", ToolCategory.FileWrite,
+      new("write_file", "Writes a file",
         [
           new ToolParameter("path", "string", "File path", Required: true),
           new ToolParameter("content", "string", "File content", Required: true),

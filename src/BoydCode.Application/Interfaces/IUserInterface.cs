@@ -1,5 +1,3 @@
-using BoydCode.Domain.Tools;
-
 namespace BoydCode.Application.Interfaces;
 
 public interface IUserInterface
@@ -8,13 +6,15 @@ public interface IUserInterface
   string? StatusLine { get; set; }
   string? StaleSettingsWarning { get; set; }
   Task<string> GetUserInputAsync(CancellationToken ct = default);
-  Task<bool> RequestPermissionAsync(ToolDefinition tool, string argumentsJson, CancellationToken ct = default);
   void RenderAssistantText(string text);
   void RenderStreamingToken(string token);
   void RenderStreamingComplete();
   void RenderThinkingStart();
   void RenderThinkingStop();
   void RenderToolExecution(string toolName, string argumentsJson);
+  void RenderExecutingStart();
+  void RenderExecutingStop();
+  void RenderOutputLine(string line);
   void RenderToolResult(string toolName, string result, bool isError);
   void RenderError(string message);
   void RenderHint(string hint);
@@ -24,4 +24,8 @@ public interface IUserInterface
   void RenderTokenUsage(int inputTokens, int outputTokens);
   void RenderWelcome(string model, string workingDirectory);
   void RenderMarkdown(string markdown);
+  void RenderCancelHint();
+  void ClearCancelHint();
+  void ExpandLastToolOutput();
+  IDisposable BeginCancellationMonitor(Action onCancelRequested);
 }

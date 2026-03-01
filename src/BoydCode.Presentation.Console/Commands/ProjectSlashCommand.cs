@@ -131,7 +131,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
             .Title("Which settings would you like to configure?")
             .NotRequired()
             .InstructionsText("[dim](Press [blue]<space>[/] to toggle, [green]<enter>[/] to confirm)[/]")
-            .AddChoices("Directories", "System prompt", "Permission mode", "Container settings"));
+            .AddChoices("Directories", "System prompt", "Container settings"));
 
     if (sections.Contains("Directories"))
     {
@@ -143,12 +143,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
     {
       SpectreHelpers.Section("System prompt");
       PromptSystemPrompt(project);
-    }
-
-    if (sections.Contains("Permission mode"))
-    {
-      SpectreHelpers.Section("Permission mode");
-      PromptPermissionMode(project);
     }
 
     if (sections.Contains("Container settings"))
@@ -177,7 +171,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
       return;
     }
 
-    var table = SpectreHelpers.SimpleTable("Name", "Dirs", "Permissions", "Docker", "Last used");
+    var table = SpectreHelpers.SimpleTable("Name", "Dirs", "Docker", "Last used");
     table.Columns[1].RightAligned();
 
     foreach (var name in names)
@@ -193,10 +187,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
       var dirCount = gitCount > 0
           ? $"{project.Directories.Count.ToString(CultureInfo.InvariantCulture)} ({gitCount.ToString(CultureInfo.InvariantCulture)} git)"
           : project.Directories.Count.ToString(CultureInfo.InvariantCulture);
-
-      var permLabel = project.PermissionMode is not null
-          ? project.PermissionMode.Value.ToString()
-          : "[dim](default)[/]";
 
       var execLabel = project.DockerImage is not null
           ? project.RequireContainer
@@ -214,7 +204,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
       table.AddRow(
           displayName,
           dirCount,
-          permLabel,
           execLabel,
           lastUsed);
     }
@@ -249,7 +238,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
         && project.SystemPrompt is null
         && project.DockerImage is null
         && !project.RequireContainer
-        && project.PermissionMode is null
         && project.Execution is null;
 
     AnsiConsole.WriteLine();
@@ -265,11 +253,9 @@ public sealed class ProjectSlashCommand : ISlashCommand
         "Created", project.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
         "Last used", project.LastAccessedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
 
-    if (project.PermissionMode is not null || project.Execution is not null)
+    if (project.Execution is not null)
     {
-      var permLabel = project.PermissionMode?.ToString() ?? "Default";
-      var engineLabel = project.Execution?.Mode.ToString() ?? "InProcess";
-      SpectreHelpers.AddInfoRow(grid, "Permission", permLabel, "Engine", engineLabel);
+      SpectreHelpers.AddInfoRow(grid, "Engine", project.Execution.Mode.ToString());
     }
 
     if (project.DockerImage is not null)
@@ -412,10 +398,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
           ? "custom"
           : "[dim]default[/]";
 
-      var permSummary = project.PermissionMode is not null
-          ? project.PermissionMode.Value.ToString()
-          : "[dim]default[/]";
-
       var dockerSummary = project.DockerImage is not null
           ? Markup.Escape(project.DockerImage)
           : "[dim]none[/]";
@@ -428,7 +410,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
             {
                 FormatEditChoice("Directories", dirSummary),
                 FormatEditChoice("System prompt", promptSummary),
-                FormatEditChoice("Permission mode", permSummary),
                 FormatEditChoice("Docker image", dockerSummary),
                 FormatEditChoice("Require container", requireSummary),
                 "Done",
@@ -453,9 +434,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
         case "System prompt":
           EditSystemPrompt(project);
           break;
-        case "Permission mode":
-          EditPermissionMode(project);
-          break;
         case "Docker image":
           EditDockerImage(project);
           break;
@@ -467,7 +445,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
       await _projectRepository.SaveAsync(project, ct);
       RefreshSessionContext(project);
 
-      if (section is "Permission mode" or "Docker image" or "Require container"
+      if (section is "Docker image" or "Require container"
           && string.Equals(project.Name, _activeProject.Name, StringComparison.OrdinalIgnoreCase))
       {
         _ui.StaleSettingsWarning = "Project settings changed. Run /refresh to apply.";
@@ -490,7 +468,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     var resolved = _directoryResolver.Resolve(project.Directories);
     _directoryGuard.ConfigureResolved(resolved);
-    _activeSession.Session.SystemPrompt = ChatCommand.BuildSystemPrompt(project, resolved);
+    _activeSession.Session.SystemPrompt = ChatCommand.BuildSystemPrompt(project, resolved, _activeEngine.Engine?.PathMappings);
   }
 
   // ──────────────────────────────────────────────
@@ -545,11 +523,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
     if (project.RequireContainer)
     {
       details.Add("Container execution required");
-    }
-
-    if (project.PermissionMode is not null)
-    {
-      details.Add($"Permission mode ({project.PermissionMode})");
     }
 
     if (details.Count > 0)
@@ -615,24 +588,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
       project.SystemPrompt = prompt;
       SpectreHelpers.Success("System prompt set.");
     }
-  }
-
-  private static void PromptPermissionMode(Project project)
-  {
-    var mode = SpectreHelpers.Select("  Permission mode:", ["Default", "AcceptEdits", "Plan", "DontAsk", "BypassPermissions"]);
-
-    if (mode is "DontAsk" or "BypassPermissions")
-    {
-      AnsiConsole.MarkupLine($"  [yellow]Warning:[/] [bold]{mode}[/] reduces safety checks.");
-
-      if (!SpectreHelpers.Confirm("  Continue?", defaultValue: false))
-      {
-        return;
-      }
-    }
-
-    project.PermissionMode = Enum.Parse<PermissionMode>(mode);
-    AnsiConsole.MarkupLine($"  [green]v[/] Permission mode set to [bold]{mode}[/].");
   }
 
   private static void ConfigureContainer(Project project)
@@ -764,48 +719,6 @@ public sealed class ProjectSlashCommand : ISlashCommand
         project.SystemPrompt = null;
         SpectreHelpers.Success("System prompt reset to default.");
         break;
-    }
-  }
-
-  private static void EditPermissionMode(Project project)
-  {
-    if (project.PermissionMode is not null)
-    {
-      AnsiConsole.MarkupLine($"  [bold]Current:[/] {project.PermissionMode}");
-    }
-    else
-    {
-      AnsiConsole.MarkupLine("  [bold]Current:[/] [dim](using global default)[/]");
-    }
-
-    AnsiConsole.WriteLine();
-
-    var selection = SpectreHelpers.Select("  Permission mode:", ["Default", "AcceptEdits", "Plan", "DontAsk", "BypassPermissions", "Clear (use global default)", "Back"]);
-
-    if (selection == "Back")
-    {
-      return;
-    }
-
-    if (selection is "DontAsk" or "BypassPermissions")
-    {
-      AnsiConsole.MarkupLine($"  [yellow]Warning:[/] [bold]{selection}[/] reduces safety checks.");
-
-      if (!SpectreHelpers.Confirm("  Are you sure?", defaultValue: false))
-      {
-        return;
-      }
-    }
-
-    if (selection == "Clear (use global default)")
-    {
-      project.PermissionMode = null;
-      SpectreHelpers.Success("Permission mode cleared (will use global default).");
-    }
-    else
-    {
-      project.PermissionMode = Enum.Parse<PermissionMode>(selection);
-      AnsiConsole.MarkupLine($"  [green]v[/] Permission mode set to [bold]{selection}[/].");
     }
   }
 

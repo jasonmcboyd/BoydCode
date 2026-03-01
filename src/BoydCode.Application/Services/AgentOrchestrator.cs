@@ -3,7 +3,6 @@ using BoydCode.Application.Interfaces;
 using BoydCode.Domain.Configuration;
 using BoydCode.Domain.ContentBlocks;
 using BoydCode.Domain.Entities;
-using BoydCode.Domain.Enums;
 using BoydCode.Domain.LlmRequests;
 using BoydCode.Domain.LlmResponses;
 using BoydCode.Domain.Tools;
@@ -14,14 +13,19 @@ namespace BoydCode.Application.Services;
 
 public sealed partial class AgentOrchestrator
 {
+  public static readonly ToolDefinition ShellToolDefinition = new(
+      "Shell",
+      "Execute a command in the current execution environment.",
+      [
+          new ToolParameter("command", "string", "The command to execute", Required: true),
+      ]);
+
   private readonly ActiveProvider _activeProvider;
   private readonly ActiveExecutionEngine _activeEngine;
-  private readonly IToolRegistry _toolRegistry;
-  private readonly IPermissionEngine _permissionEngine;
   private readonly IUserInterface _ui;
-  private readonly IHookEngine _hookEngine;
   private readonly IContextCompactor _contextCompactor;
   private readonly ISessionRepository _sessionRepository;
+  private readonly IConversationLogger _conversationLogger;
   private readonly AppSettings _settings;
   private readonly ISlashCommandRegistry _slashCommandRegistry;
   private readonly ILogger<AgentOrchestrator> _logger;
@@ -31,24 +35,20 @@ public sealed partial class AgentOrchestrator
   public AgentOrchestrator(
       ActiveProvider activeProvider,
       ActiveExecutionEngine activeEngine,
-      IToolRegistry toolRegistry,
-      IPermissionEngine permissionEngine,
       IUserInterface ui,
-      IHookEngine hookEngine,
       IContextCompactor contextCompactor,
       ISessionRepository sessionRepository,
+      IConversationLogger conversationLogger,
       IOptions<AppSettings> settings,
       ISlashCommandRegistry slashCommandRegistry,
       ILogger<AgentOrchestrator> logger)
   {
     _activeProvider = activeProvider;
     _activeEngine = activeEngine;
-    _toolRegistry = toolRegistry;
-    _permissionEngine = permissionEngine;
     _ui = ui;
-    _hookEngine = hookEngine;
     _contextCompactor = contextCompactor;
     _sessionRepository = sessionRepository;
+    _conversationLogger = conversationLogger;
     _settings = settings.Value;
     _slashCommandRegistry = slashCommandRegistry;
     _logger = logger;
@@ -81,6 +81,7 @@ public sealed partial class AgentOrchestrator
       // Slash command dispatch
       if (input.StartsWith('/'))
       {
+        await _conversationLogger.LogSlashCommandAsync(input, ct);
         try
         {
           var handled = await _slashCommandRegistry.TryHandleAsync(input, ct);
@@ -106,6 +107,7 @@ public sealed partial class AgentOrchestrator
         continue;
       }
 
+      await _conversationLogger.LogUserMessageAsync(input, ct);
       session.Conversation.AddUserMessage(input);
 
       try
@@ -118,7 +120,10 @@ public sealed partial class AgentOrchestrator
         // (prevents cascading failures from two consecutive user messages)
         session.Conversation.RemoveLastMessage();
         LogSessionLoopError(_logger, ex);
-        _ui.RenderError(FormatProviderError(ex));
+        var errorMessage = FormatProviderError(ex);
+        var suggestion = ClassifyAndSuggest(ex.Message, ex);
+        await _conversationLogger.LogProviderErrorAsync(errorMessage, suggestion, ct);
+        _ui.RenderError(errorMessage);
       }
     }
 
@@ -146,7 +151,7 @@ public sealed partial class AgentOrchestrator
     {
       Model = _activeProvider.Config!.Model,
       SystemPrompt = systemPrompt,
-      Tools = _toolRegistry.GetAllDefinitions(),
+      Tools = [ShellToolDefinition],
       ToolChoice = ToolChoiceStrategy.Auto,
     };
 
@@ -161,6 +166,10 @@ public sealed partial class AgentOrchestrator
         Messages = session.Conversation.Messages,
         Stream = _activeProvider.Provider!.Capabilities.SupportsStreaming,
       };
+
+      await _conversationLogger.LogLlmRequestAsync(
+          baseRequest.Model, session.Conversation.Messages.Count,
+          session.Conversation.EstimateTokenCount(), ct);
 
       _ui.RenderThinkingStart();
 
@@ -182,6 +191,9 @@ public sealed partial class AgentOrchestrator
 
       _totalInputTokens += response.Usage.InputTokens;
       _totalOutputTokens += response.Usage.OutputTokens;
+      await _conversationLogger.LogLlmResponseAsync(
+          response.TextContent, response.ToolUseCalls.Count(),
+          response.Usage.InputTokens, response.Usage.OutputTokens, ct);
       _ui.RenderTokenUsage(_totalInputTokens, _totalOutputTokens);
 
       // Add assistant response to conversation
@@ -206,56 +218,91 @@ public sealed partial class AgentOrchestrator
   {
     foreach (var toolCall in toolCalls)
     {
-      var tool = _toolRegistry.GetTool(toolCall.Name);
-      if (tool is null)
+      if (!toolCall.Name.Equals("Shell", StringComparison.OrdinalIgnoreCase))
       {
-        session.Conversation.AddToolResult(toolCall.Id, $"Error: Unknown tool '{toolCall.Name}'", isError: true);
+        session.Conversation.AddToolResult(toolCall.Id, $"Error: Unknown tool '{toolCall.Name}'. Use the Shell tool.", isError: true);
         continue;
       }
 
-      // Pre-tool hooks
-      var preHookResults = await _hookEngine.RunHooksAsync(HookTiming.PreTool, toolCall.Name, toolCall.ArgumentsJson, ct);
-      if (preHookResults.Any(h => h.ShouldBlock))
+      if (!_activeEngine.IsInitialized)
       {
-        var blockReason = preHookResults.First(h => h.ShouldBlock).Output;
-        session.Conversation.AddToolResult(toolCall.Id, $"Blocked by hook: {blockReason}", isError: true);
+        session.Conversation.AddToolResult(toolCall.Id, "Error: Execution engine not initialized.", isError: true);
         continue;
       }
 
-      // Permission check
-      var permission = _permissionEngine.Evaluate(tool.Definition, toolCall.ArgumentsJson);
-      if (permission == PermissionLevel.Deny)
-      {
-        session.Conversation.AddToolResult(toolCall.Id, "Permission denied for this tool.", isError: true);
-        continue;
-      }
+      await _conversationLogger.LogToolCallAsync(toolCall.Name, toolCall.ArgumentsJson, ct);
+      _ui.RenderToolExecution(toolCall.Name, toolCall.ArgumentsJson);
+      _ui.RenderExecutingStart();
 
-      var permissionShown = false;
-      if (permission == PermissionLevel.Ask)
+      try
       {
-        var approved = await _ui.RequestPermissionAsync(tool.Definition, toolCall.ArgumentsJson, ct);
-        if (!approved)
+        using var doc = JsonDocument.Parse(toolCall.ArgumentsJson);
+        var root = doc.RootElement;
+        var command = root.GetProperty("command").GetString()
+            ?? throw new ArgumentException("command is required");
+
+        using var executionCts = new CancellationTokenSource();
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, executionCts.Token);
+        using var monitor = _ui.BeginCancellationMonitor(() => executionCts.Cancel());
+
+        var outputStreamed = false;
+        var result = await _activeEngine.Engine!.ExecuteAsync(
+            command, session.WorkingDirectory,
+            onOutputLine: line =>
+            {
+              _ui.RenderExecutingStop();
+              _ui.RenderOutputLine(line);
+              outputStreamed = true;
+            },
+            linkedCts.Token);
+        _ui.RenderExecutingStop();
+
+        // Format output for LLM
+        var output = result.Output;
+        if (result.HadErrors && result.ErrorOutput is not null)
         {
-          session.Conversation.AddToolResult(toolCall.Id, "User denied permission for this tool execution.", isError: true);
-          continue;
+          output = string.IsNullOrEmpty(output)
+              ? $"Error: {result.ErrorOutput}"
+              : $"{output}\n\nErrors:\n{result.ErrorOutput}";
         }
-        permissionShown = true;
-      }
 
-      // Execute
-      if (!permissionShown)
+        if (result.HadErrors && output.Contains("is not recognized", StringComparison.OrdinalIgnoreCase))
+        {
+          var commands = _activeEngine.Engine?.GetAvailableCommands();
+          if (commands is { Count: > 0 })
+          {
+            output += $"\n\nAvailable commands: {string.Join(", ", commands)}";
+          }
+        }
+
+        if (output.Length > 30_000)
+        {
+          output = string.Concat(output.AsSpan(0, 29_997), "...");
+        }
+
+        // Brief summary when output was already streamed; full output otherwise
+        var displayOutput = outputStreamed
+            ? $"{result.Duration.TotalSeconds:F1}s"
+            : output;
+        _ui.RenderToolResult(toolCall.Name, displayOutput, result.HadErrors);
+        await _conversationLogger.LogToolResultAsync(toolCall.Name, output, result.HadErrors, result.Duration, ct);
+        session.Conversation.AddToolResult(toolCall.Id, output, result.HadErrors);
+      }
+      catch (OperationCanceledException) when (!ct.IsCancellationRequested)
       {
-        _ui.RenderToolExecution(toolCall.Name, toolCall.ArgumentsJson);
+        _ui.RenderExecutingStop();
+        _ui.RenderToolResult(toolCall.Name, "Command cancelled.", isError: false);
+        await _conversationLogger.LogToolResultAsync(toolCall.Name, "Command was cancelled by the user.", false, TimeSpan.Zero, CancellationToken.None);
+        session.Conversation.AddToolResult(toolCall.Id, "Command was cancelled by the user.", isError: false);
       }
-
-      var result = await tool.ExecuteAsync(toolCall.ArgumentsJson, session.WorkingDirectory, ct);
-
-      _ui.RenderToolResult(toolCall.Name, result.Content, result.IsError);
-
-      session.Conversation.AddToolResult(toolCall.Id, result.Content, result.IsError);
-
-      // Post-tool hooks
-      await _hookEngine.RunHooksAsync(HookTiming.PostTool, toolCall.Name, toolCall.ArgumentsJson, ct);
+      catch (Exception ex) when (ex is not OperationCanceledException)
+      {
+        _ui.RenderExecutingStop();
+        var errorMsg = $"Error executing command: {ex.Message}";
+        _ui.RenderToolResult(toolCall.Name, errorMsg, isError: true);
+        await _conversationLogger.LogToolResultAsync(toolCall.Name, errorMsg, true, TimeSpan.Zero, CancellationToken.None);
+        session.Conversation.AddToolResult(toolCall.Id, errorMsg, isError: true);
+      }
     }
   }
 
@@ -293,6 +340,7 @@ public sealed partial class AgentOrchestrator
         _ui.RenderWarning(
           $"Context compacted: {droppedCount} message(s) removed to fit context window. " +
           $"Estimated tokens: {newEstimate:N0} (target: {targetTokens:N0}).");
+        await _conversationLogger.LogContextCompactionAsync(previousCount, newCount, estimated, newEstimate, ct);
       }
     }
   }
@@ -404,7 +452,7 @@ public sealed partial class AgentOrchestrator
         : message;
   }
 
-  private static string? ClassifyAndSuggest(string message, Exception ex)
+  internal static string? ClassifyAndSuggest(string message, Exception ex)
   {
     var lower = message.ToUpperInvariant();
 

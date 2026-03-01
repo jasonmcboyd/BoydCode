@@ -14,12 +14,13 @@ internal sealed partial class PersistentShellSession : IAsyncDisposable
   private readonly SemaphoreSlim _executionLock = new(1, 1);
   private readonly ConcurrentQueue<string> _stderrLines = new();
   private readonly Task _stderrReaderTask;
-  private bool _disposed;
+  private volatile bool _disposed;
 
   internal PersistentShellSession(Process process, ShellDialect dialect, ILogger logger)
   {
     _process = process;
     _stdin = process.StandardInput;
+    _stdin.NewLine = "\n";
     _stdin.AutoFlush = true;
     _dialect = dialect;
     _logger = logger;
@@ -30,7 +31,7 @@ internal sealed partial class PersistentShellSession : IAsyncDisposable
 
   internal async Task<ShellCommandResult> ExecuteAsync(
       string command,
-      int timeoutMs,
+      Action<string>? onOutputLine = null,
       CancellationToken ct = default)
   {
     if (_process.HasExited)
@@ -43,6 +44,8 @@ internal sealed partial class PersistentShellSession : IAsyncDisposable
     {
       var marker = Guid.NewGuid().ToString("N");
       var wrappedCommand = _dialect.WrapWithSentinel(command, marker);
+      var startPattern = ShellDialect.BuildStartPattern(marker);
+      var exitPattern = ShellDialect.BuildExitPattern(marker);
 
       // Drain any accumulated stderr
       DrainStderr();
@@ -50,39 +53,48 @@ internal sealed partial class PersistentShellSession : IAsyncDisposable
       LogCommandExecution(command);
       await _stdin.WriteLineAsync(wrappedCommand).ConfigureAwait(false);
 
-      // Read stdout until sentinel
+      // Read stdout: skip until start sentinel, capture until exit sentinel
       var outputLines = new List<string>();
-      using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-      cts.CancelAfter(timeoutMs);
-
+      var startSeen = false;
       try
       {
-        while (!cts.Token.IsCancellationRequested)
+        while (!ct.IsCancellationRequested)
         {
-          var line = await _process.StandardOutput.ReadLineAsync(cts.Token).ConfigureAwait(false);
+          var line = await _process.StandardOutput.ReadLineAsync(ct).ConfigureAwait(false);
           if (line is null)
           {
             break; // EOF -- process exited
           }
 
-          if (ShellDialect.IsSentinel(line, marker))
+          if (!startSeen)
           {
-            var exitCode = ShellDialect.ParseExitCode(line, marker);
+            if (ShellDialect.IsStartSentinel(line, startPattern))
+            {
+              startSeen = true;
+            }
+            continue;
+          }
+
+          if (ShellDialect.IsExitSentinel(line, exitPattern))
+          {
+            var exitCode = ShellDialect.ParseExitCode(line, exitPattern);
             var stderr = DrainStderr();
             var output = string.Join("\n", outputLines);
             return new ShellCommandResult(output, stderr, exitCode);
           }
 
           outputLines.Add(line);
+          onOutputLine?.Invoke(line);
         }
       }
       catch (OperationCanceledException)
       {
+        try { await _stdin.WriteAsync("\u0003"); await _stdin.FlushAsync(CancellationToken.None); } catch { }
         var partialOutput = string.Join("\n", outputLines);
         var stderr = DrainStderr();
         return new ShellCommandResult(
             partialOutput,
-            $"Command timed out after {timeoutMs}ms. {stderr}".Trim(),
+            $"Command cancelled. {stderr}".Trim(),
             1);
       }
 

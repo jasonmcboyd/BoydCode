@@ -51,6 +51,13 @@ public sealed class Conversation
     return true;
   }
 
+  public int Clear()
+  {
+    var count = _messages.Count;
+    _messages.Clear();
+    return count;
+  }
+
   public void ReplaceMessages(IReadOnlyList<ConversationMessage> compactedMessages)
   {
     _messages.Clear();

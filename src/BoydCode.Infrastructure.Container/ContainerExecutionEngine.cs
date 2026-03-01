@@ -75,13 +75,13 @@ public sealed partial class ContainerExecutionEngine : IExecutionEngine
 
     // 7. Set initial working directory (use first actual mount, not bare root)
     var initialDir = _hostToContainerPaths.Values.FirstOrDefault() ?? "/";
-    await _shellSession.ExecuteAsync($"cd {initialDir}", timeoutMs: 5000, ct);
+    await _shellSession.ExecuteAsync($"cd {initialDir}", ct: ct);
   }
 
   public async Task<ShellExecutionResult> ExecuteAsync(
       string command,
       string workingDirectory,
-      int timeoutMs = 120_000,
+      Action<string>? onOutputLine = null,
       CancellationToken ct = default)
   {
     if (_shellSession is null)
@@ -96,8 +96,9 @@ public sealed partial class ContainerExecutionEngine : IExecutionEngine
         ?? _hostToContainerPaths.Values.FirstOrDefault()
         ?? "/";
 
-    var composedCommand = $"cd {containerPath} && {command}";
-    var result = await _shellSession.ExecuteAsync(composedCommand, timeoutMs, ct);
+    var translatedCommand = TranslateHostPaths(command);
+    var composedCommand = $"cd {containerPath} && {translatedCommand}";
+    var result = await _shellSession.ExecuteAsync(composedCommand, onOutputLine, ct);
     sw.Stop();
 
     return new ShellExecutionResult(
@@ -108,6 +109,8 @@ public sealed partial class ContainerExecutionEngine : IExecutionEngine
   }
 
   public IReadOnlyList<string> GetAvailableCommands() => [_containerConfig.Shell];
+
+  public IReadOnlyDictionary<string, string> PathMappings => _hostToContainerPaths;
 
   public async ValueTask DisposeAsync()
   {
@@ -179,6 +182,55 @@ public sealed partial class ContainerExecutionEngine : IExecutionEngine
     {
       LogStaleCleanupFailed(ex);
     }
+  }
+
+  private string TranslateHostPaths(string command)
+  {
+    if (_hostToContainerPaths.Count == 0)
+    {
+      return command;
+    }
+
+    var result = command;
+
+    // Sort by key length descending to prevent partial matches
+    var sorted = _hostToContainerPaths
+        .OrderByDescending(kv => kv.Key.Length);
+
+    foreach (var (hostPath, containerPath) in sorted)
+    {
+      var normalizedHost = hostPath.TrimEnd('\\', '/');
+
+      // Replace backslash variant (Windows-style)
+      result = result.Replace(normalizedHost, containerPath, StringComparison.OrdinalIgnoreCase);
+
+      // Replace forward-slash variant
+      var forwardSlashHost = normalizedHost.Replace('\\', '/');
+      if (!forwardSlashHost.Equals(normalizedHost, StringComparison.OrdinalIgnoreCase))
+      {
+        result = result.Replace(forwardSlashHost, containerPath, StringComparison.OrdinalIgnoreCase);
+      }
+    }
+
+    // Post-pass: normalize any backslashes that follow a container path prefix
+    foreach (var containerPath in _hostToContainerPaths.Values)
+    {
+      var idx = 0;
+      while ((idx = result.IndexOf(containerPath, idx, StringComparison.Ordinal)) >= 0)
+      {
+        idx += containerPath.Length;
+        // Normalize trailing backslashes to forward slashes within this path segment
+        while (idx < result.Length && result[idx] == '\\')
+        {
+          var chars = result.ToCharArray();
+          chars[idx] = '/';
+          result = new string(chars);
+          idx++;
+        }
+      }
+    }
+
+    return result;
   }
 
   [LoggerMessage(Level = LogLevel.Information, Message = "Docker available, server version: {Version}")]

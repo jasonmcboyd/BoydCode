@@ -21,7 +21,6 @@
     <ProjectReference Include="..\BoydCode.Domain\BoydCode.Domain.csproj" />
     <ProjectReference Include="..\BoydCode.Infrastructure.LLM\BoydCode.Infrastructure.LLM.csproj" />
     <ProjectReference Include="..\BoydCode.Infrastructure.PowerShell\BoydCode.Infrastructure.PowerShell.csproj" />
-    <ProjectReference Include="..\BoydCode.Infrastructure.Tools\BoydCode.Infrastructure.Tools.csproj" />
     <ProjectReference Include="..\BoydCode.Infrastructure.Persistence\BoydCode.Infrastructure.Persistence.csproj" />
     <ProjectReference Include="..\BoydCode.Infrastructure.Container\BoydCode.Infrastructure.Container.csproj" />
   </ItemGroup>

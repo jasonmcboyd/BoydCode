@@ -1,6 +1,7 @@
 using BoydCode.Application.Interfaces;
 using BoydCode.Infrastructure.Persistence.Auth;
 using BoydCode.Infrastructure.Persistence.Jea;
+using BoydCode.Infrastructure.Persistence.Logging;
 using BoydCode.Infrastructure.Persistence.Projects;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,13 +14,13 @@ public static class ServiceCollectionExtensions
     services.AddSingleton<ISessionRepository, JsonSessionRepository>();
     services.AddSingleton<ISettingsProvider, FileSettingsProvider>();
     services.AddSingleton<IContextCompactor, EvictionContextCompactor>();
-    services.AddSingleton<IHookEngine, NoOpHookEngine>();
     services.AddSingleton<IProjectRepository, JsonProjectRepository>();
     services.AddHttpClient("OAuth");
     services.AddSingleton<ICredentialStore, JsonCredentialStore>();
     services.AddSingleton<IOAuthClientConfigStore, JsonOAuthClientConfigStore>();
     services.AddSingleton<IProviderConfigStore, JsonProviderConfigStore>();
     services.AddSingleton<IJeaProfileStore, FileJeaProfileStore>();
+    services.AddSingleton<IConversationLogger, JsonlConversationLogger>();
     return services;
   }
 }

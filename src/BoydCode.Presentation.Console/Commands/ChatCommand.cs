@@ -4,6 +4,7 @@ using BoydCode.Application.Services;
 using BoydCode.Domain.Configuration;
 using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
+using BoydCode.Domain.LlmRequests;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -12,6 +13,8 @@ namespace BoydCode.Presentation.Console.Commands;
 
 public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
 {
+  private static readonly string[] ToolNames = ["Shell"];
+
   private readonly IOptions<AppSettings> _appSettings;
   private readonly IExecutionEngineFactory _engineFactory;
   private readonly ActiveExecutionEngine _activeEngine;
@@ -23,9 +26,9 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
   private readonly ProjectResolver _projectResolver;
   private readonly DirectoryResolver _directoryResolver;
   private readonly DirectoryGuard _directoryGuard;
-  private readonly IPermissionEngine _permissionEngine;
   private readonly IUserInterface _ui;
   private readonly ISessionRepository _sessionRepository;
+  private readonly IConversationLogger _conversationLogger;
 
   public sealed class Settings : CommandSettings
   {
@@ -62,9 +65,9 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       ProjectResolver projectResolver,
       DirectoryResolver directoryResolver,
       DirectoryGuard directoryGuard,
-      IPermissionEngine permissionEngine,
       IUserInterface ui,
-      ISessionRepository sessionRepository)
+      ISessionRepository sessionRepository,
+      IConversationLogger conversationLogger)
   {
     _appSettings = appSettings;
     _engineFactory = engineFactory;
@@ -77,9 +80,9 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     _projectResolver = projectResolver;
     _directoryResolver = directoryResolver;
     _directoryGuard = directoryGuard;
-    _permissionEngine = permissionEngine;
     _ui = ui;
     _sessionRepository = sessionRepository;
+    _conversationLogger = conversationLogger;
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -95,11 +98,6 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     foreach (var dir in resolvedDirs.Where(d => !d.Exists))
     {
       _ui.RenderError($"Warning: Directory does not exist: {dir.Path}");
-    }
-
-    if (project.PermissionMode is not null || project.PermissionRules is not null)
-    {
-      _permissionEngine.Configure(project.PermissionMode, project.PermissionRules);
     }
 
     // Determine provider type: CLI > last-used > appsettings default
@@ -163,7 +161,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       }
     }
 
-    RenderBanner(llmConfig, workingDirectory, isConfigured, project.Name, resolvedDirs, executionConfig.Mode, project.DockerImage, project.PermissionMode);
+    RenderBanner(llmConfig, workingDirectory, isConfigured, project.Name, resolvedDirs, executionConfig.Mode, project.DockerImage);
 
     if (isConfigured)
     {
@@ -188,8 +186,16 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       session = loaded;
       session.WorkingDirectory = workingDirectory;
       session.ProjectName = project.Name;
-      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs);
+      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs, _activeEngine.Engine?.PathMappings);
       _activeSession.Set(session);
+
+      await _conversationLogger.InitializeAsync(session.Id);
+      await _conversationLogger.LogSessionResumeAsync(
+          session.Conversation.Messages.Count, session.CreatedAt);
+      var metaPromptText = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
+      await _conversationLogger.LogLlmContextAsync(
+          session.SystemPrompt ?? "", metaPromptText,
+          ToolNames, llmConfig.Model, llmConfig.ProviderType);
 
       var messageCount = session.Conversation.Messages.Count;
       var createdDate = session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
@@ -199,22 +205,34 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     {
       session = new Session(workingDirectory);
       session.ProjectName = project.Name;
-      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs);
+      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs, _activeEngine.Engine?.PathMappings);
       _activeSession.Set(session);
+
+      await _conversationLogger.InitializeAsync(session.Id);
+      await _conversationLogger.LogSessionStartAsync(
+          llmConfig.ProviderType, llmConfig.Model, project.Name,
+          executionConfig.Mode, workingDirectory);
+      var metaPromptText = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
+      await _conversationLogger.LogLlmContextAsync(
+          session.SystemPrompt ?? "", metaPromptText,
+          ToolNames, llmConfig.Model, llmConfig.ProviderType);
     }
 
     // Run the interactive loop
     try
     {
       await _orchestrator.RunSessionAsync(session);
+      await _conversationLogger.LogSessionEndAsync("quit");
     }
     catch (OperationCanceledException)
     {
+      await _conversationLogger.LogSessionEndAsync("cancel");
       // User cancelled (Ctrl+C) — exit gracefully
       return (int)ExitCode.UserCancelled;
     }
     catch (Exception ex)
     {
+      await _conversationLogger.LogSessionEndAsync("error");
       _ui.RenderError($"Fatal error: {ex.Message}\n  Suggestion: The session has ended. Please restart boydcode.");
       return (int)ExitCode.GeneralError;
     }
@@ -241,7 +259,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     _ => null,
   };
 
-  private static void RenderBanner(LlmProviderConfig config, string workingDirectory, bool isConfigured, string projectName, IReadOnlyList<ResolvedDirectory>? resolvedDirectories, ExecutionMode executionMode, string? dockerImage, PermissionMode? permissionMode)
+  private static void RenderBanner(LlmProviderConfig config, string workingDirectory, bool isConfigured, string projectName, IReadOnlyList<ResolvedDirectory>? resolvedDirectories, ExecutionMode executionMode, string? dockerImage)
   {
     // Detect short terminals and use compact banner
     var isCompact = false;
@@ -293,7 +311,6 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
 
     SpectreHelpers.AddInfoRow(grid, "Provider", config.ProviderType.ToString(), "Project", projectName);
     SpectreHelpers.AddInfoRow(grid, "Model", config.Model, "Engine", executionMode.ToString());
-    SpectreHelpers.AddInfoRow(grid, "Permission", permissionMode?.ToString() ?? "Default");
     SpectreHelpers.AddInfoRow(grid, "cwd", workingDirectory);
 
     if (dockerImage is not null)
@@ -332,12 +349,13 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
 
   internal static string BuildSystemPrompt(
       Project project,
-      IReadOnlyList<ResolvedDirectory> resolvedDirs)
+      IReadOnlyList<ResolvedDirectory> resolvedDirs,
+      IReadOnlyDictionary<string, string>? pathMappings = null)
   {
     var customPrompt = project.SystemPrompt ?? Project.DefaultSystemPrompt;
     var userPrompt = $"You are working on project '{project.Name}'.\n\n{customPrompt}";
 
-    var dirContext = BuildDirectoryContext(resolvedDirs);
+    var dirContext = BuildDirectoryContext(resolvedDirs, pathMappings);
     if (dirContext is not null)
     {
       userPrompt += $"\n\n{dirContext}";
@@ -346,7 +364,9 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     return userPrompt;
   }
 
-  private static string? BuildDirectoryContext(IReadOnlyList<ResolvedDirectory> directories)
+  private static string? BuildDirectoryContext(
+      IReadOnlyList<ResolvedDirectory> directories,
+      IReadOnlyDictionary<string, string>? pathMappings = null)
   {
     if (directories.Count == 0)
     {
@@ -356,7 +376,11 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     var lines = new List<string> { "## Working Directories" };
     foreach (var dir in directories)
     {
-      var parts = new List<string> { $"- `{dir.Path}` ({dir.AccessLevel})" };
+      var displayPath = pathMappings is not null
+          && pathMappings.TryGetValue(dir.Path, out var containerPath)
+          ? containerPath
+          : dir.Path;
+      var parts = new List<string> { $"- `{displayPath}` ({dir.AccessLevel})" };
       if (dir.IsGitRepository)
       {
         var details = new List<string> { "git repo" };

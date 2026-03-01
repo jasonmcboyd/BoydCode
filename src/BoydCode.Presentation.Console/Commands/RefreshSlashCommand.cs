@@ -1,6 +1,8 @@
 using BoydCode.Application.Interfaces;
 using BoydCode.Application.Services;
 using BoydCode.Domain.Configuration;
+using BoydCode.Domain.Enums;
+using BoydCode.Domain.LlmRequests;
 using BoydCode.Domain.SlashCommands;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
@@ -9,6 +11,8 @@ namespace BoydCode.Presentation.Console.Commands;
 
 public sealed class RefreshSlashCommand : ISlashCommand
 {
+  private static readonly string[] ToolNames = ["Shell"];
+
   private readonly IProjectRepository _projectRepository;
   private readonly ActiveProject _activeProject;
   private readonly ActiveSession _activeSession;
@@ -16,10 +20,10 @@ public sealed class RefreshSlashCommand : ISlashCommand
   private readonly ActiveExecutionEngine _activeEngine;
   private readonly DirectoryResolver _directoryResolver;
   private readonly DirectoryGuard _directoryGuard;
-  private readonly IPermissionEngine _permissionEngine;
   private readonly IExecutionEngineFactory _engineFactory;
   private readonly IUserInterface _ui;
   private readonly AppSettings _appSettings;
+  private readonly IConversationLogger _conversationLogger;
 
   public RefreshSlashCommand(
       IProjectRepository projectRepository,
@@ -29,10 +33,10 @@ public sealed class RefreshSlashCommand : ISlashCommand
       ActiveExecutionEngine activeEngine,
       DirectoryResolver directoryResolver,
       DirectoryGuard directoryGuard,
-      IPermissionEngine permissionEngine,
       IExecutionEngineFactory engineFactory,
       IUserInterface ui,
-      IOptions<AppSettings> appSettings)
+      IOptions<AppSettings> appSettings,
+      IConversationLogger conversationLogger)
   {
     _projectRepository = projectRepository;
     _activeProject = activeProject;
@@ -41,10 +45,10 @@ public sealed class RefreshSlashCommand : ISlashCommand
     _activeEngine = activeEngine;
     _directoryResolver = directoryResolver;
     _directoryGuard = directoryGuard;
-    _permissionEngine = permissionEngine;
     _engineFactory = engineFactory;
     _ui = ui;
     _appSettings = appSettings.Value;
+    _conversationLogger = conversationLogger;
   }
 
   public SlashCommandDescriptor Descriptor { get; } = new(
@@ -101,21 +105,15 @@ public sealed class RefreshSlashCommand : ISlashCommand
     // 5. Reconfigure directory guard
     _directoryGuard.ConfigureResolved(resolvedDirs);
 
-    // 6. Reconfigure permission engine
-    if (project.PermissionMode is not null || project.PermissionRules is not null)
-    {
-      _permissionEngine.Configure(project.PermissionMode, project.PermissionRules);
-    }
-
-    // 7. Rebuild + assign session system prompt
+    // 6. Rebuild + assign session system prompt
     session.SystemPrompt = ChatCommand.BuildSystemPrompt(project, resolvedDirs);
 
-    // 8. Build ExecutionConfig (same logic as ChatCommand)
+    // 7. Build ExecutionConfig (same logic as ChatCommand)
     var executionConfig = project.DockerImage is not null || project.RequireContainer
         ? project.BuildExecutionConfig()
         : _appSettings.Execution;
 
-    // 9. Create new engine via factory, set on ActiveExecutionEngine
+    // 8. Create new engine via factory, set on ActiveExecutionEngine
     var engineRefreshed = false;
     try
     {
@@ -128,7 +126,7 @@ public sealed class RefreshSlashCommand : ISlashCommand
       SpectreHelpers.Warning($"Engine refresh failed (keeping previous): {ex.Message}");
     }
 
-    // 10. Rebuild status line
+    // 9. Rebuild status line
     if (_activeProvider.Config is not null)
     {
       var primaryBranch = resolvedDirs.FirstOrDefault(d => d.IsGitRepository)?.GitBranch;
@@ -137,7 +135,7 @@ public sealed class RefreshSlashCommand : ISlashCommand
           : $"{_activeProvider.Config.ProviderType} | {_activeProvider.Config.Model} | {project.Name} | {executionConfig.Mode}";
     }
 
-    // 11. Render summary with before/after diff indicators
+    // 10. Render summary with before/after diff indicators
     var afterBranch = resolvedDirs.FirstOrDefault(d => d.IsGitRepository)?.GitBranch;
     var afterDirCount = resolvedDirs.Count;
     var afterMode = executionConfig.Mode;
@@ -147,6 +145,15 @@ public sealed class RefreshSlashCommand : ISlashCommand
     AnsiConsole.WriteLine();
     SpectreHelpers.Success("Session context refreshed.");
     _ui.StaleSettingsWarning = null;
+
+    var metaPromptText = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
+    await _conversationLogger.LogLlmContextAsync(
+        session.SystemPrompt ?? "", metaPromptText,
+        ToolNames,
+        _activeProvider.Config?.Model ?? "unknown",
+        _activeProvider.Config?.ProviderType ?? LlmProviderType.Gemini,
+        ct);
+
     AnsiConsole.WriteLine();
 
     // Directories
@@ -165,10 +172,6 @@ public sealed class RefreshSlashCommand : ISlashCommand
     {
       RenderSummaryLine("Git branch", branchDisplay, false);
     }
-
-    // Permissions
-    var permLabel = project.PermissionMode?.ToString() ?? "Default";
-    RenderSummaryLine("Permissions", permLabel, false);
 
     // Engine
     var engineLabel = engineRefreshed

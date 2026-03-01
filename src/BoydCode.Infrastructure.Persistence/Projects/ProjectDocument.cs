@@ -14,8 +14,6 @@ internal sealed class ProjectDocument
   public ExecutionConfigDocument? Execution { get; set; }
   // Legacy: kept for migration from old format (serialized as "jea_config" in JSON)
   public LegacyJeaConfigDocument? JeaConfig { get; set; }
-  public string? PermissionMode { get; set; }
-  public List<PermissionRuleDocument>? PermissionRules { get; set; }
   public DateTimeOffset CreatedAt { get; set; }
   public DateTimeOffset LastAccessedAt { get; set; }
 }
@@ -56,9 +54,3 @@ internal sealed class LegacyJeaConfigDocument
   public string LanguageMode { get; set; } = "ConstrainedLanguage";
 }
 
-internal sealed class PermissionRuleDocument
-{
-  public string ToolName { get; set; } = "";
-  public string Level { get; set; } = "Ask";
-  public string? Description { get; set; }
-}

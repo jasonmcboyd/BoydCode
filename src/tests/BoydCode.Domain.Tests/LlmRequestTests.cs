@@ -34,7 +34,7 @@ public sealed class LlmRequestTests
     // Arrange
     var tools = new List<ToolDefinition>
         {
-            new("read_file", "Reads a file", ToolCategory.FileRead, []),
+            new("read_file", "Reads a file", []),
         };
     var directories = new List<ResolvedDirectory>
         {
@@ -75,7 +75,7 @@ public sealed class LlmRequestTests
     // Arrange
     var tools = new List<ToolDefinition>
         {
-            new("grep", "Searches files", ToolCategory.Search, []),
+            new("grep", "Searches files", []),
         };
     var directories = new List<ResolvedDirectory>
         {

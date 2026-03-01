@@ -19,24 +19,24 @@ public sealed class ContextSlashCommand : ISlashCommand
   private readonly ActiveSession _activeSession;
   private readonly ActiveProvider _activeProvider;
   private readonly IContextCompactor _contextCompactor;
-  private readonly IToolRegistry _toolRegistry;
   private readonly AppSettings _settings;
   private readonly ActiveExecutionEngine _activeEngine;
+  private readonly IConversationLogger _conversationLogger;
 
   public ContextSlashCommand(
       ActiveSession activeSession,
       ActiveProvider activeProvider,
       IContextCompactor contextCompactor,
-      IToolRegistry toolRegistry,
       IOptions<AppSettings> settings,
-      ActiveExecutionEngine activeEngine)
+      ActiveExecutionEngine activeEngine,
+      IConversationLogger conversationLogger)
   {
     _activeSession = activeSession;
     _activeProvider = activeProvider;
     _contextCompactor = contextCompactor;
-    _toolRegistry = toolRegistry;
     _settings = settings.Value;
     _activeEngine = activeEngine;
+    _conversationLogger = conversationLogger;
   }
 
   public SlashCommandDescriptor Descriptor { get; } = new(
@@ -95,7 +95,7 @@ public sealed class ContextSlashCommand : ISlashCommand
     }
 
     var conversation = session.Conversation;
-    var toolDefinitions = _toolRegistry.GetAllDefinitions();
+    var shellTool = AgentOrchestrator.ShellToolDefinition;
 
     // ── Compute token categories ──────────────────
 
@@ -103,11 +103,7 @@ public sealed class ContextSlashCommand : ISlashCommand
     var sessionPromptTokens = EstimateStringTokens(session.SystemPrompt);
     var systemPromptTokens = metaPromptTokens + sessionPromptTokens;
 
-    var toolTokensList = toolDefinitions
-        .Select(t => (Tool: t, Tokens: EstimateToolDefinitionTokens(t)))
-        .OrderByDescending(t => t.Tokens)
-        .ToList();
-    var toolTokensTotal = toolTokensList.Sum(t => t.Tokens);
+    var toolTokensTotal = EstimateToolDefinitionTokens(shellTool);
 
     var messageBreakdown = ComputeMessageBreakdown(conversation.Messages);
     var messageTokensTotal = messageBreakdown.UserTextTokens
@@ -206,16 +202,9 @@ public sealed class ContextSlashCommand : ISlashCommand
 
     AnsiConsole.MarkupLine(string.Format(
         CultureInfo.InvariantCulture,
-        "  [mediumpurple1 bold]Tools[/] [dim]\u00b7[/] {0} tools, {1} tokens",
-        toolDefinitions.Count.ToString(CultureInfo.InvariantCulture),
+        "  [mediumpurple1 bold]Tools[/] [dim]\u00b7[/] 1 tool, {0} tokens",
         SpectreHelpers.FormatCompact(toolTokensTotal)));
-
-    for (var i = 0; i < toolTokensList.Count; i++)
-    {
-      var (tool, tokens) = toolTokensList[i];
-      var isLast = i == toolTokensList.Count - 1;
-      RenderTreeLine(isLast, tool.Name, string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(tokens)));
-    }
+    RenderTreeLine(true, shellTool.Name, string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(toolTokensTotal)));
 
     AnsiConsole.WriteLine();
   }
@@ -427,11 +416,13 @@ public sealed class ContextSlashCommand : ISlashCommand
     var targetTokens = contextLimit / 2;
 
     var previousCount = conversation.Messages.Count;
+    var tokensBefore = conversation.EstimateTokenCount();
     var compacted = await _contextCompactor.CompactAsync(conversation, targetTokens, ct);
     conversation.ReplaceMessages(compacted.Messages);
 
     var newTokens = conversation.EstimateTokenCount();
     SpectreHelpers.Success($"Compacted: {previousCount - conversation.Messages.Count} message(s) removed. Estimated tokens: {newTokens:N0}");
+    await _conversationLogger.LogContextCompactionAsync(previousCount, conversation.Messages.Count, tokensBefore, newTokens, ct);
   }
 
   // ──────────────────────────────────────────────
@@ -513,6 +504,7 @@ public sealed class ContextSlashCommand : ISlashCommand
       conversation.ReplaceMessages(replacementMessages);
 
       SpectreHelpers.Success($"Summarized {originalMessages.Count} messages into {conversation.Messages.Count}. Estimated tokens: {conversation.EstimateTokenCount():N0}");
+      await _conversationLogger.LogContextSummarizeAsync(originalMessages.Count, conversation.Messages.Count, ct);
     }
     catch (Exception ex) when (ex is not OperationCanceledException)
     {

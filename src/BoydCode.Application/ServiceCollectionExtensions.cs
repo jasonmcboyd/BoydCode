@@ -8,9 +8,7 @@ public static class ServiceCollectionExtensions
 {
   public static IServiceCollection AddBoydCodeApplication(this IServiceCollection services)
   {
-    services.AddSingleton<IToolRegistry, ToolRegistry>();
     services.AddSingleton<ISlashCommandRegistry, SlashCommandRegistry>();
-    services.AddSingleton<IPermissionEngine, PermissionEngine>();
     services.AddSingleton<DirectoryGuard>();
     services.AddSingleton<IDirectoryGuard>(sp => sp.GetRequiredService<DirectoryGuard>());
     services.AddTransient<DirectoryResolver>();

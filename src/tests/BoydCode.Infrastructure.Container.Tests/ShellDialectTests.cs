@@ -6,7 +6,7 @@ namespace BoydCode.Infrastructure.Container.Tests;
 public sealed class ShellDialectTests
 {
   [Fact]
-  public void WrapWithSentinel_Bash_ContainsEchoWithMarker()
+  public void WrapWithSentinel_Bash_ContainsStartAndExitSentinels()
   {
     // Arrange
     var dialect = new ShellDialect("bash");
@@ -17,11 +17,12 @@ public sealed class ShellDialectTests
 
     // Assert
     wrapped.Should().Contain("echo");
-    wrapped.Should().Contain(marker);
+    wrapped.Should().Contain($"___BOYDCODE_START_{marker}___");
+    wrapped.Should().Contain($"___BOYDCODE_EXIT_{marker}");
   }
 
   [Fact]
-  public void WrapWithSentinel_Bash_ContainsExitCodeCapture()
+  public void WrapWithSentinel_Bash_StartsWithStartSentinel()
   {
     // Arrange
     var dialect = new ShellDialect("bash");
@@ -29,12 +30,15 @@ public sealed class ShellDialectTests
     // Act
     var wrapped = dialect.WrapWithSentinel("ls -la", "m1");
 
-    // Assert
-    wrapped.Should().Contain("__bc_ec=$?");
+    // Assert — start sentinel first, then command, then exit
+    var lines = wrapped.Split('\n');
+    lines[0].Should().Contain("___BOYDCODE_START_m1___");
+    lines[1].Should().Be("ls -la");
+    lines[2].Should().Contain("__bc_ec=$?");
   }
 
   [Fact]
-  public void WrapWithSentinel_Pwsh_ContainsWriteOutput()
+  public void WrapWithSentinel_Pwsh_ContainsStartAndExitSentinels()
   {
     // Arrange
     var dialect = new ShellDialect("pwsh");
@@ -45,11 +49,12 @@ public sealed class ShellDialectTests
 
     // Assert
     wrapped.Should().Contain("Write-Output");
-    wrapped.Should().Contain(marker);
+    wrapped.Should().Contain($"___BOYDCODE_START_{marker}___");
+    wrapped.Should().Contain($"___BOYDCODE_EXIT_{marker}");
   }
 
   [Fact]
-  public void WrapWithSentinel_Pwsh_ContainsPowerShellExitCheck()
+  public void WrapWithSentinel_Pwsh_StartsWithStartSentinel()
   {
     // Arrange
     var dialect = new ShellDialect("pwsh");
@@ -57,59 +62,135 @@ public sealed class ShellDialectTests
     // Act
     var wrapped = dialect.WrapWithSentinel("Get-Process", "m2");
 
-    // Assert
-    wrapped.Should().Contain("if ($?)");
+    // Assert — start sentinel first, then command, then exit
+    var lines = wrapped.Split('\n');
+    lines[0].Should().Contain("___BOYDCODE_START_m2___");
+    lines[1].Should().Be("Get-Process");
+    lines[2].Should().Contain("if ($?)");
   }
 
   [Fact]
-  public void IsSentinel_MatchingLine_ReturnsTrue()
+  public void BuildStartPattern_ReturnsExpectedFormat()
   {
-    // Arrange -- construct a sentinel line that matches the expected format
-    var marker = "abc";
-    var sentinelLine = $"___BOYDCODE_EXIT_{marker}_0___";
-
     // Act
-    var result = ShellDialect.IsSentinel(sentinelLine, marker);
+    var pattern = ShellDialect.BuildStartPattern("abc");
 
     // Assert
-    result.Should().BeTrue();
+    pattern.Should().Be("___BOYDCODE_START_abc___");
   }
 
   [Fact]
-  public void IsSentinel_DifferentMarker_ReturnsFalse()
+  public void BuildExitPattern_ReturnsExpectedFormat()
   {
-    // Arrange
-    var sentinelLine = "___BOYDCODE_EXIT_abc_0___";
-
     // Act
-    var result = ShellDialect.IsSentinel(sentinelLine, "xyz");
+    var pattern = ShellDialect.BuildExitPattern("abc");
 
     // Assert
-    result.Should().BeFalse();
+    pattern.Should().Be("___BOYDCODE_EXIT_abc_");
   }
 
   [Fact]
-  public void IsSentinel_NonSentinelLine_ReturnsFalse()
+  public void IsStartSentinel_ExactMatch_ReturnsTrue()
   {
     // Arrange
-    var regularLine = "total 42";
+    var startPattern = ShellDialect.BuildStartPattern("abc");
 
-    // Act
-    var result = ShellDialect.IsSentinel(regularLine, "m1");
+    // Act & Assert
+    ShellDialect.IsStartSentinel("___BOYDCODE_START_abc___", startPattern).Should().BeTrue();
+  }
 
-    // Assert
-    result.Should().BeFalse();
+  [Fact]
+  public void IsStartSentinel_WithShellPromptPrefix_ReturnsTrue()
+  {
+    // Arrange — shell may echo the sentinel with a prompt prefix
+    var startPattern = ShellDialect.BuildStartPattern("abc");
+    var lineWithPrompt = "bash-5.2$ ___BOYDCODE_START_abc___";
+
+    // Act & Assert
+    ShellDialect.IsStartSentinel(lineWithPrompt, startPattern).Should().BeTrue();
+  }
+
+  [Fact]
+  public void IsStartSentinel_WithTrailingCarriageReturn_ReturnsTrue()
+  {
+    // Arrange — Docker on Windows may produce lines with trailing \r
+    var startPattern = ShellDialect.BuildStartPattern("abc");
+    var lineWithCr = "___BOYDCODE_START_abc___\r";
+
+    // Act & Assert
+    ShellDialect.IsStartSentinel(lineWithCr, startPattern).Should().BeTrue();
+  }
+
+  [Fact]
+  public void IsStartSentinel_DifferentMarker_ReturnsFalse()
+  {
+    // Arrange
+    var startPattern = ShellDialect.BuildStartPattern("abc");
+
+    // Act & Assert
+    ShellDialect.IsStartSentinel("___BOYDCODE_START_xyz___", startPattern).Should().BeFalse();
+  }
+
+  [Fact]
+  public void IsStartSentinel_CommandEcho_Bash_ReturnsFalse()
+  {
+    // Arrange — shell echoes the echo command itself; ends with " not ___
+    var startPattern = ShellDialect.BuildStartPattern("abc");
+    var echoLine = "echo \"___BOYDCODE_START_abc___\"";
+
+    // Act & Assert
+    ShellDialect.IsStartSentinel(echoLine, startPattern).Should().BeFalse();
+  }
+
+  [Fact]
+  public void IsStartSentinel_CommandEcho_Pwsh_ReturnsFalse()
+  {
+    // Arrange — PowerShell echoes the Write-Output command; ends with " not ___
+    var startPattern = ShellDialect.BuildStartPattern("abc");
+    var echoLine = "PS /> Write-Output \"___BOYDCODE_START_abc___\"";
+
+    // Act & Assert
+    ShellDialect.IsStartSentinel(echoLine, startPattern).Should().BeFalse();
+  }
+
+  [Fact]
+  public void IsExitSentinel_MatchingLine_ReturnsTrue()
+  {
+    // Arrange
+    var exitPattern = ShellDialect.BuildExitPattern("abc");
+
+    // Act & Assert
+    ShellDialect.IsExitSentinel("___BOYDCODE_EXIT_abc_0___", exitPattern).Should().BeTrue();
+  }
+
+  [Fact]
+  public void IsExitSentinel_DifferentMarker_ReturnsFalse()
+  {
+    // Arrange
+    var exitPattern = ShellDialect.BuildExitPattern("abc");
+
+    // Act & Assert
+    ShellDialect.IsExitSentinel("___BOYDCODE_EXIT_xyz_0___", exitPattern).Should().BeFalse();
+  }
+
+  [Fact]
+  public void IsExitSentinel_NonSentinelLine_ReturnsFalse()
+  {
+    // Arrange
+    var exitPattern = ShellDialect.BuildExitPattern("m1");
+
+    // Act & Assert
+    ShellDialect.IsExitSentinel("total 42", exitPattern).Should().BeFalse();
   }
 
   [Fact]
   public void ParseExitCode_Zero_ReturnsZero()
   {
     // Arrange
-    var marker = "run1";
-    var sentinelLine = $"___BOYDCODE_EXIT_{marker}_0___";
+    var exitPattern = ShellDialect.BuildExitPattern("run1");
 
     // Act
-    var exitCode = ShellDialect.ParseExitCode(sentinelLine, marker);
+    var exitCode = ShellDialect.ParseExitCode("___BOYDCODE_EXIT_run1_0___", exitPattern);
 
     // Assert
     exitCode.Should().Be(0);
@@ -119,11 +200,10 @@ public sealed class ShellDialectTests
   public void ParseExitCode_NonZero_ReturnsCorrectCode()
   {
     // Arrange
-    var marker = "run2";
-    var sentinelLine = $"___BOYDCODE_EXIT_{marker}_127___";
+    var exitPattern = ShellDialect.BuildExitPattern("run2");
 
     // Act
-    var exitCode = ShellDialect.ParseExitCode(sentinelLine, marker);
+    var exitCode = ShellDialect.ParseExitCode("___BOYDCODE_EXIT_run2_127___", exitPattern);
 
     // Assert
     exitCode.Should().Be(127);
@@ -132,11 +212,11 @@ public sealed class ShellDialectTests
   [Fact]
   public void ParseExitCode_MalformedLine_ReturnsOne()
   {
-    // Arrange -- a line that does not contain a valid exit code
-    var malformedLine = "some random output without sentinel format";
+    // Arrange
+    var exitPattern = ShellDialect.BuildExitPattern("m1");
 
     // Act
-    var exitCode = ShellDialect.ParseExitCode(malformedLine, "m1");
+    var exitCode = ShellDialect.ParseExitCode("some random output", exitPattern);
 
     // Assert
     exitCode.Should().Be(1);

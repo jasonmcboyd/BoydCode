@@ -28,23 +28,23 @@ public sealed class ContextSlashCommandTests
     ActiveSession? activeSession = null,
     ActiveProvider? activeProvider = null,
     IContextCompactor? contextCompactor = null,
-    IToolRegistry? toolRegistry = null,
     AppSettings? settings = null,
-    ActiveExecutionEngine? activeEngine = null)
+    ActiveExecutionEngine? activeEngine = null,
+    IConversationLogger? conversationLogger = null)
   {
     activeSession ??= new ActiveSession();
     activeProvider ??= new ActiveProvider(Substitute.For<ILlmProviderFactory>());
     contextCompactor ??= new EvictionContextCompactor();
-    toolRegistry ??= Substitute.For<IToolRegistry>();
     settings ??= new AppSettings();
     activeEngine ??= new ActiveExecutionEngine();
+    conversationLogger ??= Substitute.For<IConversationLogger>();
     return new ContextSlashCommand(
       activeSession,
       activeProvider,
       contextCompactor,
-      toolRegistry,
       Options.Create(settings),
-      activeEngine);
+      activeEngine,
+      conversationLogger);
   }
 
   private static (ActiveProvider provider, ILlmProvider mockLlm) CreateActiveProvider()
@@ -550,7 +550,6 @@ public sealed class ContextSlashCommandTests
     var tool = new ToolDefinition(
       "TestTool",
       "A test tool description",
-      ToolCategory.FileRead,
       [new ToolParameter("path", "string", "The file path", Required: true)]);
 
     // Act

@@ -13,14 +13,24 @@ public sealed class ProjectSlashCommand : ISlashCommand
 {
   private readonly IProjectRepository _projectRepository;
   private readonly DirectoryResolver _directoryResolver;
+  private readonly DirectoryGuard _directoryGuard;
   private readonly ActiveProject _activeProject;
+  private readonly ActiveSession _activeSession;
   private readonly IUserInterface _ui;
 
-  public ProjectSlashCommand(IProjectRepository projectRepository, DirectoryResolver directoryResolver, ActiveProject activeProject, IUserInterface ui)
+  public ProjectSlashCommand(
+      IProjectRepository projectRepository,
+      DirectoryResolver directoryResolver,
+      DirectoryGuard directoryGuard,
+      ActiveProject activeProject,
+      ActiveSession activeSession,
+      IUserInterface ui)
   {
     _projectRepository = projectRepository;
     _directoryResolver = directoryResolver;
+    _directoryGuard = directoryGuard;
     _activeProject = activeProject;
+    _activeSession = activeSession;
     _ui = ui;
   }
 
@@ -63,7 +73,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
         await HandleDeleteAsync(tokens, ct);
         break;
       default:
-        AnsiConsole.MarkupLine("[yellow]Usage:[/] /project create|list|show|edit|delete");
+        SpectreHelpers.Usage("/project create|list|show|edit|delete");
         break;
     }
 
@@ -78,17 +88,13 @@ public sealed class ProjectSlashCommand : ISlashCommand
   {
     if (tokens.Length <= 2 && !_ui.IsInteractive)
     {
-      AnsiConsole.MarkupLine("[red]Usage:[/] /project create <name>");
+      SpectreHelpers.Usage("/project create <name>");
       return;
     }
 
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
-        : AnsiConsole.Prompt(
-            new TextPrompt<string>("Project [green]name[/]:")
-                .Validate(n => !string.IsNullOrWhiteSpace(n)
-                    ? ValidationResult.Success()
-                    : ValidationResult.Error("Name cannot be empty")));
+        : SpectreHelpers.PromptNonEmpty("Project [green]name[/]:");
 
     var existing = await _projectRepository.LoadAsync(name, ct);
     if (existing is not null)
@@ -107,7 +113,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
       return;
     }
 
-    var wantConfigure = AnsiConsole.Confirm("Configure project settings now?", defaultValue: false);
+    var wantConfigure = SpectreHelpers.Confirm("Configure project settings now?", defaultValue: false);
     if (!wantConfigure)
     {
       AnsiConsole.MarkupLine($"[dim]Tip: Use /project edit {Markup.Escape(name)} to configure later.[/]");
@@ -125,29 +131,25 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     if (sections.Contains("Directories"))
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]Directories[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("Directories");
       AddDirectoriesLoop(project);
     }
 
     if (sections.Contains("System prompt"))
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]System prompt[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("System prompt");
       PromptSystemPrompt(project);
     }
 
     if (sections.Contains("Permission mode"))
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]Permission mode[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("Permission mode");
       PromptPermissionMode(project);
     }
 
     if (sections.Contains("Container settings"))
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]Container settings[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("Container settings");
       ConfigureContainer(project);
     }
 
@@ -167,17 +169,12 @@ public sealed class ProjectSlashCommand : ISlashCommand
     if (names.Count == 0)
     {
       AnsiConsole.MarkupLine("No projects found.");
-      AnsiConsole.MarkupLine("[dim]Create one with[/] /project create <name>");
+      SpectreHelpers.Dim("Create one with /project create <name>");
       return;
     }
 
-    var table = new Table()
-        .Border(TableBorder.Simple)
-        .AddColumn(new TableColumn("[bold]Name[/]"))
-        .AddColumn(new TableColumn("[bold]Dirs[/]").RightAligned())
-        .AddColumn(new TableColumn("[bold]Permissions[/]"))
-        .AddColumn(new TableColumn("[bold]Docker[/]"))
-        .AddColumn(new TableColumn("[bold]Last used[/]"));
+    var table = SpectreHelpers.SimpleTable("Name", "Dirs", "Permissions", "Docker", "Last used");
+    table.Columns[1].RightAligned();
 
     foreach (var name in names)
     {
@@ -229,7 +226,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
   {
     if (tokens.Length <= 2 && _activeProject.Name is null && !_ui.IsInteractive)
     {
-      AnsiConsole.MarkupLine("[red]Usage:[/] /project show <name>");
+      SpectreHelpers.Usage("/project show <name>");
       return;
     }
 
@@ -258,8 +255,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     if (project.Directories.Count > 0)
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]Directories[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("Directories");
 
       var resolvedDirs = _directoryResolver.Resolve(project.Directories);
 
@@ -290,8 +286,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
       AnsiConsole.Write(dirTable);
     }
 
-    AnsiConsole.WriteLine();
-    AnsiConsole.Write(new Rule("[bold]System prompt[/]").LeftJustified().RuleStyle("dim"));
+    SpectreHelpers.Section("System prompt");
 
     if (project.SystemPrompt is not null)
     {
@@ -304,16 +299,14 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     if (project.DockerImage is not null || project.RequireContainer)
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]Container[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("Container");
       AnsiConsole.MarkupLine($"  [bold]Docker image:[/]      {(project.DockerImage is not null ? Markup.Escape(project.DockerImage) : "[dim](not set)[/]")}");
       AnsiConsole.MarkupLine($"  [bold]Require container:[/] {(project.RequireContainer ? "[green]Yes[/]" : "[yellow]No[/]")}");
     }
 
     if (project.PermissionMode is not null || project.Execution?.JeaProfiles is { Count: > 0 })
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]Security[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("Security");
 
       if (project.PermissionMode is not null)
       {
@@ -343,7 +336,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
   {
     if (!_ui.IsInteractive)
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] /project edit requires an interactive terminal.");
+      SpectreHelpers.Error("/project edit requires an interactive terminal.");
       return;
     }
 
@@ -390,11 +383,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
                 "Done",
             };
 
-      var choice = AnsiConsole.Prompt(
-          new SelectionPrompt<string>()
-              .Title($"Edit [bold]{Markup.Escape(project.Name)}[/]:")
-              .AddChoices(choices)
-              .HighlightStyle(new Style(Color.Green)));
+      var choice = SpectreHelpers.Select($"Edit [bold]{Markup.Escape(project.Name)}[/]:", choices);
 
       if (choice == "Done")
       {
@@ -423,9 +412,25 @@ public sealed class ProjectSlashCommand : ISlashCommand
       }
 
       await _projectRepository.SaveAsync(project, ct);
-      AnsiConsole.MarkupLine("[green]v[/] Project saved.");
+      RefreshSessionContext(project);
+      SpectreHelpers.Success("Project saved.");
       AnsiConsole.WriteLine();
     }
+  }
+
+  /// <summary>
+  /// After editing the active project, re-resolve directories and refresh
+  /// both the DirectoryGuard and the session's system prompt so the LLM
+  /// sees the current directory list on the next turn.
+  /// </summary>
+  private void RefreshSessionContext(Project project)
+  {
+    if (_activeSession.Session is null) return;
+    if (!string.Equals(project.Name, _activeProject.Name, StringComparison.OrdinalIgnoreCase)) return;
+
+    var resolved = _directoryResolver.Resolve(project.Directories);
+    _directoryGuard.ConfigureResolved(resolved);
+    _activeSession.Session.SystemPrompt = ChatCommand.BuildSystemPrompt(project, resolved);
   }
 
   // ──────────────────────────────────────────────
@@ -436,7 +441,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
   {
     if (tokens.Length <= 2 && !_ui.IsInteractive)
     {
-      AnsiConsole.MarkupLine("[red]Usage:[/] /project delete <name>");
+      SpectreHelpers.Usage("/project delete <name>");
       return;
     }
 
@@ -501,9 +506,9 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     AnsiConsole.WriteLine();
 
-    if (!_ui.IsInteractive || !AnsiConsole.Confirm($"Delete project [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
+    if (!_ui.IsInteractive || !SpectreHelpers.Confirm($"Delete project [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
     {
-      AnsiConsole.MarkupLine("[dim]Cancelled.[/]");
+      SpectreHelpers.Cancelled();
       return;
     }
 
@@ -519,19 +524,14 @@ public sealed class ProjectSlashCommand : ISlashCommand
   {
     while (true)
     {
-      var path = AnsiConsole.Prompt(
-          new TextPrompt<string>("  Directory path [dim](Enter to finish)[/]:")
-              .AllowEmpty());
+      var path = SpectreHelpers.PromptOptional("  Directory path [dim](Enter to finish)[/]:");
 
       if (string.IsNullOrWhiteSpace(path))
       {
         break;
       }
 
-      var accessLevel = AnsiConsole.Prompt(
-          new SelectionPrompt<DirectoryAccessLevel>()
-              .Title("  Access level:")
-              .AddChoices(DirectoryAccessLevel.ReadWrite, DirectoryAccessLevel.ReadOnly));
+      var accessLevel = SpectreHelpers.Select("  Access level:", [DirectoryAccessLevel.ReadWrite, DirectoryAccessLevel.ReadOnly]);
 
       project.Directories.Add(new ProjectDirectory(path, accessLevel));
       AnsiConsole.MarkupLine($"  [green]v[/] Added [bold]{Markup.Escape(path)}[/] ({accessLevel})");
@@ -553,27 +553,19 @@ public sealed class ProjectSlashCommand : ISlashCommand
     else
     {
       project.SystemPrompt = prompt;
-      AnsiConsole.MarkupLine("  [green]v[/] System prompt set.");
+      SpectreHelpers.Success("System prompt set.");
     }
   }
 
   private static void PromptPermissionMode(Project project)
   {
-    var mode = AnsiConsole.Prompt(
-        new SelectionPrompt<string>()
-            .Title("  Permission mode:")
-            .AddChoices(
-                "Default",
-                "AcceptEdits",
-                "Plan",
-                "DontAsk",
-                "BypassPermissions"));
+    var mode = SpectreHelpers.Select("  Permission mode:", ["Default", "AcceptEdits", "Plan", "DontAsk", "BypassPermissions"]);
 
     if (mode is "DontAsk" or "BypassPermissions")
     {
       AnsiConsole.MarkupLine($"  [yellow]Warning:[/] [bold]{mode}[/] reduces safety checks.");
 
-      if (!AnsiConsole.Confirm("  Continue?", defaultValue: false))
+      if (!SpectreHelpers.Confirm("  Continue?", defaultValue: false))
       {
         return;
       }
@@ -585,21 +577,19 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
   private static void ConfigureContainer(Project project)
   {
-    var image = AnsiConsole.Prompt(
-        new TextPrompt<string>("  Docker image [dim](Enter to skip)[/]:")
-            .AllowEmpty());
+    var image = SpectreHelpers.PromptOptional("  Docker image [dim](Enter to skip)[/]:");
 
     if (!string.IsNullOrWhiteSpace(image))
     {
       project.DockerImage = image;
       AnsiConsole.MarkupLine($"  [green]v[/] Docker image set to [bold]{Markup.Escape(image)}[/].");
 
-      project.RequireContainer = AnsiConsole.Confirm("  Require container execution?", defaultValue: true);
+      project.RequireContainer = SpectreHelpers.Confirm("  Require container execution?", defaultValue: true);
       AnsiConsole.MarkupLine($"  [green]v[/] Require container: [bold]{project.RequireContainer}[/].");
     }
     else
     {
-      AnsiConsole.MarkupLine("  [dim]Skipped container configuration.[/]");
+      SpectreHelpers.Dim("  Skipped container configuration.");
     }
   }
 
@@ -612,11 +602,8 @@ public sealed class ProjectSlashCommand : ISlashCommand
     if (project.Directories.Count > 0)
     {
       AnsiConsole.WriteLine();
-      var dirTable = new Table()
-          .Border(TableBorder.Simple)
-          .AddColumn(new TableColumn("[bold]#[/]").RightAligned())
-          .AddColumn("[bold]Path[/]")
-          .AddColumn("[bold]Access[/]");
+      var dirTable = SpectreHelpers.SimpleTable("#", "Path", "Access");
+      dirTable.Columns[0].RightAligned();
 
       for (var i = 0; i < project.Directories.Count; i++)
       {
@@ -634,28 +621,18 @@ public sealed class ProjectSlashCommand : ISlashCommand
     }
     else
     {
-      AnsiConsole.MarkupLine("  [dim]No directories configured.[/]");
+      SpectreHelpers.Dim("  No directories configured.");
     }
 
-    var action = AnsiConsole.Prompt(
-        new SelectionPrompt<string>()
-            .Title("  Directory action:")
-            .AddChoices("Add directory", "Remove directory", "Change access level", "Back"));
+    var action = SpectreHelpers.Select("  Directory action:", ["Add directory", "Remove directory", "Change access level", "Back"]);
 
     switch (action)
     {
       case "Add directory":
         {
-          var path = AnsiConsole.Prompt(
-              new TextPrompt<string>("  Directory path:")
-                  .Validate(p => !string.IsNullOrWhiteSpace(p)
-                      ? ValidationResult.Success()
-                      : ValidationResult.Error("Path cannot be empty")));
+          var path = SpectreHelpers.PromptNonEmpty("  Directory path:");
 
-          var accessLevel = AnsiConsole.Prompt(
-              new SelectionPrompt<DirectoryAccessLevel>()
-                  .Title("  Access level:")
-                  .AddChoices(DirectoryAccessLevel.ReadWrite, DirectoryAccessLevel.ReadOnly));
+          var accessLevel = SpectreHelpers.Select("  Access level:", [DirectoryAccessLevel.ReadWrite, DirectoryAccessLevel.ReadOnly]);
 
           project.Directories.Add(new ProjectDirectory(path, accessLevel));
           AnsiConsole.MarkupLine($"  [green]v[/] Added [bold]{Markup.Escape(path)}[/] ({accessLevel})");
@@ -669,10 +646,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
             break;
           }
 
-          var pathToRemove = AnsiConsole.Prompt(
-              new SelectionPrompt<string>()
-                  .Title("  Select directory to remove:")
-                  .AddChoices(project.Directories.Select(d => d.Path)));
+          var pathToRemove = SpectreHelpers.Select("  Select directory to remove:", project.Directories.Select(d => d.Path));
 
           project.Directories.RemoveAll(d => d.Path == pathToRemove);
           AnsiConsole.MarkupLine($"  [green]v[/] Removed [bold]{Markup.Escape(pathToRemove)}[/]");
@@ -686,15 +660,9 @@ public sealed class ProjectSlashCommand : ISlashCommand
             break;
           }
 
-          var pathToChange = AnsiConsole.Prompt(
-              new SelectionPrompt<string>()
-                  .Title("  Select directory:")
-                  .AddChoices(project.Directories.Select(d => d.Path)));
+          var pathToChange = SpectreHelpers.Select("  Select directory:", project.Directories.Select(d => d.Path));
 
-          var newLevel = AnsiConsole.Prompt(
-              new SelectionPrompt<DirectoryAccessLevel>()
-                  .Title("  New access level:")
-                  .AddChoices(DirectoryAccessLevel.ReadWrite, DirectoryAccessLevel.ReadOnly));
+          var newLevel = SpectreHelpers.Select("  New access level:", [DirectoryAccessLevel.ReadWrite, DirectoryAccessLevel.ReadOnly]);
 
           var index = project.Directories.FindIndex(d => d.Path == pathToChange);
           if (index >= 0)
@@ -710,7 +678,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
   private static void EditSystemPrompt(Project project)
   {
-    AnsiConsole.MarkupLine("  [dim]The system prompt is always prefixed with the project name.[/]");
+    SpectreHelpers.Dim("  The system prompt is always prefixed with the project name.");
 
     var currentCustom = project.SystemPrompt ?? Project.DefaultSystemPrompt;
     var isDefault = project.SystemPrompt is null;
@@ -724,24 +692,17 @@ public sealed class ProjectSlashCommand : ISlashCommand
       choices.Insert(1, "Reset to default");
     }
 
-    var action = AnsiConsole.Prompt(
-        new SelectionPrompt<string>()
-            .Title("  System prompt:")
-            .AddChoices(choices));
+    var action = SpectreHelpers.Select("  System prompt:", choices);
 
     switch (action)
     {
       case "Set new prompt":
-        project.SystemPrompt = AnsiConsole.Prompt(
-            new TextPrompt<string>("  New system prompt:")
-                .Validate(p => !string.IsNullOrWhiteSpace(p)
-                    ? ValidationResult.Success()
-                    : ValidationResult.Error("Prompt cannot be empty")));
-        AnsiConsole.MarkupLine("  [green]v[/] System prompt updated.");
+        project.SystemPrompt = SpectreHelpers.PromptNonEmpty("  New system prompt:");
+        SpectreHelpers.Success("System prompt updated.");
         break;
       case "Reset to default":
         project.SystemPrompt = null;
-        AnsiConsole.MarkupLine("  [green]v[/] System prompt reset to default.");
+        SpectreHelpers.Success("System prompt reset to default.");
         break;
     }
   }
@@ -759,17 +720,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     AnsiConsole.WriteLine();
 
-    var selection = AnsiConsole.Prompt(
-        new SelectionPrompt<string>()
-            .Title("  Permission mode:")
-            .AddChoices(
-                "Default",
-                "AcceptEdits",
-                "Plan",
-                "DontAsk",
-                "BypassPermissions",
-                "Clear (use global default)",
-                "Back"));
+    var selection = SpectreHelpers.Select("  Permission mode:", ["Default", "AcceptEdits", "Plan", "DontAsk", "BypassPermissions", "Clear (use global default)", "Back"]);
 
     if (selection == "Back")
     {
@@ -780,7 +731,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
     {
       AnsiConsole.MarkupLine($"  [yellow]Warning:[/] [bold]{selection}[/] reduces safety checks.");
 
-      if (!AnsiConsole.Confirm("  Are you sure?", defaultValue: false))
+      if (!SpectreHelpers.Confirm("  Are you sure?", defaultValue: false))
       {
         return;
       }
@@ -789,7 +740,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
     if (selection == "Clear (use global default)")
     {
       project.PermissionMode = null;
-      AnsiConsole.MarkupLine("  [green]v[/] Permission mode cleared (will use global default).");
+      SpectreHelpers.Success("Permission mode cleared (will use global default).");
     }
     else
     {
@@ -811,14 +762,12 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     AnsiConsole.WriteLine();
 
-    var image = AnsiConsole.Prompt(
-        new TextPrompt<string>("  Docker image [dim](Enter to clear)[/]:")
-            .AllowEmpty());
+    var image = SpectreHelpers.PromptOptional("  Docker image [dim](Enter to clear)[/]:");
 
     if (string.IsNullOrWhiteSpace(image))
     {
       project.DockerImage = null;
-      AnsiConsole.MarkupLine("  [green]v[/] Docker image cleared.");
+      SpectreHelpers.Success("Docker image cleared.");
     }
     else
     {
@@ -838,7 +787,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     AnsiConsole.WriteLine();
 
-    project.RequireContainer = AnsiConsole.Confirm("  Require container execution?", defaultValue: project.RequireContainer);
+    project.RequireContainer = SpectreHelpers.Confirm("  Require container execution?", defaultValue: project.RequireContainer);
     AnsiConsole.MarkupLine($"  [green]v[/] Require container set to [bold]{project.RequireContainer}[/].");
   }
 

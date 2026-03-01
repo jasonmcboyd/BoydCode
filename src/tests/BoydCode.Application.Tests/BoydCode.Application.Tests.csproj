@@ -14,5 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\BoydCode.Application\BoydCode.Application.csproj" />
     <ProjectReference Include="..\..\BoydCode.Domain\BoydCode.Domain.csproj" />
+    <ProjectReference Include="..\..\BoydCode.Infrastructure.Persistence\BoydCode.Infrastructure.Persistence.csproj" />
+    <ProjectReference Include="..\..\BoydCode.Presentation.Console\BoydCode.Presentation.Console.csproj" />
   </ItemGroup>
 </Project>

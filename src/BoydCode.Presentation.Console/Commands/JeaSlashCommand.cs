@@ -12,6 +12,19 @@ namespace BoydCode.Presentation.Console.Commands;
 
 public sealed partial class JeaSlashCommand : ISlashCommand
 {
+  private static readonly string[] AddToProfileChoices = ["Add command", "Add module", "Done"];
+  private static readonly string[] AllowDenyChoices = ["Allow", "Deny"];
+  private static readonly string[] EditProfileChoices =
+  [
+      "Change language mode",
+      "Add command",
+      "Remove command",
+      "Toggle command deny",
+      "Add module",
+      "Remove module",
+      "Done",
+  ];
+
   private readonly IJeaProfileStore _store;
   private readonly JeaProfileComposer _composer;
   private readonly ActiveProject _activeProject;
@@ -80,7 +93,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
         await HandleUnassignAsync(tokens, ct);
         break;
       default:
-        AnsiConsole.MarkupLine("[yellow]Usage:[/] /jea list|show|create|edit|delete|effective|assign|unassign");
+        SpectreHelpers.Usage("/jea list|show|create|edit|delete|effective|assign|unassign");
         break;
     }
 
@@ -121,16 +134,13 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     if (names.Count == 0)
     {
       AnsiConsole.MarkupLine("No JEA profiles found.");
-      AnsiConsole.MarkupLine("[dim]Create one with[/] /jea create <name>");
+      SpectreHelpers.Dim("Create one with /jea create <name>");
       return;
     }
 
-    var table = new Table()
-        .Border(TableBorder.Simple)
-        .AddColumn(new TableColumn("[bold]Name[/]"))
-        .AddColumn(new TableColumn("[bold]Language Mode[/]"))
-        .AddColumn(new TableColumn("[bold]Commands[/]").RightAligned())
-        .AddColumn(new TableColumn("[bold]Modules[/]").RightAligned());
+    var table = SpectreHelpers.SimpleTable("Name", "Language Mode", "Commands", "Modules");
+    table.Columns[2].RightAligned();
+    table.Columns[3].RightAligned();
 
     foreach (var name in names)
     {
@@ -197,11 +207,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
   {
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
-        : AnsiConsole.Prompt(
-            new TextPrompt<string>("Profile [green]name[/]:")
-                .Validate(n => !string.IsNullOrWhiteSpace(n)
-                    ? ValidationResult.Success()
-                    : ValidationResult.Error("Name cannot be empty")));
+        : SpectreHelpers.PromptNonEmpty("Profile [green]name[/]:");
 
     if (!ValidateProfileName(name))
     {
@@ -215,25 +221,22 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       return;
     }
 
-    var languageMode = AnsiConsole.Prompt(
-        new SelectionPrompt<PSLanguageModeName>()
-            .Title("Language mode:")
-            .AddChoices(
-                PSLanguageModeName.FullLanguage,
-                PSLanguageModeName.ConstrainedLanguage,
-                PSLanguageModeName.RestrictedLanguage,
-                PSLanguageModeName.NoLanguage));
+    var languageMode = SpectreHelpers.Select(
+        "Language mode:",
+        new[]
+        {
+            PSLanguageModeName.FullLanguage,
+            PSLanguageModeName.ConstrainedLanguage,
+            PSLanguageModeName.RestrictedLanguage,
+            PSLanguageModeName.NoLanguage,
+        });
 
     var entries = new List<JeaProfileEntry>();
     var modules = new List<string>();
 
     while (true)
     {
-      var action = AnsiConsole.Prompt(
-          new SelectionPrompt<string>()
-              .Title("Add to profile:")
-              .AddChoices("Add command", "Add module", "Done")
-              .HighlightStyle(new Style(Color.Green)));
+      var action = SpectreHelpers.Select("Add to profile:", AddToProfileChoices);
 
       if (action == "Done")
       {
@@ -244,16 +247,9 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       {
         case "Add command":
           {
-            var commandName = AnsiConsole.Prompt(
-                new TextPrompt<string>("  Command name:")
-                    .Validate(c => !string.IsNullOrWhiteSpace(c)
-                        ? ValidationResult.Success()
-                        : ValidationResult.Error("Command name cannot be empty")));
+            var commandName = SpectreHelpers.PromptNonEmpty("  Command name:");
 
-            var isDenied = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("  Action:")
-                    .AddChoices("Allow", "Deny")) == "Deny";
+            var isDenied = SpectreHelpers.Select("  Action:", AllowDenyChoices) == "Deny";
 
             entries.Add(new JeaProfileEntry(commandName, isDenied));
             var marker = isDenied ? "[red]Deny[/]" : "[green]Allow[/]";
@@ -262,11 +258,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
           }
         case "Add module":
           {
-            var moduleName = AnsiConsole.Prompt(
-                new TextPrompt<string>("  Module name:")
-                    .Validate(m => !string.IsNullOrWhiteSpace(m)
-                        ? ValidationResult.Success()
-                        : ValidationResult.Error("Module name cannot be empty")));
+            var moduleName = SpectreHelpers.PromptNonEmpty("  Module name:");
 
             modules.Add(moduleName);
             AnsiConsole.MarkupLine($"  [green]v[/] Module [bold]{Markup.Escape(moduleName)}[/] added.");
@@ -280,7 +272,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     var filePath = GetProfileFilePath(name);
     AnsiConsole.MarkupLine($"[green]v[/] Profile [bold]{Markup.Escape(name)}[/] created.");
-    AnsiConsole.MarkupLine($"[dim]File: {Markup.Escape(filePath)}[/]");
+    SpectreHelpers.Dim($"File: {filePath}");
   }
 
   // ──────────────────────────────────────────────
@@ -311,18 +303,9 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     while (true)
     {
-      var choice = AnsiConsole.Prompt(
-          new SelectionPrompt<string>()
-              .Title($"Edit [bold]{Markup.Escape(name)}[/]:")
-              .AddChoices(
-                  "Change language mode",
-                  "Add command",
-                  "Remove command",
-                  "Toggle command deny",
-                  "Add module",
-                  "Remove module",
-                  "Done")
-              .HighlightStyle(new Style(Color.Green)));
+      var choice = SpectreHelpers.Select(
+          $"Edit [bold]{Markup.Escape(name)}[/]:",
+          EditProfileChoices);
 
       if (choice == "Done")
       {
@@ -333,29 +316,23 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       {
         case "Change language mode":
           {
-            languageMode = AnsiConsole.Prompt(
-                new SelectionPrompt<PSLanguageModeName>()
-                    .Title("  Language mode:")
-                    .AddChoices(
-                        PSLanguageModeName.FullLanguage,
-                        PSLanguageModeName.ConstrainedLanguage,
-                        PSLanguageModeName.RestrictedLanguage,
-                        PSLanguageModeName.NoLanguage));
+            languageMode = SpectreHelpers.Select(
+                "  Language mode:",
+                new[]
+                {
+                    PSLanguageModeName.FullLanguage,
+                    PSLanguageModeName.ConstrainedLanguage,
+                    PSLanguageModeName.RestrictedLanguage,
+                    PSLanguageModeName.NoLanguage,
+                });
             AnsiConsole.MarkupLine($"  [green]v[/] Language mode set to [bold]{languageMode}[/].");
             break;
           }
         case "Add command":
           {
-            var commandName = AnsiConsole.Prompt(
-                new TextPrompt<string>("  Command name:")
-                    .Validate(c => !string.IsNullOrWhiteSpace(c)
-                        ? ValidationResult.Success()
-                        : ValidationResult.Error("Command name cannot be empty")));
+            var commandName = SpectreHelpers.PromptNonEmpty("  Command name:");
 
-            var isDenied = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("  Action:")
-                    .AddChoices("Allow", "Deny")) == "Deny";
+            var isDenied = SpectreHelpers.Select("  Action:", AllowDenyChoices) == "Deny";
 
             entries.Add(new JeaProfileEntry(commandName, isDenied));
             var marker = isDenied ? "[red]Deny[/]" : "[green]Allow[/]";
@@ -370,10 +347,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
               break;
             }
 
-            var commandToRemove = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("  Select command to remove:")
-                    .AddChoices(entries.Select(e => e.CommandName)));
+            var commandToRemove = SpectreHelpers.Select("  Select command to remove:", entries.Select(e => e.CommandName));
 
             entries.RemoveAll(e => e.CommandName == commandToRemove);
             AnsiConsole.MarkupLine($"  [green]v[/] Removed [bold]{Markup.Escape(commandToRemove)}[/].");
@@ -393,10 +367,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
               return $"{Markup.Escape(e.CommandName)}  {status}";
             }).ToList();
 
-            var selected = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("  Select command to toggle:")
-                    .AddChoices(descriptions));
+            var selected = SpectreHelpers.Select("  Select command to toggle:", descriptions);
 
             var selectedCommand = selected.Split("  ", StringSplitOptions.RemoveEmptyEntries)[0].Trim();
             var index = entries.FindIndex(e => Markup.Escape(e.CommandName) == selectedCommand);
@@ -412,11 +383,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
           }
         case "Add module":
           {
-            var moduleName = AnsiConsole.Prompt(
-                new TextPrompt<string>("  Module name:")
-                    .Validate(m => !string.IsNullOrWhiteSpace(m)
-                        ? ValidationResult.Success()
-                        : ValidationResult.Error("Module name cannot be empty")));
+            var moduleName = SpectreHelpers.PromptNonEmpty("  Module name:");
 
             modules.Add(moduleName);
             AnsiConsole.MarkupLine($"  [green]v[/] Module [bold]{Markup.Escape(moduleName)}[/] added.");
@@ -430,10 +397,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
               break;
             }
 
-            var moduleToRemove = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("  Select module to remove:")
-                    .AddChoices(modules));
+            var moduleToRemove = SpectreHelpers.Select("  Select module to remove:", modules);
 
             modules.Remove(moduleToRemove);
             AnsiConsole.MarkupLine($"  [green]v[/] Removed module [bold]{Markup.Escape(moduleToRemove)}[/].");
@@ -447,7 +411,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     var filePath = GetProfileFilePath(name);
     AnsiConsole.MarkupLine($"[green]v[/] Profile [bold]{Markup.Escape(name)}[/] saved.");
-    AnsiConsole.MarkupLine($"[dim]File: {Markup.Escape(filePath)}[/]");
+    SpectreHelpers.Dim($"File: {filePath}");
   }
 
   // ──────────────────────────────────────────────
@@ -474,10 +438,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
         return;
       }
 
-      name = AnsiConsole.Prompt(
-          new SelectionPrompt<string>()
-              .Title("Select profile to delete:")
-              .AddChoices(deletable));
+      name = SpectreHelpers.Select("Select profile to delete:", deletable);
     }
 
     if (name.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase))
@@ -493,9 +454,9 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       return;
     }
 
-    if (!AnsiConsole.Confirm($"Delete profile [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
+    if (!SpectreHelpers.Confirm($"Delete profile [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
     {
-      AnsiConsole.MarkupLine("[dim]Cancelled.[/]");
+      SpectreHelpers.Cancelled();
       return;
     }
 
@@ -535,8 +496,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     if (effective.AllowedCommands.Count > 0)
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]Allowed commands[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("Allowed commands");
       foreach (var command in effective.AllowedCommands)
       {
         AnsiConsole.MarkupLine($"    [green]v[/] {Markup.Escape(command)}");
@@ -545,8 +505,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     if (effective.Modules.Count > 0)
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.Write(new Rule("[bold]Modules[/]").LeftJustified().RuleStyle("dim"));
+      SpectreHelpers.Section("Modules");
       foreach (var module in effective.Modules)
       {
         AnsiConsole.MarkupLine($"    {Markup.Escape(module)}");
@@ -587,14 +546,11 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       if (assignable.Count == 0)
       {
         AnsiConsole.MarkupLine("No profiles available to assign.");
-        AnsiConsole.MarkupLine("[dim]Create one with[/] /jea create <name>");
+        SpectreHelpers.Dim("Create one with /jea create <name>");
         return;
       }
 
-      name = AnsiConsole.Prompt(
-          new SelectionPrompt<string>()
-              .Title("Select profile to assign:")
-              .AddChoices(assignable));
+      name = SpectreHelpers.Select("Select profile to assign:", assignable);
     }
 
     var profile = await _store.LoadAsync(name, ct);
@@ -658,10 +614,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     }
     else
     {
-      name = AnsiConsole.Prompt(
-          new SelectionPrompt<string>()
-              .Title("Select profile to unassign:")
-              .AddChoices(assigned));
+      name = SpectreHelpers.Select("Select profile to unassign:", assigned);
     }
 
     if (!assigned.Remove(name))
@@ -684,14 +637,11 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     if (names.Count == 0)
     {
       AnsiConsole.MarkupLine("No JEA profiles found.");
-      AnsiConsole.MarkupLine("[dim]Create one with[/] /jea create <name>");
+      SpectreHelpers.Dim("Create one with /jea create <name>");
       return null;
     }
 
-    return AnsiConsole.Prompt(
-        new SelectionPrompt<string>()
-            .Title("Select profile:")
-            .AddChoices(names));
+    return SpectreHelpers.Select("Select profile:", names);
   }
 
   private static bool ValidateProfileName(string name)

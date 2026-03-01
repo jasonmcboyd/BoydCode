@@ -39,14 +39,146 @@ public sealed class SpectreUserInterface : IUserInterface
   {
     AnsiConsole.MarkupLine($"[yellow]Tool [bold]{Markup.Escape(tool.Name)}[/] wants to execute:[/]");
 
-    // Show a truncated preview of arguments
-    var preview = argumentsJson.Length > 200 ? argumentsJson[..200] + "..." : argumentsJson;
+    var preview = FormatToolPreview(tool.Name, argumentsJson);
+
     AnsiConsole.Write(new Panel(Markup.Escape(preview))
         .Header($"[yellow]{Markup.Escape(tool.Name)}[/]")
         .BorderColor(Color.Yellow));
 
     var result = AnsiConsole.Confirm("[yellow]Allow?[/]", defaultValue: true);
     return Task.FromResult(result);
+  }
+
+  private static string FormatToolPreview(string toolName, string argumentsJson)
+  {
+    try
+    {
+      using var doc = System.Text.Json.JsonDocument.Parse(argumentsJson);
+      var root = doc.RootElement;
+
+      return toolName switch
+      {
+        "PowerShell" => FormatPowerShell(root),
+        "Read" => FormatRead(root),
+        "Write" => FormatWrite(root),
+        "Edit" => FormatEdit(root),
+        "Glob" => FormatGlob(root),
+        "Grep" => FormatGrep(root),
+        "WebFetch" => GetStringProperty(root, "url") ?? argumentsJson,
+        "WebSearch" => GetStringProperty(root, "query") ?? argumentsJson,
+        _ => FormatGeneric(root),
+      };
+    }
+    catch
+    {
+      return argumentsJson.Length > 200 ? argumentsJson[..200] + "..." : argumentsJson;
+    }
+  }
+
+  private static string FormatPowerShell(System.Text.Json.JsonElement root)
+  {
+    var command = GetStringProperty(root, "command");
+    if (command is null) return FormatGeneric(root);
+
+    var segments = command.Split("; ");
+    return string.Join(Environment.NewLine, segments);
+  }
+
+  private static string FormatRead(System.Text.Json.JsonElement root)
+  {
+    var path = GetStringProperty(root, "file_path") ?? GetStringProperty(root, "path");
+    if (path is null) return FormatGeneric(root);
+
+    var suffix = "";
+    var hasOffset = root.TryGetProperty("offset", out var offsetEl);
+    var hasLimit = root.TryGetProperty("limit", out var limitEl);
+
+    if (hasOffset || hasLimit)
+    {
+      var offset = hasOffset ? offsetEl.ToString() : "0";
+      if (hasLimit)
+      {
+        suffix = $" (lines {offset}-{limitEl})";
+      }
+      else
+      {
+        suffix = $" (lines {offset}-)";
+      }
+    }
+
+    return $"{path}{suffix}";
+  }
+
+  private static string FormatWrite(System.Text.Json.JsonElement root)
+  {
+    var path = GetStringProperty(root, "file_path") ?? GetStringProperty(root, "path");
+    if (path is null) return FormatGeneric(root);
+
+    var content = GetStringProperty(root, "content");
+    var charCount = content?.Length ?? 0;
+    return $"{path} ({charCount} chars)";
+  }
+
+  private static string FormatEdit(System.Text.Json.JsonElement root)
+  {
+    var path = GetStringProperty(root, "file_path") ?? GetStringProperty(root, "path");
+    if (path is null) return FormatGeneric(root);
+
+    var oldStr = GetStringProperty(root, "old_string") ?? "";
+    var newStr = GetStringProperty(root, "new_string") ?? "";
+
+    if (oldStr.Length > 60) oldStr = oldStr[..57] + "...";
+    if (newStr.Length > 60) newStr = newStr[..57] + "...";
+
+    return $"{path}{Environment.NewLine}{Environment.NewLine}- {oldStr}{Environment.NewLine}+ {newStr}";
+  }
+
+  private static string FormatGlob(System.Text.Json.JsonElement root)
+  {
+    var pattern = GetStringProperty(root, "pattern");
+    if (pattern is null) return FormatGeneric(root);
+
+    var path = GetStringProperty(root, "path");
+    return path is not null
+        ? $"{pattern}{Environment.NewLine}Path: {path}"
+        : pattern;
+  }
+
+  private static string FormatGrep(System.Text.Json.JsonElement root)
+  {
+    var pattern = GetStringProperty(root, "pattern");
+    if (pattern is null) return FormatGeneric(root);
+
+    var lines = new List<string> { $"Pattern: {pattern}" };
+
+    var path = GetStringProperty(root, "path");
+    if (path is not null) lines.Add($"Path: {path}");
+
+    var glob = GetStringProperty(root, "glob");
+    if (glob is not null) lines.Add($"Glob: {glob}");
+
+    return string.Join(Environment.NewLine, lines);
+  }
+
+  private static string FormatGeneric(System.Text.Json.JsonElement root)
+  {
+    var lines = new List<string>();
+    foreach (var property in root.EnumerateObject())
+    {
+      var value = property.Value.ValueKind == System.Text.Json.JsonValueKind.String
+          ? property.Value.GetString() ?? ""
+          : property.Value.ToString();
+
+      if (value.Length > 100) value = value[..97] + "...";
+      lines.Add($"{property.Name}: {value}");
+    }
+
+    return string.Join(Environment.NewLine, lines);
+  }
+
+  private static string? GetStringProperty(System.Text.Json.JsonElement root, string name)
+  {
+    return root.TryGetProperty(name, out var prop) ? prop.GetString() : null;
   }
 
   public void RenderAssistantText(string text)
@@ -131,6 +263,12 @@ public sealed class SpectreUserInterface : IUserInterface
     AnsiConsole.MarkupLine($"  [dim italic]{Markup.Escape(hint)}[/]");
     AnsiConsole.WriteLine();
   }
+
+  public void RenderSuccess(string message) => SpectreHelpers.Success(message);
+
+  public void RenderWarning(string message) => SpectreHelpers.Warning(message);
+
+  public void RenderSection(string title) => SpectreHelpers.Section(title);
 
   public void RenderTokenUsage(int inputTokens, int outputTokens)
   {

@@ -81,6 +81,7 @@ try
   hostBuilder.Services.AddTransient<ISlashCommand, HelpSlashCommand>();
   hostBuilder.Services.AddTransient<ISlashCommand, ProviderSlashCommand>();
   hostBuilder.Services.AddTransient<ISlashCommand, JeaSlashCommand>();
+  hostBuilder.Services.AddTransient<ISlashCommand, ContextSlashCommand>();
 
   host = hostBuilder.Build();
 

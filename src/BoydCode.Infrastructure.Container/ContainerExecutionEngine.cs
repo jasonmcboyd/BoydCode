@@ -73,8 +73,9 @@ public sealed partial class ContainerExecutionEngine : IExecutionEngine
         dialect,
         _loggerFactory.CreateLogger<PersistentShellSession>());
 
-    // 7. Set initial working directory
-    await _shellSession.ExecuteAsync($"cd {VolumeMountBuilder.MountRoot}", timeoutMs: 5000, ct);
+    // 7. Set initial working directory (use first actual mount, not bare root)
+    var initialDir = _hostToContainerPaths.Values.FirstOrDefault() ?? "/";
+    await _shellSession.ExecuteAsync($"cd {initialDir}", timeoutMs: 5000, ct);
   }
 
   public async Task<ShellExecutionResult> ExecuteAsync(
@@ -90,9 +91,10 @@ public sealed partial class ContainerExecutionEngine : IExecutionEngine
 
     var sw = Stopwatch.StartNew();
 
-    // Translate host working directory to container path
+    // Translate host working directory to container path (cascade: exact match → first mount → root)
     var containerPath = VolumeMountBuilder.ResolveContainerPath(workingDirectory, _hostToContainerPaths)
-        ?? VolumeMountBuilder.MountRoot;
+        ?? _hostToContainerPaths.Values.FirstOrDefault()
+        ?? "/";
 
     var composedCommand = $"cd {containerPath} && {command}";
     var result = await _shellSession.ExecuteAsync(composedCommand, timeoutMs, ct);

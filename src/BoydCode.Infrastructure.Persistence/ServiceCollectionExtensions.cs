@@ -12,7 +12,7 @@ public static class ServiceCollectionExtensions
   {
     services.AddSingleton<ISessionRepository, JsonSessionRepository>();
     services.AddSingleton<ISettingsProvider, FileSettingsProvider>();
-    services.AddSingleton<IContextCompactor, NoOpContextCompactor>();
+    services.AddSingleton<IContextCompactor, EvictionContextCompactor>();
     services.AddSingleton<IHookEngine, NoOpHookEngine>();
     services.AddSingleton<IProjectRepository, JsonProjectRepository>();
     services.AddHttpClient("OAuth");

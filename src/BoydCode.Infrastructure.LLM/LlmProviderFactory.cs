@@ -19,6 +19,11 @@ public sealed class LlmProviderFactory : ILlmProviderFactory
   {
     ArgumentNullException.ThrowIfNull(config);
 
+    if (config.ProviderType == LlmProviderType.Anthropic)
+    {
+      return CreateAnthropicProvider(config);
+    }
+
     if (config.ProviderType == LlmProviderType.Gemini)
     {
       return CreateGeminiProvider(config);
@@ -26,7 +31,6 @@ public sealed class LlmProviderFactory : ILlmProviderFactory
 
     IChatClient chatClient = config.ProviderType switch
     {
-      LlmProviderType.Anthropic => CreateAnthropicClient(config),
       LlmProviderType.OpenAi => CreateOpenAiClient(config),
       LlmProviderType.Ollama => CreateOllamaClient(config),
       _ => throw new ArgumentOutOfRangeException(
@@ -39,7 +43,7 @@ public sealed class LlmProviderFactory : ILlmProviderFactory
     return new MeaiLlmProviderAdapter(chatClient, config.Model, config.MaxTokens, capabilities);
   }
 
-  private static IChatClient CreateAnthropicClient(LlmProviderConfig config)
+  private static AnthropicLlmProviderAdapter CreateAnthropicProvider(LlmProviderConfig config)
   {
     var clientOptions = new Anthropic.Core.ClientOptions();
 
@@ -58,10 +62,9 @@ public sealed class LlmProviderFactory : ILlmProviderFactory
     }
 
     var client = new AnthropicClient(clientOptions);
+    var capabilities = ProviderDefaults.For(LlmProviderType.Anthropic);
 
-    // AsIChatClient wraps the Anthropic client as an MEAI IChatClient.
-    // The model is passed via ChatOptions.ModelId at call time.
-    return client.AsIChatClient();
+    return new AnthropicLlmProviderAdapter(client, config.Model, config.MaxTokens, capabilities);
   }
 
   private static IChatClient CreateOpenAiClient(LlmProviderConfig config)

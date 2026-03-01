@@ -7,7 +7,7 @@ internal sealed partial class DockerCli
 {
   private readonly ILogger<DockerCli> _logger;
 
-  internal DockerCli(ILogger<DockerCli> logger)
+  public DockerCli(ILogger<DockerCli> logger)
   {
     _logger = logger;
   }

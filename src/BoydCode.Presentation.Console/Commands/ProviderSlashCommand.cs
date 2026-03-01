@@ -64,7 +64,7 @@ public sealed class ProviderSlashCommand : ISlashCommand
         await HandleListAsync(ct);
         break;
       default:
-        AnsiConsole.MarkupLine("[yellow]Usage: /provider list|setup|show|remove[/]");
+        SpectreHelpers.Usage("/provider list|setup|show|remove");
         break;
     }
 
@@ -116,7 +116,7 @@ public sealed class ProviderSlashCommand : ISlashCommand
   {
     if (!_ui.IsInteractive && tokens.Length <= 2)
     {
-      AnsiConsole.MarkupLine("[red]Usage:[/] /provider setup <name>");
+      SpectreHelpers.Usage("/provider setup <name>");
       return;
     }
 
@@ -133,17 +133,14 @@ public sealed class ProviderSlashCommand : ISlashCommand
           .Select(p => p.ToString())
           .ToList();
 
-      var selected = AnsiConsole.Prompt(
-          new SelectionPrompt<string>()
-              .Title("Select a provider:")
-              .AddChoices(providerNames));
+      var selected = SpectreHelpers.Select("Select a provider:", providerNames);
 
       providerType = Enum.Parse<LlmProviderType>(selected);
     }
 
     if (!_ui.IsInteractive)
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] /provider setup requires an interactive terminal. Use --api-key instead.");
+      SpectreHelpers.Error("/provider setup requires an interactive terminal. Use --api-key instead.");
       return;
     }
 
@@ -214,7 +211,7 @@ public sealed class ProviderSlashCommand : ISlashCommand
   {
     if (!_ui.IsInteractive && tokens.Length <= 2)
     {
-      AnsiConsole.MarkupLine("[red]Usage:[/] /provider remove <name>");
+      SpectreHelpers.Usage("/provider remove <name>");
       return;
     }
 
@@ -231,10 +228,7 @@ public sealed class ProviderSlashCommand : ISlashCommand
           .Select(p => p.ToString())
           .ToList();
 
-      var selected = AnsiConsole.Prompt(
-          new SelectionPrompt<string>()
-              .Title("Select a provider to remove:")
-              .AddChoices(providerNames));
+      var selected = SpectreHelpers.Select("Select a provider to remove:", providerNames);
 
       providerType = Enum.Parse<LlmProviderType>(selected);
     }

@@ -16,6 +16,7 @@ public static class ServiceCollectionExtensions
     services.AddTransient<DirectoryResolver>();
     services.AddSingleton<ActiveProvider>();
     services.AddSingleton<ActiveProject>();
+    services.AddSingleton<ActiveSession>();
     services.AddSingleton<ActiveExecutionEngine>();
     services.AddTransient<ProjectResolver>();
     services.AddSingleton<IExecutionEngineFactory, ExecutionEngineFactory>();

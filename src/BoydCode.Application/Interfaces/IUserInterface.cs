@@ -17,6 +17,9 @@ public interface IUserInterface
   void RenderToolResult(string toolName, string result, bool isError);
   void RenderError(string message);
   void RenderHint(string hint);
+  void RenderSuccess(string message);
+  void RenderWarning(string message);
+  void RenderSection(string title);
   void RenderTokenUsage(int inputTokens, int outputTokens);
   void RenderWelcome(string model, string workingDirectory);
   void RenderMarkdown(string markdown);

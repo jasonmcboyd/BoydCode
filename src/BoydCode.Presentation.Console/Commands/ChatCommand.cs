@@ -18,6 +18,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
   private readonly IProviderConfigStore _providerConfigStore;
   private readonly ActiveProvider _activeProvider;
   private readonly ActiveProject _activeProject;
+  private readonly ActiveSession _activeSession;
   private readonly AgentOrchestrator _orchestrator;
   private readonly ProjectResolver _projectResolver;
   private readonly DirectoryResolver _directoryResolver;
@@ -55,6 +56,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       IProviderConfigStore providerConfigStore,
       ActiveProvider activeProvider,
       ActiveProject activeProject,
+      ActiveSession activeSession,
       AgentOrchestrator orchestrator,
       ProjectResolver projectResolver,
       DirectoryResolver directoryResolver,
@@ -68,6 +70,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     _providerConfigStore = providerConfigStore;
     _activeProvider = activeProvider;
     _activeProject = activeProject;
+    _activeSession = activeSession;
     _orchestrator = orchestrator;
     _projectResolver = projectResolver;
     _directoryResolver = directoryResolver;
@@ -171,17 +174,8 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     // Create session
     var session = new Session(workingDirectory);
     session.ProjectName = project.Name;
-
-    var customPrompt = project.SystemPrompt ?? Project.DefaultSystemPrompt;
-    var userPrompt = $"You are working on project '{project.Name}'.\n\n{customPrompt}";
-
-    var dirContext = BuildDirectoryContext(resolvedDirs);
-    if (dirContext is not null)
-    {
-      userPrompt += $"\n\n{dirContext}";
-    }
-
-    session.SystemPrompt = userPrompt;
+    session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs);
+    _activeSession.Set(session);
 
     // Run the interactive loop
     try
@@ -334,6 +328,20 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     }
 
     AnsiConsole.WriteLine();
+  }
+
+  internal static string BuildSystemPrompt(Project project, IReadOnlyList<ResolvedDirectory> resolvedDirs)
+  {
+    var customPrompt = project.SystemPrompt ?? Project.DefaultSystemPrompt;
+    var userPrompt = $"You are working on project '{project.Name}'.\n\n{customPrompt}";
+
+    var dirContext = BuildDirectoryContext(resolvedDirs);
+    if (dirContext is not null)
+    {
+      userPrompt += $"\n\n{dirContext}";
+    }
+
+    return userPrompt;
   }
 
   private static string? BuildDirectoryContext(IReadOnlyList<ResolvedDirectory> directories)

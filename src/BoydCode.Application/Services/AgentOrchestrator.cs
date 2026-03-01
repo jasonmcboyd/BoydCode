@@ -256,9 +256,27 @@ public sealed partial class AgentOrchestrator
     if (estimated > threshold)
     {
       LogContextCompactionTriggered(_logger, estimated, threshold);
+      var previousCount = session.Conversation.Messages.Count;
       var targetTokens = contextLimit / 2;
       var compacted = await _contextCompactor.CompactAsync(session.Conversation, targetTokens, ct);
       session.Conversation.ReplaceMessages(compacted.Messages);
+
+      // The compactor may prepend a notice message, so count only non-notice messages
+      var newCount = session.Conversation.Messages.Count;
+      var hasNotice = newCount > 0
+          && newCount != previousCount
+          && session.Conversation.Messages[0].Content
+              .OfType<TextBlock>()
+              .Any(t => t.Text.Contains("compacted to manage context window size"));
+      var keptCount = hasNotice ? newCount - 1 : newCount;
+      var droppedCount = previousCount - keptCount;
+      if (droppedCount > 0)
+      {
+        var newEstimate = session.Conversation.EstimateTokenCount() + systemPromptTokens;
+        _ui.RenderWarning(
+          $"Context compacted: {droppedCount} message(s) removed to fit context window. " +
+          $"Estimated tokens: {newEstimate:N0} (target: {targetTokens:N0}).");
+      }
     }
   }
 
@@ -305,8 +323,29 @@ public sealed partial class AgentOrchestrator
 
   private static string SummarizeArguments(string argumentsJson)
   {
-    if (argumentsJson.Length <= 100) return argumentsJson;
-    return string.Concat(argumentsJson.AsSpan(0, 97), "...");
+    try
+    {
+      using var doc = JsonDocument.Parse(argumentsJson);
+      var pairs = new List<string>();
+
+      foreach (var property in doc.RootElement.EnumerateObject())
+      {
+        var value = property.Value.ValueKind == JsonValueKind.String
+            ? property.Value.GetString() ?? ""
+            : property.Value.ToString();
+
+        pairs.Add($"{property.Name}: {value}");
+      }
+
+      var result = string.Join(", ", pairs);
+      if (result.Length <= 100) return result;
+      return string.Concat(result.AsSpan(0, 97), "...");
+    }
+    catch
+    {
+      if (argumentsJson.Length <= 100) return argumentsJson;
+      return string.Concat(argumentsJson.AsSpan(0, 97), "...");
+    }
   }
 
   /// <summary>

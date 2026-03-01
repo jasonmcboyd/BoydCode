@@ -32,7 +32,7 @@ public sealed class LoginCommand : AsyncCommand
   {
     if (!AnsiConsole.Profile.Capabilities.Interactive)
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] Login requires an interactive terminal. Use --api-key or set the appropriate environment variable instead.");
+      SpectreHelpers.Error("Login requires an interactive terminal. Use --api-key or set the appropriate environment variable instead.");
       return (int)ExitCode.ConfigurationError;
     }
 
@@ -134,10 +134,7 @@ public sealed class LoginCommand : AsyncCommand
     AnsiConsole.MarkupLine("[yellow]This provider requires your own OAuth client credentials.[/]");
     AnsiConsole.MarkupLine("[dim]You can create them at: https://console.cloud.google.com/apis/credentials[/]");
 
-    var clientId = AnsiConsole.Prompt(
-        new TextPrompt<string>("Enter [green]Client ID[/]:")
-            .ValidationErrorMessage("[red]Client ID cannot be empty[/]")
-            .Validate(id => !string.IsNullOrWhiteSpace(id)));
+    var clientId = SpectreHelpers.PromptNonEmpty("Enter [green]Client ID[/]:");
 
     string? clientSecret = null;
     if (oauthConfig.RequiresClientSecret)
@@ -154,10 +151,7 @@ public sealed class LoginCommand : AsyncCommand
     if (oauthConfig.RequiresClientSecret)
     {
       AnsiConsole.MarkupLine("[dim]Vertex AI requires a GCP project ID and location.[/]");
-      gcpProject = AnsiConsole.Prompt(
-          new TextPrompt<string>("Enter [green]GCP Project ID[/]:")
-              .ValidationErrorMessage("[red]GCP Project ID cannot be empty[/]")
-              .Validate(p => !string.IsNullOrWhiteSpace(p)));
+      gcpProject = SpectreHelpers.PromptNonEmpty("Enter [green]GCP Project ID[/]:");
 
       gcpLocation = AnsiConsole.Prompt(
           new TextPrompt<string>("Enter [green]GCP Location[/] [dim](default: us-central1)[/]:")

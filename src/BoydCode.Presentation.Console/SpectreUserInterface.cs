@@ -16,10 +16,10 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   private bool _streamingStarted;
   private bool _isExecuting;
-  private bool _layoutActive;
+  private bool _sessionActive; // true for entire chat session
 
-  // Track previous indicator state for restoring after cancel hint
-  private IndicatorState _preHintIndicatorState = IndicatorState.Idle;
+  // Track previous activity state for restoring after cancel hint
+  private ActivityState _preHintActivityState = ActivityState.Idle;
 
   public SpectreUserInterface()
   {
@@ -40,10 +40,10 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
       return line ?? "/quit";
     }
 
-    if (_layoutActive && _inputReader is not null)
+    if (_sessionActive && _inputReader is not null)
     {
+      _inputReader.ShowPrompt();
       // Async input: read from Channel (user can type while agent works)
-      _layout.UpdateQueueCount(_inputReader.PendingCount);
       return await _inputReader.ReadLineAsync(ct);
     }
 
@@ -113,101 +113,55 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     return root.TryGetProperty(name, out var prop) ? prop.GetString() : null;
   }
 
+  public void RenderUserMessage(string message)
+  {
+    _layout.AddContent(ConversationRenderables.UserMessage(message));
+  }
+
   public void RenderAssistantText(string text)
   {
-    if (_layoutActive)
-    {
-      _layout.AddContent(ConversationRenderables.AssistantText(text));
-      _layout.AddContent(ConversationRenderables.TurnSeparator());
-    }
-    else
-    {
-      AnsiConsole.Write(ConversationRenderables.AssistantText(text));
-      AnsiConsole.WriteLine();
-      AnsiConsole.WriteLine();
-    }
+    _layout.AddContent(ConversationRenderables.AssistantText(text));
+    _layout.AddContent(ConversationRenderables.TurnSeparator());
   }
 
   public void RenderStreamingToken(string token)
   {
-    if (_layoutActive)
+    if (!_streamingStarted)
     {
-      if (!_streamingStarted)
-      {
-        _layout.BeginStream();
-        _layout.AppendStreamText("  " + token);
-        _layout.SetIndicator(IndicatorState.Streaming);
-        _streamingStarted = true;
-      }
-      else
-      {
-        _layout.AppendStreamText(token);
-      }
+      _layout.BeginStream();
+      _layout.AppendStreamText("  " + token);
+      _layout.SetActivity(ActivityState.Streaming);
+      _streamingStarted = true;
     }
     else
     {
-      if (!_streamingStarted)
-      {
-        System.Console.Write("  ");
-        _streamingStarted = true;
-      }
-      System.Console.Write(token);
+      _layout.AppendStreamText(token);
     }
   }
 
   public void RenderStreamingComplete()
   {
     _streamingStarted = false;
-    if (_layoutActive)
-    {
-      _layout.EndStream();
-      _layout.SetIndicator(IndicatorState.Idle);
-      _layout.AddContentLine("");
-    }
-    else
-    {
-      System.Console.WriteLine();
-      System.Console.WriteLine();
-    }
+    _layout.EndStream();
+    _layout.SetActivity(ActivityState.Idle);
+    _layout.AddContentLine("");
   }
 
   public void RenderThinkingStart()
   {
-    if (_layoutActive)
-    {
-      _layout.SetIndicator(IndicatorState.Thinking);
-    }
-    else
-    {
-      AnsiConsole.Markup("[dim italic]  Thinking...[/]");
-    }
+    _layout.SetActivity(ActivityState.Thinking);
   }
 
   public void RenderThinkingStop()
   {
-    if (_layoutActive)
-    {
-      _layout.SetIndicator(IndicatorState.Idle);
-    }
-    else
-    {
-      System.Console.Write("\r                    \r");
-    }
+    _layout.SetActivity(ActivityState.Idle);
   }
 
   public void RenderToolExecution(string toolName, string argumentsJson)
   {
     var preview = FormatToolPreview(toolName, argumentsJson);
     var badge = ConversationRenderables.ToolCallBadge(toolName, preview);
-
-    if (_layoutActive)
-    {
-      _layout.AddContent(badge);
-    }
-    else
-    {
-      AnsiConsole.Write(badge);
-    }
+    _layout.AddContent(badge);
   }
 
   public void RenderExecutingStart()
@@ -235,29 +189,22 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void ExpandLastToolOutput()
   {
-    if (_layoutActive)
+    var output = _executionWindow.GetLastOutput();
+    if (output is null)
     {
-      var output = _executionWindow.GetLastOutput();
-      if (output is null)
-      {
-        _layout.AddContentMarkup("[dim]No tool output to expand.[/]");
-        return;
-      }
-
-      if (_executionWindow.IsLastOutputExpanded)
-      {
-        _layout.AddContentMarkup("[dim]Output already expanded.[/]");
-        return;
-      }
-
-      _executionWindow.MarkLastOutputExpanded();
-      var content = string.Join(Environment.NewLine, output);
-      ShowModal($"Shell Output ({output.Count} lines)", content);
+      _layout.AddContentMarkup("[dim]No tool output to expand.[/]");
+      return;
     }
-    else
+
+    if (_executionWindow.IsLastOutputExpanded)
     {
-      _executionWindow.ExpandLastToolOutput();
+      _layout.AddContentMarkup("[dim]Output already expanded.[/]");
+      return;
     }
+
+    _executionWindow.MarkLastOutputExpanded();
+    var content = string.Join(Environment.NewLine, output);
+    ShowModal($"Shell Output ({output.Count} lines)", content);
   }
 
   public void RenderError(string message)
@@ -280,68 +227,30 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderHint(string hint)
   {
-    if (_layoutActive)
-    {
-      _layout.AddContentMarkup($"  [dim italic]{Markup.Escape(hint)}[/]");
-      _layout.AddContentLine("");
-    }
-    else
-    {
-      AnsiConsole.MarkupLine($"  [dim italic]{Markup.Escape(hint)}[/]");
-      AnsiConsole.WriteLine();
-    }
+    _layout.AddContentMarkup($"  [dim italic]{Markup.Escape(hint)}[/]");
+    _layout.AddContentLine("");
   }
 
   public void RenderSuccess(string message)
   {
-    if (_layoutActive)
-    {
-      _layout.AddContentMarkup($"  [green]\u2713[/] {Markup.Escape(message)}");
-    }
-    else
-    {
-      SpectreHelpers.Success(message);
-    }
+    _layout.AddContentMarkup($"  [green]\u2713[/] {Markup.Escape(message)}");
   }
 
   public void RenderWarning(string message)
   {
-    if (_layoutActive)
-    {
-      _layout.AddContentMarkup($"[yellow]Warning:[/] {Markup.Escape(message)}");
-    }
-    else
-    {
-      SpectreHelpers.Warning(message);
-    }
+    _layout.AddContentMarkup($"[yellow]Warning:[/] {Markup.Escape(message)}");
   }
 
   public void RenderSection(string title)
   {
-    if (_layoutActive)
-    {
-      _layout.AddContentLine("");
-      _layout.AddContent(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
-    }
-    else
-    {
-      SpectreHelpers.Section(title);
-    }
+    _layout.AddContentLine("");
+    _layout.AddContent(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
   }
 
   public void RenderTokenUsage(int inputTokens, int outputTokens)
   {
     var renderable = ConversationRenderables.TokenUsage(inputTokens, outputTokens);
-
-    if (_layoutActive)
-    {
-      _layout.AddContent(renderable);
-    }
-    else
-    {
-      AnsiConsole.Write(renderable);
-      AnsiConsole.WriteLine();
-    }
+    _layout.AddContent(renderable);
   }
 
   public void RenderWelcome(string model, string workingDirectory)
@@ -357,46 +266,25 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   public void RenderMarkdown(string markdown)
   {
     var panel = new Panel(Markup.Escape(markdown)).Border(BoxBorder.Rounded);
-    if (_layoutActive)
-    {
-      _layout.AddContent(panel);
-    }
-    else
-    {
-      AnsiConsole.Write(panel);
-    }
+    _layout.AddContent(panel);
   }
 
   public void RenderCancelHint()
   {
-    // Track what the indicator was before the hint so we can restore it
-    _preHintIndicatorState = _isExecuting
-      ? IndicatorState.Executing
+    // Track what the activity was before the hint so we can restore it
+    _preHintActivityState = _isExecuting
+      ? ActivityState.Executing
       : _streamingStarted
-        ? IndicatorState.Streaming
-        : IndicatorState.Idle;
+        ? ActivityState.Streaming
+        : ActivityState.Idle;
 
-    if (_layoutActive)
-    {
-      _layout.SetIndicator(IndicatorState.CancelHint);
-    }
-    else
-    {
-      AnsiConsole.Markup("[dim italic yellow]  Press Esc or Ctrl+C again to cancel[/]");
-    }
+    _layout.SetActivity(ActivityState.CancelHint);
   }
 
   public void ClearCancelHint()
   {
-    if (_layoutActive)
-    {
-      // Restore the previous indicator state
-      _layout.SetIndicator(_preHintIndicatorState);
-    }
-    else
-    {
-      System.Console.Write("\r                                                  \r");
-    }
+    // Restore the previous activity state
+    _layout.SetActivity(_preHintActivityState);
   }
 
   public void ShowModal(string title, string content)
@@ -407,54 +295,50 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
       .BorderColor(Color.Blue)
       .Expand();
 
-    if (_layoutActive)
-    {
-      _layout.ShowModal(panel);
-    }
-    else
-    {
-      AnsiConsole.Write(panel);
-    }
+    _layout.ShowModal(panel);
   }
 
   public void DismissModal()
   {
-    if (_layoutActive)
+    _layout.DismissModal();
+  }
+
+  public bool IsModalActive => _layout.IsModalActive;
+
+  public void BeginTurn()
+  {
+    _layout.BeginTurn();
+    if (StatusLine is not null)
     {
-      _layout.DismissModal();
+      _layout.UpdateStatus(StatusLine);
     }
   }
 
-  public bool IsModalActive => _layoutActive && _layout.IsModalActive;
+  public void EndTurn()
+  {
+    _layout.EndTurn();
+  }
 
   public void ActivateLayout()
   {
     if (!IsInteractive) return;
+    _sessionActive = true;
 
     _layout.Activate();
-    _layoutActive = _layout.IsActive;
 
-    if (_layoutActive)
+    _inputReader = new AsyncInputReader(_layout)
     {
-      if (StatusLine is not null)
-      {
-        _layout.UpdateStatus(StatusLine);
-      }
-
-      _inputReader = new AsyncInputReader(_layout)
-      {
-        OnCancelHintRequested = RenderCancelHint,
-        OnCancelHintCleared = ClearCancelHint,
-        IsModalActive = () => _layout.IsModalActive,
-        OnModalDismissRequested = () => _layout.DismissModal(),
-      };
-      _inputReader.Start();
-    }
+      OnCancelHintRequested = RenderCancelHint,
+      OnCancelHintCleared = ClearCancelHint,
+      IsModalActive = () => _layout.IsModalActive,
+      OnModalDismissRequested = () => _layout.DismissModal(),
+    };
+    _inputReader.Start();
   }
 
   public void DeactivateLayout()
   {
-    _layoutActive = false;
+    _sessionActive = false;
     _inputReader?.Dispose();
     _inputReader = null;
     _layout.Deactivate();
@@ -481,7 +365,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public IDisposable BeginCancellationMonitor(Action onCancelRequested)
   {
-    if (_layoutActive && _inputReader is not null)
+    if (_sessionActive && _inputReader is not null)
     {
       // Delegate to AsyncInputReader's integrated cancellation
       return _inputReader.BeginCancellationMonitor(onCancelRequested);

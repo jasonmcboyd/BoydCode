@@ -83,14 +83,3 @@ None. This screen is purely static output.
 | Simple Table | Section 4 | JEA profile list table |
 | Empty State | Section 13 | "No JEA profiles found" + hint |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| List flow | `Commands/JeaSlashCommand.cs` | `HandleListAsync` | 128-166 |
-| Global seeding | `Commands/JeaSlashCommand.cs` | `EnsureGlobalProfileAsync` | 107-122 |
-| Empty check | `Commands/JeaSlashCommand.cs` | `HandleListAsync` | 134-139 |
-| Table construction | `Commands/JeaSlashCommand.cs` | `HandleListAsync` | 141-143 |
-| Row population | `Commands/JeaSlashCommand.cs` | `HandleListAsync` | 145-163 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

@@ -108,8 +108,8 @@ responses start feeling "off."
    through EXEC-07, EXPAND-01)
 
 3. **Context check and cleanup:** After a long session, runs `/context show` to
-   see token usage. Sees the bar chart is 80% full. Runs `/context compact` to
-   free space, or starts a fresh session. (Screens: CTX-02, CTX-04, CHAT-06)
+   see token usage. Sees the bar chart is 80% full. Runs `/context summarize` to
+   free space, or starts a fresh session. (Screens: CTX-02, CTX-07, CHAT-06)
 
 4. **Project switch mid-day:** Finishes work on the backend, exits with `/quit`.
    Runs `boydcode --project frontend` to start a new session in a different

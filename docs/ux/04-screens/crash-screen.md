@@ -187,19 +187,3 @@ runtime terminates (from the unhandled exception handler).
 |---|---|---|
 | Crash Panel | Section 15 | Red-bordered error panel with structured content |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Top-level try/catch | `Program.cs` | Main scope | 62-129 |
-| UnhandledException handler | `Program.cs` | Lambda | 19-26 |
-| UnobservedTaskException handler | `Program.cs` | Lambda | 28-32 |
-| ProcessExit cleanup handler | `Program.cs` | Lambda | 36-60 |
-| RenderCrashMessage | `Program.cs` | `RenderCrashMessage` | 131-154 |
-| Spectre Panel render | `Program.cs` | `RenderCrashMessage` | 133-146 |
-| Plain-text fallback | `Program.cs` | `RenderCrashMessage` | 148-153 |
-| CrashLogger class | `CrashLogger.cs` | Full file | 1-34 |
-| LogFilePath | `CrashLogger.cs` | `LogFilePath` | 8 |
-| LogException | `CrashLogger.cs` | `LogException` | 10-33 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

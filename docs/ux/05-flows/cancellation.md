@@ -10,14 +10,14 @@ performs the actual cancellation. This prevents accidental cancellation
 while keeping the escape hatch easily accessible.
 
 There are two independent cancellation systems that share the same UX
-pattern: the `CancellationMonitor` (standalone, used in non-layout mode)
-and the `AsyncInputReader`'s integrated cancellation (used in layout mode).
+pattern: a standalone cancellation monitor (used in non-layout mode)
+and the input handler's integrated cancellation (used in layout mode).
 Both produce identical user-facing behavior.
 
 ## Preconditions
 
 - An operation is in progress that supports cancellation:
-  - Tool execution (a `BeginCancellationMonitor` scope is active)
+  - Tool execution (a cancellation monitoring scope is active)
   - Streaming LLM response (indirectly, via the same monitor)
 - The user is NOT at the input prompt (cancellation at the input prompt is
   handled differently -- Esc clears the line buffer, Ctrl+C is intercepted
@@ -28,14 +28,14 @@ Both produce identical user-facing behavior.
 ```
     [Operation in progress]
     (tool executing or LLM streaming)
-    [CancellationMonitor or AsyncInputReader scope active]
+    [Cancellation monitoring scope active]
          |
          v
     [User presses Esc or Ctrl+C]
     (first press)
          |
          v
-    [HandlePress / HandleCancelPress]
+    [Cancel handler invoked]
     Check time since last press
          |
     +----+----+
@@ -120,28 +120,22 @@ Both produce identical user-facing behavior.
     or progress text is cleared, and the hint appears below.
   - **During LLM streaming**: The hint appears below the streaming text.
 - **User action**: Reads the hint and decides whether to press again.
-- **System response**: The `HandlePress` / `HandleCancelPress` method
-  runs (depending on which system is active):
-  1. Acquires the press/cancel lock.
-  2. Checks `(now - _lastPressTime).TotalMilliseconds <= 1000`:
-     - This is the first press (elapsed > 1000ms or no previous press).
-  3. Records `_lastPressTime = DateTimeOffset.UtcNow`.
-  4. Sets `shouldShowHint = true`.
-  5. Disposes any existing reset timer.
-  6. Creates a new `Timer` that fires after 1000ms to reset the state.
-  7. Outside the lock, invokes `RenderCancelHint()` (via callback).
+- **System response**: The cancel handler runs:
+  1. Acquires a thread-safety lock.
+  2. Checks whether this is a first press (> 1000ms since last press or
+     no previous press).
+  3. Records the press timestamp.
+  4. Starts a 1-second timer to reset the state.
+  5. Shows the cancel hint to the user.
 
-  **Layout mode specifics** (`AsyncInputReader.HandleCancelPress`):
-  - The Esc key is intercepted in the `ProcessKey` method.
-  - Ctrl+C is intercepted via the `Console.CancelKeyPress` event handler.
-  - Callbacks are invoked outside the `_cancelLock` to prevent deadlock
-    with the `_consoleLock`.
+  **Layout mode specifics**:
+  - The Esc key is intercepted by the input handler.
+  - Ctrl+C is intercepted via the process cancel event.
 
-  **Non-layout mode specifics** (`CancellationMonitor.HandlePress`):
-  - Ctrl+C is intercepted via `Console.CancelKeyPress` with
-    `e.Cancel = true` to prevent process termination.
-  - Esc is detected by a background polling task (`PollEscapeKeyAsync`)
-    that checks `Console.KeyAvailable` every 50ms.
+  **Non-layout mode specifics**:
+  - Ctrl+C is intercepted via the process cancel event (preventing
+    process termination).
+  - Esc is detected by a background polling task.
 - **Transitions to**: Step 2a or Step 2b
 
 ### Step 2a: Second Press Within Window (Cancellation)
@@ -162,23 +156,18 @@ Both produce identical user-facing behavior.
     the conversation.
 - **User action**: None -- the cancellation takes effect automatically.
 - **System response**:
-  1. `HandlePress` / `HandleCancelPress` detects the second press within
-     the 1000ms window.
-  2. The reset timer is disposed.
-  3. `_lastPressTime` is reset to `DateTimeOffset.MinValue`.
-  4. `shouldCancel = true` is set.
-  5. Outside the lock, the `_onCancelRequested` callback is invoked,
-     which calls `executionCts.Cancel()`.
-  6. The `ExecuteAsync` call in `ProcessToolCallsAsync` throws
-     `OperationCanceledException`.
-  7. The catch block (guarded by `!ct.IsCancellationRequested` to
-     distinguish per-execution cancellation from session cancellation):
-     - Calls `_ui.RenderExecutingStop()`.
-     - Renders the "Command cancelled." result.
-     - Logs the cancellation.
-     - Adds a `ToolResultBlock` to the conversation.
-  8. The `CancellationScope` is disposed when the `using` block exits,
-     which calls `DetachCancellation()` to clear all callbacks and
+  1. The cancel handler detects the second press within the 1000ms window.
+  2. The reset timer is disposed and the press timestamp is reset.
+  3. The cancellation callback is invoked, cancelling the per-execution
+     cancellation token.
+  4. The command execution throws a cancellation exception.
+  5. The exception is caught (distinguished from session-level
+     cancellation):
+     - The execution display is stopped.
+     - The "Command cancelled." result is rendered.
+     - The cancellation is logged.
+     - A tool result is added to the conversation.
+  6. The cancellation scope is disposed, clearing all callbacks and
      timers.
 - **Transitions to**: Next tool call or next LLM round
 
@@ -197,16 +186,13 @@ Both produce identical user-facing behavior.
     `RestoreAfterCancelHint()`.
 - **User action**: None.
 - **System response**: The timer callback fires after 1000ms:
-  1. Acquires the press/cancel lock.
-  2. Resets `_lastPressTime = DateTimeOffset.MinValue`.
-  3. Invokes `_onCancelHintCleared` callback (via the captured reference,
-     outside the lock in the `AsyncInputReader` variant).
-  4. `SpectreUserInterface.ClearCancelHint()`:
-     - Sets `_cancelHintShowing = false`.
+  1. Acquires the thread-safety lock.
+  2. Resets the press timestamp.
+  3. Invokes the hint-cleared callback.
+  4. The user interface clears the cancel hint:
      - In non-layout mode: writes spaces to clear the hint line.
-     - If `_isExecuting` is true: calls
-       `_executionWindow.RestoreAfterCancelHint()`, which restarts the
-       spinner if the execution window was in `Waiting` state.
+     - If execution is in progress: restarts the spinner if it was in
+       the waiting state.
 - **Transitions to**: Operation continues normally
 
 ## Cancellation During Specific Operations
@@ -285,11 +271,11 @@ returns to the input prompt and can rephrase their message.
 
 **Important**: The cancellation monitor during LLM streaming is only
 active when tool execution is in progress (it is created per-tool-call
-via `BeginCancellationMonitor`). During pure LLM streaming without tool
+via the cancellation monitor). During pure LLM streaming without tool
 calls, there is no cancellation monitor -- Esc/Ctrl+C have their normal
 terminal behavior. For layout mode, Esc does nothing during streaming;
-Ctrl+C is intercepted by the `AsyncInputReader` but without a cancel
-scope active, it does not trigger cancellation.
+Ctrl+C is intercepted by the input handler but without a cancel scope
+active, it does not trigger cancellation.
 
 ### During Tool Execution Cancellation with Multiple Tool Calls
 
@@ -322,66 +308,58 @@ to the next `ToolUseBlock`.
 
 ## The Cancellation Monitor Lifecycle
 
-### Layout Mode (`AsyncInputReader` Integration)
+### Layout Mode (Input Handler Integration)
 
 ```
-[Engine.ExecuteAsync called]
+[Command execution starts]
   |
   v
-BeginCancellationMonitor(onCancelRequested)
-  |
-  v
-CancellationScope created
-  -> AttachCancellation(onCancel, onHint, onClear)
-  -> Sets _onCancelRequested, _onCancelHintRequested, _onCancelHintCleared
-  -> Resets _lastCancelPressTime
+[Cancellation monitoring scope created]
+  -> Attaches cancel, hint, and clear callbacks to the input handler
+  -> Resets press timestamp
   |
   v
 [Execution runs]
-[Esc/Ctrl+C handled by AsyncInputReader.HandleCancelPress]
+[Esc/Ctrl+C handled by the input handler's cancel logic]
   |
   v
 [Execution completes or is cancelled]
   |
   v
-CancellationScope.Dispose()
-  -> DetachCancellation()
-  -> Disposes _cancelResetTimer
-  -> Clears all callbacks
-  -> Resets _lastCancelPressTime
+[Cancellation scope disposed]
+  -> Detaches all callbacks
+  -> Disposes reset timer
+  -> Resets press timestamp
 ```
 
-The `AsyncInputReader` is always running (reading keys for the input
-buffer). When a `CancellationScope` is attached, Esc/Ctrl+C presses are
+The input handler is always running (reading keys for the input
+buffer). When a cancellation scope is attached, Esc/Ctrl+C presses are
 routed through the cancel logic. When no scope is attached,
-`_onCancelRequested` is null and presses are ignored by the cancel path.
+presses are ignored by the cancel path.
 
-### Non-Layout Mode (`CancellationMonitor` Standalone)
+### Non-Layout Mode (Standalone Monitor)
 
 ```
-[Engine.ExecuteAsync called]
+[Command execution starts]
   |
   v
-BeginCancellationMonitor(onCancelRequested)
-  |
-  v
-CancellationMonitor created
-  -> Subscribes to Console.CancelKeyPress
-  -> Starts PollEscapeKeyAsync background task (50ms polling)
+[Cancellation monitor created]
+  -> Subscribes to the process cancel event
+  -> Starts Esc key polling background task (50ms interval)
   |
   v
 [Execution runs]
-[Ctrl+C -> OnCancelKeyPress (e.Cancel = true)]
-[Esc -> Detected by PollEscapeKeyAsync]
+[Ctrl+C -> cancel event intercepted]
+[Esc -> detected by polling task]
   |
   v
 [Execution completes or is cancelled]
   |
   v
-CancellationMonitor.Dispose()
-  -> Unsubscribes from Console.CancelKeyPress
-  -> Cancels and waits for poll task (200ms timeout)
-  -> Disposes timer and CTS
+[Cancellation monitor disposed]
+  -> Unsubscribes from the process cancel event
+  -> Stops polling task (200ms timeout)
+  -> Disposes timer and cancellation token
 ```
 
 ## Decision Points
@@ -396,21 +374,21 @@ CancellationMonitor.Dispose()
 | D3 | Timer expiry | Timer fires before second press | Clear hint, reset state |
 |    |              | Second press before timer fires | Cancel, dispose timer |
 | D4 | Cancel scope active | Monitor/scope attached | Cancel callbacks invoked |
-|    |                     | No monitor attached | Press ignored (no _onCancelRequested) |
-| D5 | Cancellation target | Per-execution CTS cancelled, session CTS not | Graceful: tool result added |
-|    |                     | Session CTS cancelled | Session-level: propagates up, session ends |
-| D6 | Layout mode | Layout active + AsyncInputReader | Integrated cancel via key reader |
-|    |             | Non-layout | Standalone CancellationMonitor |
+|    |                     | No monitor attached | Press ignored |
+| D5 | Cancellation target | Per-execution token cancelled, session token not | Graceful: tool result added |
+|    |                     | Session token cancelled | Session-level: propagates up, session ends |
+| D6 | Layout mode | Layout active with input handler | Integrated cancel via input handler |
+|    |             | Non-layout | Standalone cancellation monitor |
 
 ## Error Paths
 
 ### E1: Race Condition -- Timer Fires During Second Press
 
 The timer callback and the second key press can race. Both paths acquire
-the lock (`_pressLock` or `_cancelLock`):
-- If the timer fires first: `_lastPressTime` is reset to
-  `DateTimeOffset.MinValue`. The next press starts a new first-press cycle.
-- If the second press wins: The timer is disposed before it fires. The
+a thread-safety lock:
+- If the timer fires first: the press timestamp is reset. The next press
+  starts a new first-press cycle.
+- If the second press wins: the timer is disposed before it fires. The
   cancellation proceeds.
 - The lock ensures mutual exclusion; no double-cancel or double-clear can
   occur.
@@ -426,34 +404,34 @@ Pressing three times rapidly:
 
 ### E3: Cancel During Monitor Disposal
 
-If the user presses Esc/Ctrl+C exactly while the `CancellationMonitor` is
+If the user presses Esc/Ctrl+C exactly while the cancellation monitor is
 being disposed:
-- The `_disposed` flag is checked at the start of `HandlePress`. If true,
+- A disposed flag is checked at the start of the press handler. If true,
   the press is ignored.
-- In the `AsyncInputReader` variant, `DetachCancellation` nulls the
-  callbacks under the lock. A concurrent press will find
-  `_onCancelRequested == null` and return.
+- In the input handler variant, detaching cancellation nulls the
+  callbacks under the lock. A concurrent press will find no cancel
+  callback registered and return.
 
 ### E4: Output Lines Arrive During Hint Display
 
 If tool output arrives while the cancel hint is showing:
-- `RenderOutputLine` checks `_cancelHintShowing`. If true, it clears the
-  hint text (in non-layout mode, overwrites with spaces) and resets the
-  flag.
-- The output line is then processed normally by the execution window.
+- The output rendering checks whether the cancel hint is showing. If so,
+  it clears the hint text (in non-layout mode, overwrites with spaces)
+  and resets the flag.
+- The output line is then processed normally by the execution display.
 - This means the hint may be briefly visible and then overwritten by output.
 
 ### E5: Ctrl+C at Input Prompt (No Monitor Active)
 
 When the user is at the input prompt with no operation running:
-- **Layout mode**: Ctrl+C is intercepted by `AsyncInputReader.OnCancelKeyPress`
-  with `e.Cancel = true`. Since `_onCancelRequested` is null (no scope),
-  the handler returns without action. The terminal does not exit.
-- **Non-layout mode**: There is no `CancellationMonitor` active. Ctrl+C
-  would reach the default handler. In practice, the `Console.CancelKeyPress`
-  event is only subscribed when a monitor is active, so it falls through
-  to .NET's default behavior (which may throw `OperationCanceledException`
-  caught by `ChatCommand`).
+- **Layout mode**: Ctrl+C is intercepted by the input handler. Since no
+  cancellation scope is attached, the handler returns without action.
+  The terminal does not exit.
+- **Non-layout mode**: There is no cancellation monitor active. Ctrl+C
+  would reach the default handler. In practice, the process cancel event
+  is only subscribed when a monitor is active, so it falls through to
+  default behavior (which may throw a cancellation exception caught by
+  the application).
 
 ## Screen Sequence
 

@@ -278,23 +278,3 @@ None. This is a purely static render. No prompts, no keyboard interaction.
 | Token Usage Display | Section 16 | Header line token count rendering |
 | Context Tree Pattern | Composite pattern 10.6 (06-style-tokens.md) | System prompt, messages, and tools breakdowns |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| HandleShow entry point | `Commands/ContextSlashCommand.cs` | `HandleShow` | 88-210 |
-| Token category computation | `Commands/ContextSlashCommand.cs` | `HandleShow` | 100-125 |
-| Header line rendering | `Commands/ContextSlashCommand.cs` | `HandleShow` | 127-148 |
-| Stacked bar rendering | `Commands/ContextSlashCommand.cs` | `RenderStackedBar` | 216-283 |
-| Legend rendering | `Commands/ContextSlashCommand.cs` | `RenderLegend` | 285-298 |
-| System prompt breakdown | `Commands/ContextSlashCommand.cs` | `HandleShow` | 165-173 |
-| Message breakdown | `Commands/ContextSlashCommand.cs` | `HandleShow` | 175-199 |
-| Tool inventory | `Commands/ContextSlashCommand.cs` | `HandleShow` | 201-209 |
-| Tree line renderer | `Commands/ContextSlashCommand.cs` | `RenderTreeLine` | 300-309 |
-| Message breakdown computation | `Commands/ContextSlashCommand.cs` | `ComputeMessageBreakdown` | 321-375 |
-| Token estimation | `Commands/ContextSlashCommand.cs` | `EstimateToolDefinitionTokens`, `EstimateStringTokens` | 381-391 |
-| Compact number formatting | `SpectreHelpers.cs` | `FormatCompact` | 347-355 |
-| Percent formatting | `SpectreHelpers.cs` | `FormatPercent` | 357-358 |
-| No session error | `Commands/ContextSlashCommand.cs` | `HandleShow` | 90-95 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

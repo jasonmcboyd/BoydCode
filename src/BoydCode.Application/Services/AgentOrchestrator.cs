@@ -124,6 +124,7 @@ public sealed partial class AgentOrchestrator
 
       await _conversationLogger.LogUserMessageAsync(input, ct);
       session.Conversation.AddUserMessage(input);
+      _ui.RenderUserMessage(input);
 
       try
       {
@@ -154,6 +155,7 @@ public sealed partial class AgentOrchestrator
       return;
     }
 
+    _ui.BeginTurn();
     _ui.SetAgentBusy(true);
 
     // Create a turn-level CTS so Esc/Ctrl+C cancels streaming and thinking, not just tool execution
@@ -164,7 +166,7 @@ public sealed partial class AgentOrchestrator
 
     const int maxToolRounds = 50;
 
-    // Build the base request from session state — tier-1/2 fields are stable across rounds
+    // Build the base request from session state -- tier-1/2 fields are stable across rounds
     var agentNames = _agentRegistry.GetAll().Select(a => a.Name).ToList();
     var metaPrompt = MetaPrompt.Build(
         _activeEngine.Mode,
@@ -193,7 +195,7 @@ public sealed partial class AgentOrchestrator
         // Check if context compaction is needed
         await CompactIfNeededAsync(session, turnToken);
 
-        // Build per-turn request — only Messages changes each round
+        // Build per-turn request -- only Messages changes each round
         var request = baseRequest with
         {
           Messages = session.Conversation.Messages,
@@ -237,7 +239,6 @@ public sealed partial class AgentOrchestrator
         {
           var (contextLimit, systemPromptTokens) = GetContextBudgetInfo(session);
           CheckContextPressure(session, systemPromptTokens, contextLimit);
-          _ui.SetAgentBusy(false);
           await AutoSaveSessionAsync(session, ct);
           return;
         }
@@ -245,7 +246,6 @@ public sealed partial class AgentOrchestrator
         await ProcessToolCallsAsync(session, response.ToolUseCalls, turnToken);
       }
 
-      _ui.SetAgentBusy(false);
       LogMaxToolRoundsReached(_logger, maxToolRounds);
       _ui.RenderError($"Reached maximum tool call rounds ({maxToolRounds}). Stopping to prevent runaway execution.");
       await AutoSaveSessionAsync(session, ct);
@@ -253,13 +253,17 @@ public sealed partial class AgentOrchestrator
     catch (OperationCanceledException) when (!ct.IsCancellationRequested)
     {
       // Turn was cancelled by the user (Esc/Ctrl+C), not by the outer session token.
-      // Clean up gracefully — the conversation may have a partial turn.
+      // Clean up gracefully -- the conversation may have a partial turn.
       _ui.RenderThinkingStop();
       _ui.RenderStreamingComplete();
       _ui.RenderExecutingStop();
-      _ui.SetAgentBusy(false);
       _ui.RenderHint("Cancelled.");
       await AutoSaveSessionAsync(session, ct);
+    }
+    finally
+    {
+      _ui.SetAgentBusy(false);
+      _ui.EndTurn();
     }
   }
 

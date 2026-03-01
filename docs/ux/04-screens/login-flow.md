@@ -211,23 +211,3 @@ The Client Secret prompt has a custom validation error message:
 | Text Prompt | Section 7 | Client ID, GCP Project ID, GCP Location prompts |
 | Status Message | Section 1 | Error messages (though non-standard format) |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| ExecuteAsync entry point | `Commands/LoginCommand.cs` | `ExecuteAsync` | 31-116 |
-| Non-interactive guard | `Commands/LoginCommand.cs` | `ExecuteAsync` | 33-37 |
-| OAuth config lookup | `Commands/LoginCommand.cs` | `ExecuteAsync` | 39-44 |
-| Login start message | `Commands/LoginCommand.cs` | `ExecuteAsync` | 46 |
-| Client credential resolution | `Commands/LoginCommand.cs` | `ResolveClientCredentialsAsync` | 118-172 |
-| Client credential prompts | `Commands/LoginCommand.cs` | `ResolveClientCredentialsAsync` | 134-165 |
-| PKCE generation | `Commands/LoginCommand.cs` | `GenerateCodeVerifier`, `GenerateCodeChallenge` | 174-184 |
-| Auth URL construction | `Commands/LoginCommand.cs` | `BuildAuthorizationUrl` | 200-220 |
-| Browser launch | `Commands/LoginCommand.cs` | `OpenBrowser` | 253-267 |
-| Browser + URL display | `Commands/LoginCommand.cs` | `ExecuteAsync` | 71-74 |
-| Callback wait | `Commands/LoginCommand.cs` | `ExecuteAsync` | 77-94 |
-| Token exchange | `Commands/LoginCommand.cs` | `ExchangeCodeForTokensAsync` | 222-251 |
-| Credential save | `Commands/LoginCommand.cs` | `ExecuteAsync` | 106-112 |
-| Success message | `Commands/LoginCommand.cs` | `ExecuteAsync` | 114 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

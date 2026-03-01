@@ -91,13 +91,3 @@ None. This screen is purely static output.
 | Simple Table | Section 4 | Project list table |
 | Empty State | Section 13 | "No projects found" + hint |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| List flow | `Commands/ProjectSlashCommand.cs` | `HandleListAsync` | 160-209 |
-| Empty check | `Commands/ProjectSlashCommand.cs` | `HandleListAsync` | 164-169 |
-| Table construction | `Commands/ProjectSlashCommand.cs` | `HandleListAsync` | 171-172 |
-| Row population | `Commands/ProjectSlashCommand.cs` | `HandleListAsync` | 174-206 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

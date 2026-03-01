@@ -4,8 +4,6 @@ This document audits the current accessibility state of the BoydCode terminal
 UI across screen reader compatibility, color dependency, non-interactive mode
 support, narrow terminal behavior, and platform-specific concerns.
 
-All file references are relative to the repository root.
-
 ---
 
 ## 1. Current State Audit
@@ -19,29 +17,29 @@ positioning create problems.
 
 #### Features That Work With Screen Readers
 
-| Feature | Why It Works | Files |
-|---|---|---|
-| Static text output (assistant responses, error messages) | Written as plain text lines that enter the terminal buffer sequentially | `SpectreUserInterface.cs` |
-| Status messages (`Success`, `Error`, `Warning`, `Usage`) | Single-line output with text content (markup tags stripped by screen readers that process plain text) | `SpectreHelpers.cs` |
-| Help table | Spectre.Console renders as text-mode table with ASCII borders | `HelpSlashCommand.cs` |
-| Data tables (project list, session list, JEA profiles) | Same as help table; readable as structured text | All slash commands |
-| Banner text | ASCII art lines are read sequentially; content is decorative but harmless | `ChatCommand.cs` |
-| Confirmation prompts | Text-based input with clear labels | Via `SpectreHelpers.Confirm` |
-| Panel content (tool preview, crash panel) | Rendered as bordered text; borders are readable characters | `SpectreUserInterface.cs`, `Program.cs` |
+| Feature | Why It Works |
+|---|---|
+| Static text output (assistant responses, error messages) | Written as plain text lines that enter the terminal buffer sequentially |
+| Status messages (`Success`, `Error`, `Warning`, `Usage`) | Single-line output with text content (markup tags stripped by screen readers that process plain text) |
+| Help table | Rendered as text-mode table with ASCII borders |
+| Data tables (project list, session list, JEA profiles) | Same as help table; readable as structured text |
+| Banner text | ASCII art lines are read sequentially; content is decorative but harmless |
+| Confirmation prompts | Text-based input with clear labels |
+| Panel content (tool preview, crash panel) | Rendered as bordered text; borders are readable characters |
 
 #### Features That Break With Screen Readers
 
-| Feature | Problem | Severity | Files |
-|---|---|---|---|
-| **Execution spinner** | Overwrites the same line 10 times/second with ANSI cursor movement; creates rapid-fire screen reader announcements of "Executing..." | High | `ExecutionWindow.cs:311-345` |
-| **Split-pane layout (scroll regions)** | ANSI scroll region commands (`\x1b[1;Nr`) are not interpreted by screen readers; cursor positioning to fixed rows creates disorienting jumps | High | `TerminalLayout.cs` |
-| **Streaming token output** | Tokens arrive character-by-character via `AppendToOutput`; screen readers may announce each fragment | Medium | `SpectreUserInterface.cs:215-234` |
-| **Cancel hint (in-place overwrite)** | Non-layout mode: hint is written with `\r` and cleared with spaces; screen reader may not detect the transient text | Medium | `SpectreUserInterface.cs:455-492` |
-| **Thinking indicator** | Layout mode: overwrites a line with `\x1b[2K`; Non-layout: `\r` overwrite | Medium | `SpectreUserInterface.cs:253-280` |
-| **Output window scrolling (non-layout)** | Uses `\x1b[NA` (cursor up) to rewrite visible lines; screen reader sees rapid content changes | Medium | `ExecutionWindow.cs:427-463` |
-| **Selection prompts** | Spectre.Console renders interactive selection with cursor positioning; most screen readers can navigate these, but vim key remapping (j/k) is not announced | Low | `SpectreHelpers.cs` |
-| **Context chart (stacked bar)** | Uses Unicode block characters that screen readers may announce as "full block" repeated 72 times | Low | `ContextSlashCommand.cs:216-283` |
-| **Queue count indicator** | Written with ANSI positioning to the end of the input line; may not be announced | Low | `TerminalLayout.cs:328-337` |
+| Feature | Problem | Severity |
+|---|---|---|
+| **Execution spinner** | Overwrites the same line repeatedly with cursor movement; creates rapid-fire screen reader announcements of "Executing..." | High |
+| **Split-pane layout** | Cursor positioning to fixed rows creates disorienting jumps for screen readers that expect sequential text output | High |
+| **Streaming token output** | Tokens arrive character-by-character; screen readers may announce each fragment | Medium |
+| **Cancel hint (in-place overwrite)** | Hint is written transiently and cleared; screen reader may not detect the transient text | Medium |
+| **Thinking indicator** | Overwrites a line in place; screen reader may miss or repeatedly announce it | Medium |
+| **Output window scrolling** | In-place rewriting of visible lines; screen reader sees rapid content changes | Medium |
+| **Selection prompts** | Interactive selection with cursor positioning; most screen readers can navigate these, but custom key bindings (j/k) are not announced | Low |
+| **Context chart (stacked bar)** | Uses Unicode block characters that screen readers may announce as "full block" repeated 72 times | Low |
+| **Queue count indicator** | Written with positioning to the end of the input line; may not be announced | Low |
 
 ### 1.2 NO_COLOR Support
 
@@ -49,28 +47,25 @@ The application does **not** check for the `NO_COLOR` environment variable
 (`https://no-color.org/`). There is no code anywhere in the codebase that
 reads `NO_COLOR`.
 
-However, Spectre.Console itself respects terminal capabilities:
-- When stdout is redirected (piped), Spectre.Console's `AnsiConsole` detects
-  this and strips ANSI escape sequences from markup output.
-- The `_stderr` `IAnsiConsole` instance in `SpectreUserInterface` is
-  configured with `new AnsiConsoleOutput(Console.Error)` and independently
-  detects stderr capabilities.
+However, the rendering framework respects terminal capabilities:
+- When stdout is redirected (piped), the rendering pipeline detects this and
+  strips ANSI escape sequences from markup output.
+- Error output independently detects stderr capabilities.
 
-**Raw ANSI sequences are not stripped when piped.** The `TerminalLayout` and
-`ExecutionWindow` classes write raw `\x1b[...]` sequences via
-`System.Console.Write()`, bypassing Spectre.Console entirely. These sequences
-would appear as garbage text if stdout were redirected.
+**Raw ANSI sequences are not stripped when piped.** Some components write raw
+ANSI escape sequences directly, bypassing the rendering pipeline. These
+sequences would appear as garbage text if stdout were redirected.
 
 ### 1.3 Piped/Redirected Output Degradation
 
-| Feature | Behavior When Piped | Files |
-|---|---|---|
-| Layout mode | Disabled (`CanUseLayout` checks `IsOutputRedirected` and `IsInputRedirected`) | `TerminalLayout.cs:386-401` |
-| Spectre markup output | Markup tags stripped; plain text only | Spectre.Console built-in |
-| Raw ANSI in non-layout mode | Sequences pass through as literal text (e.g., spinner `\r` rewrite) | `ExecutionWindow.cs`, `SpectreUserInterface.cs` |
-| Spinner output | Writes `\r  {frame} Executing... ({elapsed})` to stdout; each frame is a new line when piped | `ExecutionWindow.cs:333` |
-| Tables | Rendered as plain text tables (no color, but borders preserved) | Spectre.Console built-in |
-| Panels | Rendered as plain text boxes | Spectre.Console built-in |
+| Feature | Behavior When Piped |
+|---|---|
+| Layout mode | Disabled (checks whether output and input are redirected) |
+| Markup output | Markup tags stripped; plain text only |
+| Raw ANSI in non-layout mode | Sequences pass through as literal text (e.g., spinner carriage-return rewrite) |
+| Spinner output | Each frame becomes a new line when piped |
+| Tables | Rendered as plain text tables (no color, but borders preserved) |
+| Panels | Rendered as plain text boxes |
 
 ---
 
@@ -78,33 +73,32 @@ would appear as garbage text if stdout were redirected.
 
 ### 2.1 Detection
 
-Non-interactive mode is detected via
-`AnsiConsole.Profile.Capabilities.Interactive`, which returns `false` when
-stdin is not a terminal (e.g., piped input, CI environment).
+Non-interactive mode is detected when stdin is not a terminal (e.g., piped
+input, CI environment).
 
 ### 2.2 Prompt Fallbacks
 
-| Prompt | Non-Interactive Behavior | Implementation |
-|---|---|---|
-| `GetUserInputAsync` | Falls back to `Console.ReadLine()`; EOF becomes `/quit` | `SpectreUserInterface.cs:35-38` |
-| `/project create` | Requires `<name>` argument; shows usage message if missing | `ProjectSlashCommand.cs:95-98` |
-| `/project show` | Requires `<name>` argument or active project; shows usage if both missing | `ProjectSlashCommand.cs:217-220` |
-| `/project edit` | Blocked entirely: `"/project edit requires an interactive terminal."` | `ProjectSlashCommand.cs:370-374` |
-| `/project delete` | Requires `<name>` argument; skips confirmation (proceeds to delete) | `ProjectSlashCommand.cs:477-479,539` |
-| `/provider setup` | Requires `<name>` argument; blocked: `"/provider setup requires an interactive terminal."` | `ProviderSlashCommand.cs:117-121,141-144` |
-| `/provider remove` | Requires `<name>` argument; shows usage if missing | `ProviderSlashCommand.cs:201-205` |
-| `/conversations delete` | Requires `<id>` argument; skips confirmation | `ConversationsSlashCommand.cs:180-184,201-213` |
-| `LoginCommand` | Blocked entirely: `"Login requires an interactive terminal."` | `LoginCommand.cs:33-37` |
+| Prompt | Non-Interactive Behavior |
+|---|---|
+| User input | Falls back to reading from stdin; EOF becomes `/quit` |
+| `/project create` | Requires `<name>` argument; shows usage message if missing |
+| `/project show` | Requires `<name>` argument or active project; shows usage if both missing |
+| `/project edit` | Blocked entirely: `"/project edit requires an interactive terminal."` |
+| `/project delete` | Requires `<name>` argument; skips confirmation (proceeds to delete) |
+| `/provider setup` | Requires `<name>` argument; blocked: `"/provider setup requires an interactive terminal."` |
+| `/provider remove` | Requires `<name>` argument; shows usage if missing |
+| `/conversations delete` | Requires `<id>` argument; skips confirmation |
+| `boydcode login` | Blocked entirely: `"Login requires an interactive terminal."` |
 
 ### 2.3 Features Skipped
 
-| Feature | Reason | Implementation |
-|---|---|---|
-| Layout activation | `ActivateLayout` returns early when `!IsInteractive` | `SpectreUserInterface.cs:496` |
-| Async input reader | Never started; fallback prompt used | `SpectreUserInterface.cs:41-45` |
-| Status line display | Rendered via fallback `AnsiConsole.MarkupLine` (one-time, not fixed position) | `SpectreUserInterface.cs:49-51` |
-| Queue count indicator | Not applicable (no async input) | `TerminalLayout.cs:307` |
-| Contained output window | `useContainedOutput` requires `IsInteractive && Capabilities.Ansi` | `SpectreUserInterface.cs:305` |
+| Feature | Reason |
+|---|---|
+| Layout activation | Returns early when not interactive |
+| Async input reader | Never started; fallback prompt used |
+| Status line display | Rendered as one-time text output, not a fixed-position status bar |
+| Queue count indicator | Not applicable (no async input) |
+| Contained output window | Requires interactive terminal with ANSI support |
 
 ### 2.4 Behavioral Differences
 
@@ -188,21 +182,18 @@ less than 30 rows:
 - Full: Multi-line ASCII art (13+ lines)
 - Compact: `BOYDCODE v0.1 AI Coding Assistant` (1 line)
 
-Source: `ChatCommand.cs:270-306`
-
 ### 3.4 Layout Minimum Height
 
-The split-pane layout requires a minimum of 10 rows (`MinTerminalHeight`).
-Below this threshold, `CanUseLayout()` returns false and the application
-falls back to inline output mode.
+The application layout requires a minimum of 10 rows. Below this threshold,
+the application falls back to inline output mode.
 
 Layout space allocation:
-- Output scroll region: rows 1 through `height - 3`
+- Conversation view: rows 1 through `height - 3`
 - Separator: row `height - 2`
-- Input line: row `height - 1`
-- Status line: row `height`
+- Input area: row `height - 1`
+- Status bar: row `height`
 
-At exactly 10 rows, the output area has 7 rows of scrollable space.
+At exactly 10 rows, the conversation view has 7 rows of scrollable space.
 
 ---
 
@@ -210,16 +201,16 @@ At exactly 10 rows, the output area has 7 rows of scrollable space.
 
 ### 4.1 Places Where Color Is the ONLY Indicator
 
-| Location | What Color Conveys | Missing Non-Color Indicator | Files |
-|---|---|---|---|
-| Provider status in list | `[green bold]active[/]` vs `[dim]ready[/]` vs empty | The text "active" and "ready" provides meaning, but the empty state for unconfigured has no text at all | `ProviderSlashCommand.cs:92-96` |
-| Directory access level in show | `[yellow]ReadOnly[/]` vs `[green]ReadWrite[/]` | The text itself provides meaning; color is redundant (accessible) | `ProjectSlashCommand.cs:294-296` |
-| Directory access level in edit | `[yellow]ReadOnly[/]` vs `[green]ReadWrite[/]` | Same as above (accessible) | `ProjectSlashCommand.cs:620-622` |
-| Git info column | `[red]missing[/]` vs `[cyan]{branch}[/]` vs `[dim]git[/]` vs `[dim]--[/]` | Text provides meaning (accessible) | `ProjectSlashCommand.cs:298-304` |
-| Context usage threshold | `[green]` / `[yellow]` / `[red]` on token count | The percentage number is also shown, so color is supplementary (accessible) | `ContextSlashCommand.cs:131-136` |
-| Stacked bar chart segments | Different colors for different categories | The legend provides text labels alongside color squares (partially accessible) | `ContextSlashCommand.cs:216-283` |
-| Selection prompt highlight | `Color.Green` for current selection | Spectre.Console also uses a `>` cursor indicator (accessible) | `SpectreHelpers.cs:231,249,268` |
-| Cancel hint | `[dim italic yellow]` | Text content is self-explanatory (accessible) | `SpectreUserInterface.cs:465,469` |
+| Location | What Color Conveys | Missing Non-Color Indicator |
+|---|---|---|
+| Provider status in list | Green bold "active" vs dim "ready" vs empty | The text "active" and "ready" provides meaning, but the empty state for unconfigured has no text at all |
+| Directory access level in show | Yellow "ReadOnly" vs green "ReadWrite" | The text itself provides meaning; color is redundant (accessible) |
+| Directory access level in edit | Yellow "ReadOnly" vs green "ReadWrite" | Same as above (accessible) |
+| Git info column | Red "missing" vs cyan branch name vs dim markers | Text provides meaning (accessible) |
+| Context usage threshold | Green / yellow / red on token count | The percentage number is also shown, so color is supplementary (accessible) |
+| Stacked bar chart segments | Different colors for different categories | The legend provides text labels alongside color squares (partially accessible) |
+| Selection prompt highlight | Green for current selection | Also uses a `>` cursor indicator (accessible) |
+| Cancel hint | Dim italic yellow text | Text content is self-explanatory (accessible) |
 
 **Assessment:** No critical functionality depends solely on color. All
 colored indicators either have text alternatives or the color reinforces
@@ -249,15 +240,15 @@ decorative purposes.
 
 | # | Recommendation | Effort | Impact |
 |---|---|---|---|
-| 1 | **Add `NO_COLOR` environment variable support.** Check for `NO_COLOR` at startup; when set, configure `AnsiConsole.Profile` to disable colors and disable all raw ANSI escape sequences. This is a community standard (`https://no-color.org/`) that many accessibility tools depend on. | Medium | High |
-| 2 | **Route all errors to stderr.** Replace `SpectreHelpers.Error()` stdout writes and raw `AnsiConsole.MarkupLine("[red]...")` calls with `_ui.RenderError()` or a new stderr-aware helper. This ensures errors are visible when stdout is piped and follows Unix conventions. | Medium | High |
-| 3 | **Disable spinner in non-ANSI terminals.** When `AnsiConsole.Profile.Capabilities.Ansi` is false, skip the spinner entirely and show a single "Executing..." line. The current `\r`-based overwrite produces garbage when ANSI is not supported. | Low | High |
+| 1 | **Add `NO_COLOR` environment variable support.** Check for `NO_COLOR` at startup; when set, disable all ANSI color output and raw ANSI escape sequences. This is a community standard (`https://no-color.org/`) that many accessibility tools depend on. | Medium | High |
+| 2 | **Route all errors to stderr.** Ensure all error output goes through the user interface error rendering pipeline, which should write to stderr. This ensures errors are visible when stdout is piped and follows Unix conventions. | Medium | High |
+| 3 | **Disable spinner in non-ANSI terminals.** When ANSI capabilities are not available, skip the spinner entirely and show a single "Executing..." line. In-place overwrites produce garbage when ANSI is not supported. | Low | High |
 
 ### 5.2 Medium Priority
 
 | # | Recommendation | Effort | Impact |
 |---|---|---|---|
-| 4 | **Add `--no-layout` flag.** Allow users to explicitly disable the split-pane layout. This is useful for screen reader users who need simple sequential output. The flag would set `_useLayout = false` regardless of `CanUseLayout()`. | Low | Medium |
+| 4 | **Add `--no-layout` flag.** Allow users to explicitly disable the split-pane layout. This is useful for screen reader users who need simple sequential output. The flag would force fallback to inline output mode. | Low | Medium |
 | 5 | **Reduce spinner frame rate for screen readers.** When a screen reader is detected (or when an env var like `BOYDCODE_ACCESSIBLE` is set), reduce the spinner to a 2-second update interval with a simple text message ("Still executing... 5.0s"). | Low | Medium |
 | 6 | **Make stacked bar chart width dynamic.** Currently hardcoded to 72 characters. Should adapt to `Math.Min(termWidth - 8, 72)` to prevent wrapping on terminals narrower than 80 columns. | Low | Medium |
 | 7 | **Add `--plain` output mode.** When set, strip all Spectre markup and render plain text only. Useful for piping, logging, and accessibility tools. This would affect all output paths. | High | Medium |
@@ -293,7 +284,7 @@ decorative purposes.
 
 | Aspect | Status | Notes |
 |---|---|---|
-| ANSI/VT sequences | Partial support | .NET runtime enables VT mode when possible, but some older builds may not support it. `EnableVirtualTerminalProcessing()` in `TerminalLayout.cs` attempts a harmless VT probe. |
+| ANSI/VT sequences | Partial support | .NET runtime enables VT mode when possible, but some older builds may not support it. The application attempts a harmless VT probe at startup. |
 | Unicode (Braille spinners) | Partial support | Depends on the console font. Consolas and Cascadia support Braille. Raster fonts do not. |
 | Scroll regions | May not work | `\x1b[1;Nr` may be ignored, causing layout corruption |
 | Color | 16 colors only | Spectre.Console automatically degrades to nearest 4-bit color |

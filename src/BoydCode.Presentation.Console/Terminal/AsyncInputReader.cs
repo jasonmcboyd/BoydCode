@@ -9,7 +9,6 @@ internal sealed class AsyncInputReader : IDisposable
   private const int PollingIntervalMs = 16;
   private const int CancelWindowMs = 1000;
 
-  private readonly TuiLayout? _layout;
   private readonly Channel<string> _completedLines = Channel.CreateUnbounded<string>();
   private readonly StringBuilder _lineBuffer = new();
   private readonly List<string> _history = [];
@@ -20,6 +19,7 @@ internal sealed class AsyncInputReader : IDisposable
   private int _cursorPosition;
   private int _historyIndex = -1;
   private string? _savedCurrentLine;
+  private volatile bool _displayEnabled = true;
 
   // Cancellation monitoring state (guarded by _cancelLock)
   private Action? _onCancelHintRequested;
@@ -27,14 +27,25 @@ internal sealed class AsyncInputReader : IDisposable
   private Action? _onCancelRequested;
   private DateTimeOffset _lastCancelPressTime = DateTimeOffset.MinValue;
   private Timer? _cancelResetTimer;
+  private readonly TuiLayout? _layout;
   private bool _disposed;
 
-  public AsyncInputReader(TuiLayout? layout)
+  public AsyncInputReader(TuiLayout? layout = null)
   {
     _layout = layout;
   }
 
+  public bool DisplayEnabled { get => _displayEnabled; set => _displayEnabled = value; }
+
   public int PendingCount => _completedLines.Reader.Count;
+
+  public void ShowPrompt()
+  {
+    if (_displayEnabled)
+    {
+      UpdateDisplay();
+    }
+  }
 
   public void Start()
   {
@@ -145,13 +156,35 @@ internal sealed class AsyncInputReader : IDisposable
         break;
 
       case ConsoleKey.Home:
-        _cursorPosition = 0;
-        UpdateDisplay();
+        if ((key.Modifiers & ConsoleModifiers.Control) != 0)
+        {
+          _layout?.ScrollToTop();
+        }
+        else
+        {
+          _cursorPosition = 0;
+          UpdateDisplay();
+        }
         break;
 
       case ConsoleKey.End:
-        _cursorPosition = _lineBuffer.Length;
-        UpdateDisplay();
+        if ((key.Modifiers & ConsoleModifiers.Control) != 0)
+        {
+          _layout?.ScrollToBottom();
+        }
+        else
+        {
+          _cursorPosition = _lineBuffer.Length;
+          UpdateDisplay();
+        }
+        break;
+
+      case ConsoleKey.PageUp:
+        _layout?.ScrollUp();
+        break;
+
+      case ConsoleKey.PageDown:
+        _layout?.ScrollDown();
         break;
 
       case ConsoleKey.UpArrow:
@@ -180,6 +213,7 @@ internal sealed class AsyncInputReader : IDisposable
       default:
         if (key.KeyChar != '\0' && !char.IsControl(key.KeyChar))
         {
+          _layout?.ScrollToBottom();
           _lineBuffer.Insert(_cursorPosition, key.KeyChar);
           _cursorPosition++;
           UpdateDisplay();
@@ -202,6 +236,7 @@ internal sealed class AsyncInputReader : IDisposable
     _cursorPosition = 0;
     _historyIndex = -1;
     _savedCurrentLine = null;
+    _layout?.ScrollToBottom();
     UpdateDisplay();
   }
 
@@ -283,31 +318,8 @@ internal sealed class AsyncInputReader : IDisposable
 
   private void UpdateDisplay()
   {
-    if (_layout is not null)
-    {
-      _layout.UpdateInput(_lineBuffer.ToString(), _cursorPosition);
-    }
-    else
-    {
-      UpdateDisplayFallback();
-    }
-  }
-
-  private void UpdateDisplayFallback()
-  {
-    var text = _lineBuffer.ToString();
-    var rendered = $"> {text}";
-
-    int termWidth;
-    try { termWidth = System.Console.WindowWidth; }
-    catch { termWidth = 120; }
-
-    var padding = Math.Max(termWidth - rendered.Length - 1, 0);
-    System.Console.Write($"\r{rendered}{new string(' ', padding)}");
-
-    // Position the cursor correctly
-    var cursorScreenPos = _cursorPosition + 2; // 2 = "> " prefix length
-    System.Console.Write($"\r\x1b[{cursorScreenPos + 1}G");
+    if (!_displayEnabled) return;
+    _layout?.UpdateInput(_lineBuffer.ToString(), _cursorPosition);
   }
 
   private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)

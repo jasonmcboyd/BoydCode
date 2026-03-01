@@ -107,16 +107,3 @@ None. This is a non-interactive output replay.
 |---|---|---|
 | Execution Window | Section 10 | Expand functionality is part of the execution window lifecycle |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| ExpandSlashCommand | `Commands/ExpandSlashCommand.cs` | `TryHandleAsync` | 20-30 |
-| UI delegation | `SpectreUserInterface.cs` | `ExpandLastToolOutput` | 345 |
-| ExpandLastToolOutput | `Terminal/ExecutionWindow.cs` | `ExpandLastToolOutput` | 250-270 |
-| Buffer capture | `Terminal/ExecutionWindow.cs` | `RenderToolResult` | 172-173 |
-| Output replay loop | `Terminal/ExecutionWindow.cs` | `ExpandLastToolOutput` | 264-269 |
-| Already expanded guard | `Terminal/ExecutionWindow.cs` | `ExpandLastToolOutput` | 258-262 |
-| No buffer guard | `Terminal/ExecutionWindow.cs` | `ExpandLastToolOutput` | 252-256 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

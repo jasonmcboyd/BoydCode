@@ -118,14 +118,3 @@ With inline name:
 | Selection Prompt | Section 5 | Provider type selection |
 | Status Message | Section 1 | Usage hint |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Remove flow | `Commands/ProviderSlashCommand.cs` | `HandleRemoveAsync` | 199-237 |
-| Provider resolution | `Commands/ProviderSlashCommand.cs` | `HandleRemoveAsync` | 209-223 |
-| Store removal | `Commands/ProviderSlashCommand.cs` | `HandleRemoveAsync` | 225 |
-| Active provider warning | `Commands/ProviderSlashCommand.cs` | `HandleRemoveAsync` | 227-233 |
-| Success message | `Commands/ProviderSlashCommand.cs` | `HandleRemoveAsync` | 235-236 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

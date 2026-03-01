@@ -5,82 +5,106 @@ and concurrency contract in the BoydCode terminal UI. It is the authoritative
 reference for how the application responds to user input at the millisecond
 level.
 
-All file references are relative to `src/BoydCode.Presentation.Console/`.
+The UI uses a **persistent always-on TUI** architecture:
+- The application starts once at session begin and stays active for the entire
+  session. All content accumulates in a scrollable conversation view. The
+  four-view hierarchy (ConversationView, ActivityBar, InputView, StatusBar)
+  is always visible; there is no mode switching between idle and active states.
+- **Between turns**: Idle state. The activity bar shows a dim Rule. Input via
+  the input view at a `> _` prompt. The user can scroll through conversation
+  history.
+- **During active turns**: Views update in real-time. The activity bar shows a
+  spinner with state label. Streaming tokens and tool output appear in the
+  conversation view. The input view accepts typeahead.
 
 ---
 
 ## 1. Keyboard Shortcuts
 
-### 1.1 Input Line Editing (Layout Mode)
+### 1.1 Input Line Editing (Between Turns)
 
-Handled by `AsyncInputReader.ProcessKey()` in `Terminal/AsyncInputReader.cs`.
+Handled by the input view's key processing logic.
+Active between turns when the application is in idle state.
 
 | Key | Action | Guard | Notes |
 |---|---|---|---|
-| Any printable char | Insert at cursor, advance cursor | `key.KeyChar != '\0' && !char.IsControl(key.KeyChar)` | Unicode-aware; no modifier filtering |
-| Enter | Submit line to Channel, clear buffer, reset history index | Line must be non-empty to be submitted | Empty Enter is silently ignored (no submission) |
-| Backspace | Delete character before cursor | `_cursorPosition > 0` | No-op at position 0 |
-| Delete | Delete character at cursor | `_cursorPosition < _lineBuffer.Length` | No-op at end of buffer |
-| Left Arrow | Move cursor left one position | `_cursorPosition > 0` | No-op at position 0 |
-| Right Arrow | Move cursor right one position | `_cursorPosition < _lineBuffer.Length` | No-op at end of buffer |
+| Any printable char | Insert at cursor, advance cursor | Non-control, non-null character | Unicode-aware; no modifier filtering |
+| Enter | Submit line to message queue, clear buffer, reset history index | Line must be non-empty to be submitted | Empty Enter is silently ignored (no submission) |
+| Backspace | Delete character before cursor | Cursor position > 0 | No-op at position 0 |
+| Delete | Delete character at cursor | Cursor position < buffer length | No-op at end of buffer |
+| Left Arrow | Move cursor left one position | Cursor position > 0 | No-op at position 0 |
+| Right Arrow | Move cursor right one position | Cursor position < buffer length | No-op at end of buffer |
 | Home | Move cursor to position 0 | None | Always succeeds |
 | End | Move cursor to end of buffer | None | Always succeeds |
-| Up Arrow | Navigate to previous history entry | `_history.Count > 0` | Saves current buffer on first press; stops at oldest entry |
-| Down Arrow | Navigate to next history entry | `_historyIndex != -1` | Restores saved buffer when past newest entry |
-| Escape | Trigger cancellation handler | Cancel scope must be attached | See Section 4 (Cancellation) |
+| Up Arrow | Navigate to previous history entry | History count > 0 | Saves current buffer on first press; stops at oldest entry |
+| Down Arrow | Navigate to next history entry | Currently navigating history | Restores saved buffer when past newest entry |
+| Escape | No effect (agent is not active between turns) | N/A | Ignored when no cancel scope attached |
 | Tab | Ignored | N/A | No tab completion implemented |
-| Ctrl+C | Trigger cancellation handler (via `Console.CancelKeyPress`) | `e.Cancel = true` always set | Process termination is always suppressed |
+| Ctrl+C | No effect (agent is not active between turns) | Cancellation always suppressed | Process termination is always suppressed |
 
-### 1.2 Input Prompt (Fallback / Non-Layout Mode)
+### 1.2 During Active Turns
 
-When the layout is not active, input is handled by Spectre.Console's
-`TextPrompt<string>` via `SpectreUserInterface.GetUserInputAsync()`.
+During active turns, the input view provides typeahead echo. The input
+handler's key loop runs continuously and routes display to the input view.
+Typed text is queued and submitted on the next idle prompt. Cancellation keys
+are handled as below:
 
 | Key | Action | Notes |
 |---|---|---|
-| Enter | Submit input | Empty input allowed (`.AllowEmpty()`) |
-| Standard text editing | Handled by Spectre.Console | Backspace, arrow keys, Home, End |
+| Escape | Trigger cancellation handler | See Section 3.3 (Cancellation) |
+| Ctrl+C | Trigger cancellation handler (via cancel key press event) | Cancellation always suppressed |
+| Printable chars | Inserted into line buffer, visible in input view | Typeahead -- queued for next turn |
+| Enter | Submits line to message queue | `[N queued]` badge shown in input view |
+| Other editing keys | Normal line editing (Backspace, Delete, arrows, Home, End) | Visible in input view |
 
-### 1.3 Non-Interactive Terminal (Piped Input)
+### 1.3 Input Prompt (Fallback / Non-Layout Mode)
 
-When `AnsiConsole.Profile.Capabilities.Interactive` is `false`:
+When the terminal height is < 10 rows or output is piped, input is handled by
+a blocking text prompt via the user interface.
+
+| Key | Action | Notes |
+|---|---|---|
+| Enter | Submit input | Empty input allowed |
+| Standard text editing | Handled by the prompt widget | Backspace, arrow keys, Home, End |
+
+### 1.4 Non-Interactive Terminal (Piped Input)
+
+When the terminal is not interactive (piped input):
 
 | Input | Action | Notes |
 |---|---|---|
-| `Console.ReadLine()` | Read one line from stdin | Returns `null` on EOF |
+| Line read from stdin | Read one line | Returns null on EOF |
 | EOF (null) | Converted to `/quit` | Graceful session exit |
 
-### 1.4 Vim-Style Key Remapping in Selection Prompts
+### 1.5 Vim-Style Key Remapping in Selection Prompts
 
-Handled by `SpectreHelpers.VimConsoleInput.RemapVimKey()` in `SpectreHelpers.cs`.
-Active only during `SelectionPrompt` and `MultiSelectionPrompt` interactions
-(routed through the `VimAnsiConsole` wrapper).
+Active only during selection prompt interactions (routed through a Vim-aware
+input wrapper).
 
 | Key | Remapped To | Guard |
 |---|---|---|
-| j (no modifiers) | Down Arrow | `key.Modifiers == 0` |
-| k (no modifiers) | Up Arrow | `key.Modifiers == 0` |
+| j (no modifiers) | Down Arrow | No modifiers held |
+| k (no modifiers) | Up Arrow | No modifiers held |
 | All other keys | Pass through unchanged | N/A |
 
 The remapping also supports pre-loading Down Arrow keys to set a default
-selection index via `VimConsoleInput.PreloadDownArrows(int count)`.
+selection index.
 
-### 1.5 Cancellation Keys
+### 1.6 Cancellation Keys
 
-Active only when a `CancellationScope` (layout mode) or `CancellationMonitor`
-(non-layout mode) is attached. See Section 4 for the full state machine.
+Active only when the agent is busy (during active turns, or during non-layout
+mode execution). See Section 3.3 for the full state machine.
 
 | Key | Handler | Context |
 |---|---|---|
-| Escape | `AsyncInputReader.HandleCancelPress()` | Layout mode, during `ProcessKey` |
-| Ctrl+C | `AsyncInputReader.OnCancelKeyPress()` | Layout mode, via `Console.CancelKeyPress` event |
-| Escape | `CancellationMonitor.PollEscapeKeyAsync()` | Non-layout mode, polled every 50ms |
-| Ctrl+C | `CancellationMonitor.OnCancelKeyPress()` | Non-layout mode, via `Console.CancelKeyPress` event |
+| Escape | Cancel press handler | During active turn, via key event |
+| Ctrl+C | Cancel key press handler | During active turn, via system cancel event |
+| Escape | Escape key polling | Non-layout mode, polled every 50ms |
+| Ctrl+C | Cancel key press handler | Non-layout mode, via system cancel event |
 
-### 1.6 Session Exit Commands
+### 1.7 Session Exit Commands
 
-Handled by `AgentOrchestrator.RunSessionAsync()` in
-`Application/Services/AgentOrchestrator.cs`. Matched case-insensitively
+Handled by the session loop in the orchestrator. Matched case-insensitively
 after trimming.
 
 | Input | Action |
@@ -90,13 +114,13 @@ after trimming.
 | `quit` | Same as `/quit` (no slash required) |
 | `exit` | Same as `/quit` (no slash required) |
 
-### 1.7 Command History
+### 1.8 Command History
 
-Managed by `AsyncInputReader` in `Terminal/AsyncInputReader.cs`.
+Managed by the input handler.
 
 | Behavior | Detail |
 |---|---|
-| Max entries | 100 (`MaxHistorySize`) |
+| Max entries | 100 |
 | Deduplication | Consecutive duplicate entries are not added |
 | Eviction | Oldest entry removed when limit exceeded |
 | Persistence | In-memory only; lost on session exit |
@@ -106,102 +130,123 @@ Managed by `AsyncInputReader` in `Terminal/AsyncInputReader.cs`.
 
 ## 2. Animation Timing
 
-### 2.1 Execution Spinner
+### 2.1 Activity Spinner (All Active States)
 
-| Parameter | Value | Source |
-|---|---|---|
-| Frame rate | 100ms per frame | `ExecutionWindow.RunSpinnerAsync`: `Task.Delay(100, ct)` |
-| Frame count | 8 Braille pattern characters | `s_spinnerFrames` array |
-| Frame sequence | U+283F U+283B U+283D U+283E U+2837 U+282F U+281F U+283E | Note: frame 7 duplicates frame 3 |
-| Start trigger | `ExecutionWindow.Start()` called | Begins `Task.Run` for spinner |
-| Stop trigger | First output line arrives, or `Stop()` called | `StopSpinner()` with 200ms wait timeout |
-| Display format | `  {frame} Executing... ({elapsed})` | Elapsed updates each frame |
+The braille spinner appears in the **activity bar** during ALL busy states
+(Thinking, Streaming, Executing). It uses 8 braille frames cycling at 100ms
+per frame.
+
+| Parameter | Value |
+|---|---|
+| Frame rate | 100ms per frame |
+| Frame count | 8 braille characters |
+| Frame sequence | &#x2BFF; &#x28BB; &#x28BD; &#x28BE; &#x28B7; &#x28AF; &#x289F; &#x28BE; |
+| Active states | Thinking, Streaming, Executing |
+| Display format (Thinking) | `{frame} Thinking...` (yellow) |
+| Display format (Streaming) | `{frame} Streaming...` (cyan) |
+| Display format (Executing) | `{frame} Executing... ({elapsed})` (cyan) |
 
 ### 2.2 Elapsed Time Formatting
 
 | Range | Format | Example |
 |---|---|---|
-| < 10 seconds | `{seconds:F1}s` | `3.2s` |
-| 10 seconds to < 1 minute | `{seconds:F0}s` | `45s` |
-| >= 1 minute | `{minutes}m {seconds}s` | `2m 15s` |
+| < 10 seconds | One decimal place + `s` | `3.2s` |
+| 10 seconds to < 1 minute | Whole seconds + `s` | `45s` |
+| >= 1 minute | Minutes and seconds | `2m 15s` |
 
-Source: `ExecutionWindow.FormatDuration()`.
+### 2.3 Streaming Refresh Throttle
 
-### 2.3 Output Window Redraw Throttle
-
-| Parameter | Value | Source |
-|---|---|---|
-| Minimum interval | 50ms between redraws | `ExecutionWindow.RedrawWindow`: `(now - _lastRedraw).TotalMilliseconds < 50` |
-| Pending flag | `_redrawPending` set when throttled | Final redraw forced on `Stop()` with `bypassThrottle: true` |
+| Parameter | Value |
+|---|---|
+| Minimum interval | 16ms between refreshes (~60fps) |
+| Context | During streaming phase only (spinner phases use 100ms interval) |
 
 ### 2.4 Cancellation Timing
 
-| Parameter | Value | Source |
-|---|---|---|
-| Cancel window | 1000ms (1 second) | `AsyncInputReader.CancelWindowMs`, `CancellationMonitor.HandlePress` |
-| Hint auto-clear | 1000ms after first press | Timer callback in both implementations |
-| Esc key poll interval | 50ms (non-layout mode only) | `CancellationMonitor.PollEscapeKeyAsync` |
+| Parameter | Value |
+|---|---|
+| Cancel window | 1000ms (1 second) |
+| Hint auto-clear | 1000ms after first press |
+| Esc key poll interval | 50ms (non-layout mode only) |
 
 ### 2.5 Key Reader Polling
 
-| Parameter | Value | Source |
-|---|---|---|
-| Polling interval | 16ms (~60 Hz) | `AsyncInputReader.PollingIntervalMs` |
-| Scope | Layout mode only | `AsyncInputReader.ReadKeyLoopAsync` |
+| Parameter | Value |
+|---|---|
+| Polling interval | 16ms (~60 Hz) |
+| Scope | Between turns AND during active turns |
 
 ### 2.6 Spinner/Task Stop Timeouts
 
-| Operation | Timeout | Source |
+| Operation | Timeout |
+|---|---|
+| Spinner task wait | 200ms |
+| Input reader task wait | 200ms |
+| Esc poll task wait | 200ms |
+
+### 2.7 Input Line Horizontal Scrolling
+
+When the text in the line buffer exceeds the available input width, the rendered
+input line displays a scrolling viewport.
+
+| Parameter | Value | Notes |
 |---|---|---|
-| Spinner task wait | 200ms | `ExecutionWindow.StopSpinner`: `_spinnerTask?.Wait(TimeSpan.FromMilliseconds(200))` |
-| Input reader task wait | 200ms | `AsyncInputReader.Dispose`: `_readerTask?.Wait(TimeSpan.FromMilliseconds(200))` |
-| Esc poll task wait | 200ms | `CancellationMonitor.Dispose`: `_pollTask.Wait(TimeSpan.FromMilliseconds(200))` |
+| Available width | Terminal width minus `> ` prefix (2 chars) | Between turns only |
+| Viewport width | Available width minus scroll indicator chars | 1 char reserved per visible arrow indicator |
+| Left indicator | `<-` dim | Shown when viewport start > 0 |
+| Right indicator | `->` dim | Shown when viewport end < buffer length |
+| Viewport tracking | Cursor always kept within the visible window | On cursor move, viewport shifts to include cursor |
+| Home / End | Viewport snaps to buffer start / end | Left indicator hidden at start; right hidden at end |
+
+The scroll indicators use dim styling and consume 1 character each on the
+input row. Their presence reduces the visible text window rather than
+overwriting text characters.
 
 ---
 
 ## 3. State Machines
 
-### 3.1 Terminal Layout
+### 3.1 Turn Lifecycle
 
-Managed by `TerminalLayout` in `Terminal/TerminalLayout.cs`.
+The core state machine of the persistent always-on TUI architecture.
 
 ```
-                    CanUseLayout() == false
-    [Inactive] ─────────────────────────────> [Inactive] (no-op)
-         |
-         | Activate() + CanUseLayout() == true
-         v
-      [Active]
-         |              |
-         | Suspend()    | Deactivate()
-         v              v
-    [Suspended]    [Inactive]
-         |
-         | Resume()
-         v
-      [Active]
+    [Idle]                       (application active, activity bar shows dim Rule)
+      |
+      | User submits message (Enter)
+      v
+    [UserMessageRendered]        (Panel with grey23 background in conversation view)
+      |
+      | Message added to conversation model
+      v
+    [BeginTurn]                  (activity bar set to Thinking, agent-busy flag set)
+      |
+      | Activity: "{spinner} Thinking..." (yellow)
+      v
+    [AgentBusy]                  (views updating in real-time)
+      |
+      +---> Streaming: Activity bar shows "{spinner} Streaming..." (cyan)
+      |     Conversation view shows growing text
+      |
+      +---> Tool call: Activity bar shows "{spinner} Executing... (Ns)" (cyan)
+      |     Conversation view shows tool badge
+      |     (may loop back to Streaming for next round)
+      |
+      +---> Cancel: Activity bar shows "Press Esc again to cancel" (yellow)
+      |
+      +---> end_turn or max rounds
+      v
+    [EndTurn]                    (activity bar set to Idle, agent-busy flag cleared)
+      |
+      | All turn content already in scroll buffer -- no flush needed
+      v
+    [Idle]                       (application still active, input view ready)
 ```
-
-**Transitions:**
-
-| From | To | Trigger | Guard | Side Effects |
-|---|---|---|---|---|
-| Inactive | Active | `Activate()` | `CanUseLayout()` returns true | Sets `Current`, enables VT processing, establishes scroll region |
-| Inactive | Inactive | `Activate()` | `CanUseLayout()` returns false | `_useLayout = false`; all writes pass through to raw console |
-| Active | Suspended | `Suspend()` | `_isActive && !_isSuspended && _useLayout` | Resets scroll region, moves cursor to bottom |
-| Suspended | Active | `Resume()` | `_isActive && _isSuspended && _useLayout` | Recaptures terminal size, re-establishes layout |
-| Active | Inactive | `Deactivate()` | `_isActive` | Resets scroll region, clears screen, clears `Current` |
-| Any | Inactive | `Dispose()` | `!_disposed` | Calls `Deactivate()` |
-
-**`CanUseLayout()` conditions:**
-
-- `Console.IsOutputRedirected == false`
-- `Console.IsInputRedirected == false`
-- `Console.WindowHeight >= 10` (`MinTerminalHeight`)
 
 ### 3.2 Execution Window
 
-Managed by `ExecutionWindow` in `Terminal/ExecutionWindow.cs`.
+The execution window tracks the state of individual tool executions within an
+agent turn.
 
 ```
     [Inactive]
@@ -219,16 +264,16 @@ Managed by `ExecutionWindow` in `Terminal/ExecutionWindow.cs`.
 
 | From | To | Trigger | Side Effects |
 |---|---|---|---|
-| Inactive | Waiting | `Start()` | Clears buffer, restarts stopwatch, starts spinner task |
-| Waiting | Streaming | `AddOutputLine()` | Stops spinner, processes output line |
-| Waiting | Inactive | `Stop()` | Stops spinner, stops stopwatch, clears residual text |
-| Streaming | Inactive | `Stop()` | Stops stopwatch, forces final redraw if pending |
+| Inactive | Waiting | Start | Clears buffer, restarts stopwatch, starts spinner task |
+| Waiting | Streaming | AddOutputLine | Stops spinner, processes output line |
+| Waiting | Inactive | Stop | Stops spinner, stops stopwatch, clears residual text |
+| Streaming | Inactive | Stop | Stops stopwatch, forces final redraw if pending |
 
 ### 3.3 Cancellation Monitor
 
 Two parallel implementations share the same logical state machine.
 
-**Layout mode** (`AsyncInputReader` with `CancellationScope`):
+**During active turn** (input handler with cancellation scope):
 
 ```
     [Idle]
@@ -243,39 +288,38 @@ Two parallel implementations share the same logical state machine.
     [Cancelled]     [Idle]
 ```
 
-**Non-layout mode** (`CancellationMonitor`):
+**Non-layout mode** (cancellation monitor):
 
-Same state machine, different implementation. Uses `Console.CancelKeyPress`
+Same state machine, different implementation. Uses the system cancel key press
 event handler and a background Esc polling task.
 
 **Transitions:**
 
 | From | To | Trigger | Guard | Side Effects |
 |---|---|---|---|---|
-| Idle | HintShown | First Esc/Ctrl+C | `(now - _lastPressTime) > 1000ms` or no previous press | Records timestamp, starts 1s reset timer, invokes hint callback |
-| HintShown | Cancelled | Second Esc/Ctrl+C | `(now - _lastPressTime) <= 1000ms` | Disposes timer, resets timestamp, invokes cancel callback |
+| Idle | HintShown | First Esc/Ctrl+C | Elapsed since last press > 1000ms, or no previous press | Records timestamp, starts 1s reset timer, invokes hint callback |
+| HintShown | Cancelled | Second Esc/Ctrl+C | Elapsed since last press <= 1000ms | Disposes timer, resets timestamp, invokes cancel callback |
 | HintShown | Idle | Timer fires | 1000ms elapsed since first press | Resets timestamp, invokes clear callback |
 
 **Lifecycle:**
 
-- Layout mode: `CancellationScope` created per tool execution via
-  `BeginCancellationMonitor()`. Attaches callbacks on construction,
-  detaches on dispose. The `AsyncInputReader` continues running between
-  scopes; key presses without an attached scope are ignored.
-- Non-layout mode: `CancellationMonitor` created per tool execution.
-  Subscribes to `Console.CancelKeyPress` and starts Esc polling on
-  construction. Unsubscribes and stops polling on dispose.
+- During active turns: A cancellation scope is created per tool execution.
+  Attaches callbacks on construction, detaches on dispose. The input handler
+  continues running between scopes; key presses without an attached scope are
+  ignored.
+- Non-layout mode: A cancellation monitor is created per tool execution.
+  Subscribes to the system cancel event and starts Esc polling on construction.
+  Unsubscribes and stops polling on dispose.
 
 ### 3.4 Agent Turn
 
-Managed by `AgentOrchestrator.RunAgentTurnAsync()` in
-`Application/Services/AgentOrchestrator.cs`.
+Managed by the orchestrator's agent turn logic.
 
 ```
-    [Idle]
+    [Idle]                          (between turns, application active)
       |
       | User submits message
-      | SetAgentBusy(true)
+      | User message rendered in conversation view
       v
     [Busy]
       |
@@ -286,17 +330,17 @@ Managed by `AgentOrchestrator.RunAgentTurnAsync()` in
       |
       | Response received
       |
-      +──> HasToolUse == false ──> [Idle]
-      |                            (SetAgentBusy(false), auto-save)
+      +──> HasToolUse == false ──> [TurnComplete]
+      |                            (activity bar set to Idle)
       v
     [ToolExecution]
       |
       | For each ToolUseBlock:
-      |   RenderToolExecution (panel)
-      |   RenderExecutingStart (spinner)
-      |   ExecuteAsync (with CancellationMonitor)
-      |   RenderExecutingStop
-      |   RenderToolResult
+      |   Render tool badge (in conversation view)
+      |   Set activity bar to Executing (with spinner + elapsed time)
+      |   Execute command (with cancellation monitor)
+      |   Set activity bar to Streaming
+      |   Render tool result badge (in conversation view)
       |
       | All tool results added to conversation
       v
@@ -308,301 +352,284 @@ error and stops.
 
 ### 3.5 Input Reader
 
-Managed by `AsyncInputReader` in `Terminal/AsyncInputReader.cs`.
+Managed by the input handler.
 
 ```
-    [Reading]
+    [Reading]                   (between turns, input view active)
       |
       | User presses Enter (non-empty buffer)
       v
     [Submitting]
       |
-      | Line written to Channel
+      | Line written to message queue
       | Buffer cleared, history updated
       v
     [Reading]
 ```
 
 This is a continuous loop. The reader runs on a background task and never
-blocks the main thread. Submitted lines are consumed by
-`SpectreUserInterface.GetUserInputAsync()` via `ReadLineAsync()`.
+blocks the main thread. Submitted lines are consumed by the user interface's
+input reading method.
+
+During active turns, the reader continues running. Typed text is visible in
+the input view (dim styling, with `[N queued]` badge for submitted lines).
+Esc/Ctrl+C trigger the cancellation state machine.
+
+### 3.6 Application Lifecycle
+
+The TUI application starts once and remains active for the entire session.
+There is no per-turn activation or deactivation of the application itself.
+
+```
+    [NotStarted]                (before session initialization)
+      |
+      | Application starts, view hierarchy created
+      | (ConversationView + ActivityBar + InputView + StatusBar)
+      v
+    [Active]                    (render loop running, views accepting updates)
+      |              |
+      | Session      | Dialog opened (interactive slash command)
+      | ends         | Dialog takes focus, blocks input to conversation
+      v              v
+    [Shutdown]      [DialogActive]
+      |              |
+      | Dispose       | Dialog dismissed
+      | terminal      | Focus returns to conversation
+      v              v
+    [Terminated]    [Active]
+```
+
+**Key points:**
+- The `Active` state persists across all agent turns. BeginTurn and EndTurn
+  toggle the activity bar state, not the application lifecycle.
+- `DialogActive` is a sub-state of `Active` -- the application and views
+  remain running. The dialog overlays the conversation view and takes focus.
+  The agent may continue working in the background.
+- `Shutdown` occurs only when the session ends (`/quit`, `/exit`, or EOF).
 
 ---
 
-## 4. Layout Suspension Protocol
+## 4. Interactive Command Overlay Protocol
 
-### 4.1 When Suspension Occurs
+### 4.1 Overview
 
-The split-pane layout must be suspended whenever Spectre.Console needs full
-terminal control for interactive prompts. This is because Spectre's prompt
-widgets write directly to the console and expect to own the cursor position
-and screen state.
+Interactive slash commands that need user input (text fields, selection lists,
+confirmation prompts) open in modal Dialog views that overlay the conversation.
+This is the natural windowing model of the TUI framework -- no suspension or
+mode switching is required.
 
-### 4.2 How Suspension Works
+### 4.2 How Dialogs Work
 
-1. **SpectreHelpers wraps every prompt** in `SuspendLayout()` / `ResumeLayout()`:
-   ```
-   SuspendLayout()    // TerminalLayout.Current?.Suspend()
-   try {
-     // Spectre prompt runs with full terminal access
-     return AnsiConsole.Prompt(...)
-   } finally {
-     ResumeLayout()   // TerminalLayout.Current?.Resume()
-   }
-   ```
+1. **User types an interactive slash command** (e.g., `/project create`).
+2. **A modal Dialog opens** over the conversation view. The dialog takes focus
+   and blocks keyboard input from reaching the conversation or input views.
+3. **The agent continues working** if a turn is active. Streaming tokens
+   accumulate in the conversation model. Tool results add blocks to the scroll
+   buffer. The dialog does not block background processing.
+4. **User completes or cancels the dialog.** Focus returns to the input view.
+   The conversation view displays all content that arrived during the dialog.
 
-2. **`Suspend()`** (in `TerminalLayout.cs`):
-   - Acquires `_consoleLock`
-   - Sets `_isSuspended = true`
-   - Resets the scroll region (`\x1b[r`)
-   - Moves cursor to the bottom of the screen
+### 4.3 Dialog Types
 
-3. **`Resume()`** (in `TerminalLayout.cs`):
-   - Acquires `_consoleLock`
-   - Recaptures terminal size (may have changed during prompt)
-   - Re-establishes the scroll region and redraws separator, input, status
-   - Sets `_isSuspended = false`
-
-### 4.3 Affected Prompts
-
-Every prompt helper in `SpectreHelpers` performs suspension:
-
-| Method | Prompt Type |
+| Slash Command Category | Dialog Behavior |
 |---|---|
-| `PromptNonEmpty` | `TextPrompt<string>` with validation |
-| `PromptOptional` | `TextPrompt<string>` with `.AllowEmpty()` |
-| `PromptSecret` | `TextPrompt<string>` with `.Secret()` |
-| `PromptWithDefault` | `TextPrompt<string>` with `.DefaultValue()` |
-| `Ask<T>` | `AnsiConsole.Ask<T>` |
-| `Select` | `SelectionPrompt<string>` |
-| `Select<T>` | `SelectionPrompt<T>` |
-| `MultiSelect<T>` | `MultiSelectionPrompt<T>` |
-| `Confirm` | `AnsiConsole.Confirm` |
+| Create wizards (`/project create`, `/jea create`) | Multi-step dialog with text fields and selection lists |
+| Edit menus (`/project edit`, `/jea edit`) | Selection list of editable fields, then field-specific input |
+| Delete confirmations (`/project delete`, `/jea delete`) | Confirmation dialog (Yes/No) |
+| Setup flows (`/provider setup`) | API key input, provider selection |
+| Assignments (`/jea assign`, `/jea unassign`) | Selection list of profiles/projects |
 
-### 4.4 Prompts Not in SpectreHelpers
+### 4.4 Read-Only Windows
 
-Two prompts in `LoginCommand.cs` use raw `AnsiConsole.Prompt()` without
-suspension:
-- Client Secret prompt (line 142)
-- GCP Location prompt (line 156)
+Read-only slash commands (`/help`, `/project show`, `/context show`, etc.) open
+as modeless windows. These float over the conversation view and do not block
+input. The activity bar shows `Esc to dismiss` while a window is open.
 
-These do not cause issues in practice because `LoginCommand` runs before
-the layout is activated (it is a separate CLI command, not a slash command).
+### 4.5 Common Case: No Dialog Needed
 
-### 4.5 Write Behavior During Suspension
+Most slash commands that display information use modeless windows (see 4.4).
+Only commands that require interactive user input open modal dialogs. The
+majority of user interaction is at the input view prompt.
 
-When the layout is suspended, all `TerminalLayout` write methods
-(`WriteToOutput`, `WriteLineToOutput`, `AppendToOutput`, `WriteRenderable`,
-`WriteMarkupLine`) fall through to direct console/AnsiConsole writes. This
-ensures output from within suspended prompts is not corrupted.
+### 4.6 Pre-Application Prompts
+
+Two prompt categories run before the TUI application starts:
+- Login prompts (API key input, OAuth flow)
+- GCP location selection
+
+These use direct console prompts as a fallback because the TUI application does
+not exist yet. They do not require any special overlay protocol.
 
 ---
 
 ## 5. Resize Handling
 
-### 5.1 Detection Mechanism
+### 5.1 During Active Turns
 
-Terminal resize is detected lazily by `TerminalLayout.CheckForResize()`,
-which is called at the beginning of every write operation (`WriteToOutput`,
-`WriteLineToOutput`, `AppendToOutput`, `WriteRenderable`, `WriteMarkupLine`).
+When the terminal is resized during an active turn:
 
-```csharp
-var currentHeight = System.Console.WindowHeight;
-var currentWidth = System.Console.WindowWidth;
-if (currentHeight != _lastHeight || currentWidth != _lastWidth)
-{
-    _lastHeight = currentHeight;
-    _lastWidth = currentWidth;
-    RefreshLayout();
-}
-```
+1. Terminal dimensions are re-read on the next render cycle.
+2. The view hierarchy redistributes space to its regions.
+3. The conversation view re-renders at the new width.
+4. Dynamic input height is recalculated.
+5. The layout adapts automatically -- no manual resize detection needed.
 
-There is no signal-based resize handler (`SIGWINCH`). Resize is detected on
-the next write.
+### 5.2 Between Turns (Idle State)
 
-### 5.2 What Happens on Resize
+When the terminal is resized between turns, the view hierarchy adapts on the
+next render cycle. The conversation view re-renders visible blocks at the new
+width. The input view re-measures its content.
 
-`RefreshLayout()` calls `EstablishLayout(clearScreen: true)`, which:
+### 5.3 Minimum Terminal Height
 
-1. Clears the entire screen (`\x1b[2J\x1b[H`)
-2. Recalculates row positions:
-   - Scroll region: rows 1 through `height - 3`
-   - Separator: row `height - 2`
-   - Input line: row `height - 1`
-   - Status line: row `height`
-3. Sets the new scroll region (`\x1b[1;{scrollBottom}r`)
-4. Redraws the separator, input prompt, and status line
-5. Positions cursor at the top of the output area
-
-### 5.3 Content Loss on Resize
-
-Resizing clears the screen. Output that was in the scroll region before the
-resize is lost from the visible area. Scrollback buffer behavior depends on
-the terminal emulator:
-- **Windows Terminal**: Scrollback preserved
-- **Legacy conhost**: Scrollback may be partially lost
-- **Most Linux/macOS terminals**: Scrollback preserved
-
-### 5.4 Resize During Specific States
-
-| State | Behavior |
-|---|---|
-| Idle (at input prompt) | Resize detected on next write; prompt redrawn |
-| Streaming LLM tokens | Resize detected on next `AppendToOutput`; layout refreshed, stream continues |
-| Tool execution (spinner) | Resize detected on next spinner frame write; layout refreshed |
-| Tool execution (output) | Resize detected on next output line write; layout refreshed |
-| Suspended (Spectre prompt) | No detection; Spectre.Console handles its own terminal interaction. Resize is detected on `Resume()` via `CaptureTerminalSize()` |
-| Non-layout mode | No resize handling; terminal handles scrolling natively |
-
-### 5.5 Minimum Terminal Height
-
-If the terminal height drops below 10 rows (`MinTerminalHeight`):
-- `CanUseLayout()` returns false
-- If layout was already active: `EstablishLayout` returns early (no-op)
-- The layout effectively degrades but does not deactivate mid-session
+If the terminal height is below 10 rows:
+- The TUI layout is not activated
+- The app runs in scrollback-only mode with blocking prompts
+- Thinking/streaming states use static messages to stderr
 
 ---
 
 ## 6. Thread Safety
 
-### 6.1 ConsoleLock
+### 6.1 Between Turns
 
-`TerminalLayout._consoleLock` is the primary synchronization primitive. It
-is exposed as `TerminalLayout.ConsoleLock` and shared with `ExecutionWindow`.
+Between turns, there is minimal concurrency:
+- The main thread owns all state
+- The input handler runs on a background thread, writing completed lines to a
+  thread-safe message queue
+- The message queue is inherently thread-safe
+- No console lock needed
 
-**Operations that acquire ConsoleLock:**
+### 6.2 During Active Turns
 
-| Operation | Acquirer | Source |
-|---|---|---|
-| Layout activation/deactivation/suspend/resume | `TerminalLayout` | `Activate()`, `Deactivate()`, `Suspend()`, `Resume()` |
-| All output writes | `TerminalLayout` | `WriteToOutput`, `WriteLineToOutput`, `AppendToOutput`, `WriteRenderable`, `WriteMarkupLine` |
-| Input line update | `TerminalLayout` | `UpdateInputLine` |
-| Status line update | `TerminalLayout` | `UpdateStatusLine` |
-| Execution window start/stop | `ExecutionWindow` | `Start()`, `Stop()` |
-| Output line addition | `ExecutionWindow` | `AddOutputLine()` |
-| Tool result rendering | `ExecutionWindow` | `RenderToolResult()` |
-| Spinner frame rendering | `ExecutionWindow` | `RunSpinnerAsync()` (per frame) |
-| Cancel hint rendering | `SpectreUserInterface` | `RenderCancelHint()` |
-| Cancel hint clearing | `SpectreUserInterface` | `ClearCancelHint()` |
-| Executing start/stop | `SpectreUserInterface` | `RenderExecutingStart()`, `RenderExecutingStop()` |
-| Output line rendering | `SpectreUserInterface` | `RenderOutputLine()` |
-| Tool result rendering | `SpectreUserInterface` | `RenderToolResult()` |
+During active turns:
+- The view hierarchy's render loop runs on the main thread
+- The orchestrator updates shared state from background threads via
+  `Application.Invoke()` (thread-safe main-thread invocation)
+- Shared state (stream buffer, tool results, activity state) uses thread-safe
+  patterns (Interlocked, volatile, or lock-free data structures)
+- The render loop reads shared state; background threads write to it through
+  the main-thread invocation mechanism
+- No console lock is needed -- the application serializes all rendering
 
-### 6.2 Cancel Lock
+### 6.3 Cancel Lock
 
-A separate lock (`AsyncInputReader._cancelLock` or
-`CancellationMonitor._pressLock`) guards the cancellation state machine to
-prevent race conditions between key presses and the timer callback.
+A separate lock guards the cancellation state machine to prevent race
+conditions between key presses and the timer callback.
 
-**Critical ordering:** Cancel callbacks are invoked **outside** the cancel
-lock to prevent deadlock with `_consoleLock`. The pattern is:
+**Critical ordering:** Cancel callbacks are invoked **outside** the lock to
+prevent deadlock. The pattern is:
 
-```csharp
-lock (_cancelLock)
-{
-    // Determine action (shouldShowHint or shouldCancel)
-}
-// Invoke callbacks outside the lock
-if (shouldShowHint) { hintCallback?.Invoke(); }
-if (shouldCancel) { cancelCallback?.Invoke(); }
-```
+1. Acquire the cancel lock
+2. Determine action (shouldShowHint or shouldCancel)
+3. Release the cancel lock
+4. Invoke callbacks outside the lock
 
-### 6.3 Thread-Safe Operations
+### 6.4 Thread-Safe Operations
 
 | Operation | Thread Safety Mechanism |
 |---|---|
-| `Channel<string>` reads/writes | `Channel` is inherently thread-safe |
-| `_outputCursorSaved` flag | Only accessed under `_consoleLock` |
-| `_streamingStarted`, `_isThinking`, `_isExecuting`, `_cancelHintShowing` | Accessed from the main thread and from `RenderCancelHint`/`ClearCancelHint` (under `_consoleLock`) |
+| Message queue reads/writes | Queue is inherently thread-safe |
+| Stream buffer updates | Interlocked/volatile, read by render loop |
+| Activity state changes | Volatile field, written via main-thread invocation |
+| View updates from background threads | `Application.Invoke()` posts to main thread |
 
-### 6.4 Not Thread-Safe (By Design)
+### 6.5 Not Thread-Safe (By Design)
 
 | Operation | Notes |
 |---|---|
-| `_lineBuffer`, `_cursorPosition`, `_historyIndex` | Only accessed from the key reader task; single-writer |
-| `_statusText` | Written by main thread, read by `DrawStatusLine` under lock; simple string assignment is atomic |
-| `_agentBusy`, `_queueCount` | Written by main thread, read under lock during input display; race is benign (cosmetic only) |
-
-### 6.5 Potential Deadlock Paths
-
-The only identified deadlock risk is invoking a callback that acquires
-`_consoleLock` while holding `_cancelLock`. Both implementations
-(AsyncInputReader and CancellationMonitor) prevent this by extracting the
-callback reference under the cancel lock and invoking it after releasing
-the lock.
+| Line buffer, cursor position, history index | Only accessed from the key reader task; single-writer |
+| Turn content model | Written by main thread during active turn; read by render loop (serialized by the application) |
 
 ---
 
 ## 7. Output Routing
 
-### 7.1 Layout Mode Output Flow
+### 7.1 All Output Through Views
 
-When the terminal layout is active, all output must flow through
-`TerminalLayout` to maintain scroll region integrity:
+While the TUI application is active, ALL visual output routes through the
+view hierarchy. There are no direct console writes.
 
-```
-Application code
-    |
-    v
-SpectreUserInterface method (e.g., RenderAssistantText)
-    |
-    v
-TerminalLayout method (WriteToOutput / WriteLineToOutput / WriteRenderable / etc.)
-    |
-    +-- Acquires _consoleLock
-    +-- Moves cursor to scroll region bottom
-    +-- Writes content
-    +-- Repositions cursor to input line
-    +-- Releases _consoleLock
-```
+| Content | Destination View |
+|---|---|
+| User message echo | Conversation view (Panel with grey23 background) |
+| Streaming text | Conversation view (appended as tokens arrive) |
+| Tool call badges | Conversation view (Panel with rounded border) |
+| Tool result badges | Conversation view (status line) |
+| Token usage | Conversation view (dim metadata line) |
+| Activity state | Activity bar (spinner + label, or dim Rule) |
+| Status metadata | Status bar (provider, model, project, engine, key hints) |
+| Input echo | Input view (user's typed text with cursor) |
+| Slash command output (read-only) | Modeless window overlay |
+| Slash command output (interactive) | Modal dialog overlay |
+| Error messages | Conversation view or dialog (depending on context) |
 
-### 7.2 Non-Layout Mode Output Flow
+### 7.2 Pre-Application Output
 
-When the layout is not active, output goes directly to the console:
+Before the TUI application starts, output goes directly to the terminal:
+- Login prompts and provider setup (separate CLI commands)
+- Provider activation error messages
+- Pre-session configuration errors
 
-```
-Application code
-    |
-    v
-SpectreUserInterface method
-    |
-    +-- System.Console.Write/WriteLine (plain text)
-    +-- AnsiConsole.MarkupLine (Spectre markup)
-    +-- AnsiConsole.Write(IRenderable) (Spectre renderables)
-```
+### 7.3 Non-Layout Mode Output
 
-### 7.3 Error Output
-
-Errors rendered via `SpectreUserInterface.RenderError()` always go to stderr
-via the `_stderr` `IAnsiConsole` instance, regardless of layout mode.
-
-Errors rendered via `SpectreHelpers.Error()` go to stdout via
-`AnsiConsole.MarkupLine`. This is a known inconsistency (see
-`06-style-tokens.md` Section 11.2).
+When the TUI layout is not available (terminal height < 10 rows, piped output):
+- All output goes to stdout as plain text
+- Errors go to stderr
+- No view hierarchy, no scrolling, no windowing
 
 ---
 
-## 8. Queue Count Display
+## 8. Turn Lifecycle Detail
 
-### 8.1 When Visible
+### 8.1 Full Sequence
 
-The message queue count indicator `[N messages queued]` appears on the input
-line only when:
-- Layout mode is active
-- The agent is busy (`_agentBusy == true`)
-- There are pending messages (`_queueCount > 0`)
-- There is sufficient terminal width for both the input text and the label
+This is the complete step-by-step sequence for a single agent turn:
 
-### 8.2 Rendering
+1. **User types in the input view** (`> _`). Application is active in idle
+   state.
+2. **User presses Enter**. Line submitted to message queue.
+3. **Main thread reads from message queue**. Adds message to conversation
+   model.
+4. **User message rendered in conversation view**: A Panel with grey23
+   background containing the escaped user text. The conversation view
+   auto-scrolls to the bottom.
+5. **BeginTurn**: Activity bar set to Thinking (yellow spinner +
+   `Thinking...`). Agent-busy flag set. Input view prompt dims.
+6. **Dispatch LLM request**. Await streaming response.
+7. **On first token**: Activity bar transitions to Streaming (cyan spinner +
+   `Streaming...`).
+8. **Streaming loop**: Append tokens to stream buffer, update conversation
+   view, screen refreshes at 60fps.
+9. **On CompletionChunk**: Check for tool calls.
+10. **If tool calls**: Render tool badge in conversation view. Activity bar
+    shows Executing with elapsed timer. Execute command with cancellation
+    monitor. Render tool result badge. Add results to conversation. Loop back
+    to step 6 for next round.
+11. **If end_turn or max rounds**: Set turn-complete flag.
+12. **EndTurn**: Activity bar set to Idle (dim Rule). Agent-busy flag cleared.
+    Input view prompt changes from dim to bold blue `>`.
+13. **All turn content is already in the scroll buffer.** No flushing needed.
+    The conversation view continues showing the conversation history.
+14. **User types next message** in the input view. Back to step 1.
 
-The label is positioned right-aligned on the input row using dim ANSI styling
-(`DimOn`/`DimOff`). It is redrawn as part of `UpdateInputLine()`.
+### 8.2 Error During Turn
 
-### 8.3 Update Frequency
+If an error occurs during the active turn:
 
-The queue count is updated:
-- When `SetAgentBusy(true)` is called (start of agent turn)
-- When `ReadLineAsync` is called (before reading a line from the channel)
-- When `UpdateQueueCount` is explicitly called
+1. The error is rendered in the conversation view (or as a dialog if critical).
+2. Any partial content remains in the scroll buffer.
+3. Activity bar returns to Idle (dim Rule).
+4. User message is removed from conversation (allow retry).
+5. Input view returns to normal (bold blue `>`).
 
-The count is not updated on every key press to avoid flicker.
+### 8.3 Cancellation During Turn
+
+If the user cancels during an active turn:
+
+1. Cancellation token fires.
+2. Current operation (streaming or execution) stops.
+3. Partial results are preserved in the scroll buffer.
+4. Activity bar returns to Idle (dim Rule).
+5. Conversation view shows all content up to the cancellation point.
+6. Input view returns to normal (bold blue `>`).

@@ -132,7 +132,7 @@ for resuming a previous session.
          |
          v
     [Activate layout]
-    _ui.ActivateLayout()
+    [Activate layout]
          |
     +----+----+
     |         |
@@ -205,8 +205,8 @@ for resuming a previous session.
      (`claude` -> Anthropic, `google` -> Gemini, `gpt` -> OpenAI,
      `local` -> Ollama). Unrecognized names default to Gemini with a
      warning.
-  2. Stored last-used provider via `_providerConfigStore.GetLastUsedProviderAsync()`.
-  3. `_appSettings.Value.Llm.ProviderType` (appsettings default).
+  2. Stored last-used provider from the provider config store.
+  3. Default provider from application settings (Gemini).
 - **Transitions to**: Step 4
 
 ### Step 4: Provider Configuration Build
@@ -230,7 +230,7 @@ for resuming a previous session.
 - **System response**: If the project has a `DockerImage` set or
   `RequireContainer` is true, the execution config is built from the
   project's `BuildExecutionConfig()`. Otherwise, the global
-  `_appSettings.Value.Execution` is used. This determines whether the
+  the global execution settings are used. This determines whether the
   engine will be InProcess (constrained PowerShell) or Container (Docker).
 - **Transitions to**: Step 6
 
@@ -243,8 +243,8 @@ for resuming a previous session.
   ```
 - **User action**: None.
 - **System response**: If an API key is available (or provider is Ollama),
-  `_activeProvider.Activate(llmConfig)` is called. This creates the
-  `ILlmProvider` instance via the factory. On success:
+  The provider is activated with the assembled configuration. This
+  creates the LLM provider instance via the factory. On success:
   - `isConfigured` is set to true.
   - The status line is assembled: `"{Provider} | {Model} | {Project} |
     {Branch} | {Mode}"` (Branch is included only if a git repo was
@@ -288,24 +288,23 @@ for resuming a previous session.
   "Not configured" and setup instructions. The start hint (STARTUP-06)
   is suppressed.
 - **User action**: None -- reads the startup information.
-- **System response**: `ChatCommand.RenderBanner` renders the banner,
-  info grid, and footer. `_ui.RenderHint` renders the start hint only
-  when configured.
+- **System response**: The application renders the banner, info grid,
+  and footer. The start hint is rendered only when the provider is
+  configured.
 - **Transitions to**: Step 8
 
 ### Step 8: Engine Creation
 
 - **Screen**: No visual output (engine creation happens after the banner).
 - **User sees**: Nothing additional.
-- **System response**: `_engineFactory.CreateAsync(executionConfig,
-  resolvedDirs, projectName)` creates the execution engine:
+- **System response**: The execution engine factory creates the engine:
   - **InProcess**: Creates a `ConstrainedRunspaceEngine` with JEA
     profiles composed from the global profile and any project-assigned
     profiles.
   - **Container**: Creates a `ContainerExecutionEngine` with Docker
     container setup, volume mounts per directory, and a persistent
     shell session.
-  The engine is stored in `_activeEngine.SetAsync(engine, mode)`.
+  The engine is stored as the active execution engine for the session.
 - **Transitions to**: Step 9
 
 ### Step 9: Session Creation (New) or Resume
@@ -326,7 +325,7 @@ for resuming a previous session.
   - **New session**: `new Session(workingDirectory)` creates a session with
     a fresh GUID ID and empty conversation. `ProjectName` and
     `SystemPrompt` are set. The conversation logger is initialized.
-  - **Resume**: `_sessionRepository.LoadAsync(id)` attempts to load the
+  - **Resume**: The session repository attempts to load the
     session. If found, the session's working directory and project name
     are updated, the system prompt is rebuilt (to reflect any project
     changes since the last session), and the resume is logged.
@@ -336,8 +335,8 @@ for resuming a previous session.
 
 - **Screen**: No visual output.
 - **User sees**: Nothing.
-- **System response**: `ChatCommand.BuildSystemPrompt` assembles the
-  system prompt from three parts:
+- **System response**: The system prompt is assembled from
+  three parts:
   1. **Project context**: `"You are working on project '{name}'."`
   2. **Custom prompt**: The project's `SystemPrompt` property, or
      `Project.DefaultSystemPrompt` if none is set.
@@ -346,8 +345,8 @@ for resuming a previous session.
      and branch name. Container path mappings are used when in container
      mode.
 
-  Later, when `AgentOrchestrator.RunAgentTurnAsync` builds the
-  `LlmRequest`, it prepends `MetaPrompt.Build()` (describing the
+  Later, when the orchestrator builds the LLM request, it prepends the
+  meta prompt (describing the
   shell-only execution model and available commands) to the session's
   system prompt.
 - **Transitions to**: Step 11
@@ -357,18 +356,16 @@ for resuming a previous session.
 - **Screen**: LAYOUT-01 (split-pane) or no change (non-interactive)
 - **User sees**:
   - **Interactive, height >= 10**: The screen transitions to the split-pane
-    layout. An ANSI scroll region is established (rows 1 through H-3),
-    a box-drawing separator appears at row H-2, the input prompt `> `
-    appears at row H-1, and the status line appears at row H.
+    layout. The conversation view is established, a box-drawing separator
+    appears, the input prompt `> ` appears, and the status bar appears.
   - **Non-interactive or height < 10**: Layout is skipped. The fallback
     prompt mode will be used (LAYOUT-07).
 - **User action**: None.
-- **System response**: `_ui.ActivateLayout()` calls `_layout.Activate()`,
-  which checks `IsInteractive` and terminal height. If conditions are met:
-  - `TerminalLayout.EstablishLayout` clears the screen, sets up scroll
-    regions, and positions the cursor.
-  - `AsyncInputReader` is created with cancel hint callbacks and started.
-  - The status line is updated if one was set during provider activation.
+- **System response**: The layout activation checks whether the terminal
+  is interactive and has sufficient height. If conditions are met:
+  - The screen is cleared and the layout regions are established.
+  - The input handler is created and started.
+  - The status bar is updated if one was set during provider activation.
 - **Transitions to**: Step 12
 
 ### Step 12: Session Loop Begins
@@ -377,7 +374,7 @@ for resuming a previous session.
 - **User sees**: The input prompt `> ` with a blinking cursor, ready for
   their first message.
 - **User action**: Types a message, slash command, or exit command.
-- **System response**: `_orchestrator.RunSessionAsync(session)` enters the
+- **System response**: The orchestrator enters the
   main session loop. This loop reads user input, dispatches slash commands,
   and runs agent turns until the user types `/quit`, `/exit`, `quit`, or
   `exit`.
@@ -408,7 +405,7 @@ for resuming a previous session.
 | D6 | Banner size | Terminal height >= 30 | STARTUP-01 (full ASCII art) |
 |    |             | Terminal height < 30 (or error) | STARTUP-02 (compact) |
 | D7 | Execution config | Project has DockerImage or RequireContainer | Project's `BuildExecutionConfig()` |
-|    |                  | Neither | Global `_appSettings.Value.Execution` |
+|    |                  | Neither | Global execution settings from appsettings |
 | D8 | Engine mode | Config mode is InProcess | `ConstrainedRunspaceEngine` |
 |    |             | Config mode is Container | `ContainerExecutionEngine` |
 | D9 | Resume flag | `--resume` not set | New session created |

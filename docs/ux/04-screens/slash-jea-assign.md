@@ -191,17 +191,3 @@ appears.
 | Status Message | Section 1 | Success, error messages |
 | Empty State | Section 13 | "No profiles available/assigned" messages |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Assign flow | `Commands/JeaSlashCommand.cs` | `HandleAssignAsync` | 529-585 |
-| Assign project guard | `Commands/JeaSlashCommand.cs` | `HandleAssignAsync` | 531-536 |
-| Assign profile resolution | `Commands/JeaSlashCommand.cs` | `HandleAssignAsync` | 538-558 |
-| Assign duplicate check | `Commands/JeaSlashCommand.cs` | `HandleAssignAsync` | 576-579 |
-| Unassign flow | `Commands/JeaSlashCommand.cs` | `HandleUnassignAsync` | 591-632 |
-| Unassign project guard | `Commands/JeaSlashCommand.cs` | `HandleUnassignAsync` | 593-598 |
-| Unassign empty check | `Commands/JeaSlashCommand.cs` | `HandleUnassignAsync` | 607-612 |
-| Unassign removal | `Commands/JeaSlashCommand.cs` | `HandleUnassignAsync` | 624-628 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

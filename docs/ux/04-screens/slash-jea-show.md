@@ -113,7 +113,7 @@ file path.
    `[bold]{profileName}[/]` as the header and `Padding(1, 0)` (1 char
    horizontal, 0 vertical).
 
-5. **Command indicators**: Allowed commands use `[green]v[/]` (the standard
+5. **Command indicators**: Allowed commands use `[green]✓[/]` (the standard
    success indicator). Denied commands use `[red]x[/]`. Each command name is
    escaped via `Markup.Escape`.
 
@@ -147,14 +147,3 @@ file path.
 
 The panel is a one-off layout not covered by a standard component pattern.
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Show flow | `Commands/JeaSlashCommand.cs` | `HandleShowAsync` | 172-200 |
-| Profile detail builder | `Commands/JeaSlashCommand.cs` | `BuildProfileDetail` | 675-716 |
-| Panel construction | `Commands/JeaSlashCommand.cs` | `HandleShowAsync` | 192-195 |
-| Profile selection helper | `Commands/JeaSlashCommand.cs` | `PromptProfileSelectionAsync` | 638-649 |
-| File path helper | `Commands/JeaSlashCommand.cs` | `GetProfileFilePath` | 718-725 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

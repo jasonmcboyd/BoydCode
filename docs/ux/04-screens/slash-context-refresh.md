@@ -117,7 +117,7 @@ Warning: Engine refresh failed (keeping previous): Docker daemon not running.
 
 | Token | Style Token (06-style-tokens.md) | Usage on This Screen |
 |---|---|---|
-| `[green]v[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
+| `[green]✓[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
 | `[red]Error:[/]` | error-red (1.1) | Error prefix |
 | `[yellow]Warning:[/]` | warning-yellow (1.1) | Missing directory and engine failure warnings |
 | `[dim]` | dim (2.2) | Label portion of summary rows; unchanged value styling; "(was: ...)" suffix |
@@ -183,20 +183,3 @@ None. This is a non-interactive operational command.
 |---|---|---|
 | Status Message | Section 1 | Success, error, and warning messages |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| HandleRefreshAsync | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 416-530 |
-| Before snapshot | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 429-433 |
-| Project reload | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 436-441 |
-| Directory resolution + warnings | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 444-448 |
-| Directory guard update | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 451 |
-| Engine recreation | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 462-472 |
-| System prompt rebuild (after engine) | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 475 |
-| Status line update | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 478-484 |
-| Success message + logging | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 494-505 |
-| Summary rendering | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 508-530 |
-| RenderRefreshSummaryLine helper | `Commands/ContextSlashCommand.cs` | `RenderRefreshSummaryLine` | 532-539 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

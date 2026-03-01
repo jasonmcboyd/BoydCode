@@ -86,12 +86,3 @@ The panel is a one-off renderable, not covered by a standard component
 pattern. This is the appropriate approach per the Consolidation Principle --
 unique panel layouts stay as raw Spectre calls.
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Show flow | `Commands/ProviderSlashCommand.cs` | `HandleShow` | 173-197 |
-| No provider guard | `Commands/ProviderSlashCommand.cs` | `HandleShow` | 175-179 |
-| Panel construction | `Commands/ProviderSlashCommand.cs` | `HandleShow` | 184-196 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

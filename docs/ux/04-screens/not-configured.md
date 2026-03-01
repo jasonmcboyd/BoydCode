@@ -142,14 +142,3 @@ type `/provider setup` at the input prompt to configure a provider, or
 | Status Message | Section 1 | The guidance line follows the warning-yellow pattern |
 | Banner | Section 20 | This is a state variant of the startup banner |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Banner status footer (not configured branch) | `Commands/ChatCommand.cs` | `RenderBanner` | 346-350 |
-| "Not configured" line | `Commands/ChatCommand.cs` | `RenderBanner` | 348 |
-| Guidance line | `Commands/ChatCommand.cs` | `RenderBanner` | 349 |
-| isConfigured determination | `Commands/ChatCommand.cs` | `ExecuteAsync` | ~120-140 |
-| Hint line suppression | `Commands/ChatCommand.cs` | `ExecuteAsync` | ~168 (conditional on isConfigured) |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

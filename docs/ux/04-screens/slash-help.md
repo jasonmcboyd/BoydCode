@@ -136,17 +136,3 @@ used elsewhere. The `ShowModal` approach with a plain-text content string
 provides a visually distinct reference panel and avoids the column-header
 overhead of a `Table` widget.
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| TryHandleAsync | `Commands/HelpSlashCommand.cs` | `TryHandleAsync` | 23-57 |
-| StringBuilder construction | `Commands/HelpSlashCommand.cs` | `TryHandleAsync` | 31 |
-| Built-in /quit | `Commands/HelpSlashCommand.cs` | `TryHandleAsync` | 34 |
-| Registry iteration (skip /help) | `Commands/HelpSlashCommand.cs` | `TryHandleAsync` | 37-50 |
-| /help rendered last | `Commands/HelpSlashCommand.cs` | `TryHandleAsync` | 53 |
-| ShowModal call | `Commands/HelpSlashCommand.cs` | `TryHandleAsync` | 55 |
-| AppendCommand helper | `Commands/HelpSlashCommand.cs` | `AppendCommand` | 59-63 |
-| AppendSubcommand helper | `Commands/HelpSlashCommand.cs` | `AppendSubcommand` | 65-70 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

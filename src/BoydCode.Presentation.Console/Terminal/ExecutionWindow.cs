@@ -28,7 +28,7 @@ internal sealed class ExecutionWindow
   {
     _outputBuffer.Clear();
     _stopwatch.Restart();
-    _layout?.SetIndicator(IndicatorState.Executing);
+    _layout?.SetActivity(ActivityState.Executing);
   }
 
   public void AddOutputLine(string line)
@@ -38,18 +38,12 @@ internal sealed class ExecutionWindow
       _outputBuffer.Dequeue();
     }
     _outputBuffer.Enqueue(line);
-
-    // Stream the line to the layout so the user sees it live
-    if (_layout is not null && _layout.IsActive)
-    {
-      _layout.AddContentLine($"  {line}");
-    }
   }
 
   public TimeSpan Stop()
   {
     _stopwatch.Stop();
-    _layout?.SetIndicator(IndicatorState.Idle);
+    _layout?.SetActivity(ActivityState.Idle);
     return _stopwatch.Elapsed;
   }
 
@@ -69,31 +63,31 @@ internal sealed class ExecutionWindow
       var badge = isError
         ? ConversationRenderables.ToolResultError(toolName, lineCount, duration)
         : ConversationRenderables.ToolResultSuccess(toolName, lineCount, duration);
-      RenderRenderable(badge);
-      RenderRenderable(ConversationRenderables.ExpandHint());
+      _layout?.AddContent(badge);
+      _layout?.AddContent(ConversationRenderables.ExpandHint());
     }
     else if (lineCount > 0)
     {
       // Show the lines inline, then summary
       foreach (var line in _lastOutputBuffer)
       {
-        RenderLine($"  {line}");
+        _layout?.AddContentLine($"  {line}");
       }
       var badge = isError
         ? ConversationRenderables.ToolResultError(toolName, lineCount, duration)
         : ConversationRenderables.ToolResultSuccess(toolName, lineCount, duration);
-      RenderRenderable(badge);
+      _layout?.AddContent(badge);
     }
     else
     {
       // No output — show summary or error message
       if (isError)
       {
-        RenderRenderable(ConversationRenderables.ToolResultErrorWithMessage(toolName, Truncate(result, 500)));
+        _layout?.AddContent(ConversationRenderables.ToolResultErrorWithMessage(toolName, Truncate(result, 500)));
       }
       else
       {
-        RenderRenderable(ConversationRenderables.ToolResultSuccessWithSummary(toolName, Truncate(result, 200)));
+        _layout?.AddContent(ConversationRenderables.ToolResultSuccessWithSummary(toolName, Truncate(result, 200)));
       }
     }
   }
@@ -113,64 +107,6 @@ internal sealed class ExecutionWindow
   public void MarkLastOutputExpanded()
   {
     _lastOutputExpanded = true;
-  }
-
-  public void ExpandLastToolOutput()
-  {
-    if (_lastOutputBuffer is null || _lastOutputBuffer.Count == 0)
-    {
-      RenderBadge("[dim]No tool output to expand.[/]");
-      return;
-    }
-
-    if (_lastOutputExpanded)
-    {
-      RenderBadge("[dim]Output already expanded.[/]");
-      return;
-    }
-
-    _lastOutputExpanded = true;
-    foreach (var line in _lastOutputBuffer)
-    {
-      RenderLine($"  {line}");
-    }
-  }
-
-  private void RenderRenderable(IRenderable renderable)
-  {
-    if (_layout is not null && _layout.IsActive)
-    {
-      _layout.AddContent(renderable);
-    }
-    else
-    {
-      AnsiConsole.Write(renderable);
-      AnsiConsole.WriteLine();
-    }
-  }
-
-  private void RenderBadge(string markup)
-  {
-    if (_layout is not null && _layout.IsActive)
-    {
-      _layout.AddContentMarkup(markup);
-    }
-    else
-    {
-      AnsiConsole.MarkupLine(markup);
-    }
-  }
-
-  private void RenderLine(string text)
-  {
-    if (_layout is not null && _layout.IsActive)
-    {
-      _layout.AddContentLine(text);
-    }
-    else
-    {
-      System.Console.WriteLine(text);
-    }
   }
 
   private static string FormatDuration(TimeSpan elapsed)

@@ -6,11 +6,19 @@ namespace BoydCode.Presentation.Console.Renderables;
 internal static class ConversationRenderables
 {
   /// <summary>
-  /// User message: "  > {text}" with bold blue ">".
+  /// User message: panel with grey23 background, no border.
   /// </summary>
   public static IRenderable UserMessage(string text)
   {
-    return new Markup($"  [bold blue]>[/] {Markup.Escape(text)}");
+    // Note: Panel does not have a .Style() method in Spectre.Console 0.49.
+    // The spec calls for .Style(new Style(background: Color.Grey23)) but this
+    // API doesn't exist. Using [on grey23] markup on the content is the closest
+    // achievable result. The background covers the text area but not the Panel's
+    // padding regions. Spec amendment suggested: update the code sample to match
+    // the actual Spectre.Console API.
+    return new Panel(new Markup($"[on grey23]> {Markup.Escape(text)}[/]"))
+      .Border(BoxBorder.None)
+      .Padding(1, 0, 1, 0);
   }
 
   /// <summary>
@@ -18,7 +26,9 @@ internal static class ConversationRenderables
   /// </summary>
   public static IRenderable AssistantText(string text)
   {
-    return new Markup($"  {Markup.Escape(text)}");
+    return new Panel(Markup.Escape(text))
+      .Border(BoxBorder.None)
+      .PadLeft(2);
   }
 
   /// <summary>

@@ -605,7 +605,7 @@ public sealed class ContextSlashCommand : ISlashCommand
       string summaryText;
       try
       {
-        TuiLayout.Current?.SetIndicator(IndicatorState.Thinking);
+        TuiLayout.Current?.SetActivity(ActivityState.Thinking);
         try
         {
           var response = await _activeProvider.Provider!.SendAsync(request, ct);
@@ -613,7 +613,7 @@ public sealed class ContextSlashCommand : ISlashCommand
         }
         finally
         {
-          TuiLayout.Current?.SetIndicator(IndicatorState.Idle);
+          TuiLayout.Current?.SetActivity(ActivityState.Idle);
         }
       }
       catch (Exception ex) when (ex is not OperationCanceledException)
@@ -798,14 +798,14 @@ public sealed class ContextSlashCommand : ISlashCommand
     Conversation compacted;
     try
     {
-      TuiLayout.Current?.SetIndicator(IndicatorState.Thinking);
+      TuiLayout.Current?.SetActivity(ActivityState.Thinking);
       try
       {
         compacted = await _contextCompactor.CompactAsync(conversation, targetTokens, ct);
       }
       finally
       {
-        TuiLayout.Current?.SetIndicator(IndicatorState.Idle);
+        TuiLayout.Current?.SetActivity(ActivityState.Idle);
       }
     }
     catch (Exception ex) when (ex is not OperationCanceledException)
@@ -872,7 +872,7 @@ public sealed class ContextSlashCommand : ISlashCommand
     string autoName;
     try
     {
-      TuiLayout.Current?.SetIndicator(IndicatorState.Thinking);
+      TuiLayout.Current?.SetActivity(ActivityState.Thinking);
       try
       {
         var nameRequest = new LlmRequest
@@ -894,7 +894,7 @@ public sealed class ContextSlashCommand : ISlashCommand
       }
       finally
       {
-        TuiLayout.Current?.SetIndicator(IndicatorState.Idle);
+        TuiLayout.Current?.SetActivity(ActivityState.Idle);
       }
     }
     catch (Exception ex) when (ex is not OperationCanceledException)

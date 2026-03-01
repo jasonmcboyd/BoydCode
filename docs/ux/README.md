@@ -6,7 +6,7 @@ Formal UX design documentation for the BoydCode terminal application. Every visu
 
 BoydCode is a **TUI** (text user interface), not a simple CLI. It has a persistent split-pane layout, streaming AI responses, collapsible execution windows, and menu-driven configuration. The UX design follows a **human-first** principle: we borrow freely from GUI, TUI, and CLI traditions based on what serves the user best, not what fits a paradigm.
 
-See the [spectre-ux-expert agent](../../.claude/agents/spectre-ux-expert.md) for the full set of design principles, and the [Terminal UX Knowledge Base](../terminal-ux-knowledge-base.md) for deep reference material on terminal UX patterns.
+See the [tui-ux-expert agent](../../.claude/agents/tui-ux-expert.md) for the full set of design principles, and the [Terminal UX Knowledge Base](../terminal-ux-knowledge-base.md) for deep reference material on terminal UX patterns.
 
 ## Reading Order
 
@@ -52,7 +52,8 @@ Individual specs for every screen in the application. Each includes ASCII mockup
 | `/provider` | [list](04-screens/slash-provider-list.md), [setup](04-screens/slash-provider-setup.md), [show](04-screens/slash-provider-show.md), [remove](04-screens/slash-provider-remove.md) |
 | `/jea` | [list](04-screens/slash-jea-list.md), [create](04-screens/slash-jea-create.md), [edit](04-screens/slash-jea-edit.md), [show](04-screens/slash-jea-show.md), [effective](04-screens/slash-jea-effective.md), [assign/unassign](04-screens/slash-jea-assign.md) |
 | `/conversations` | [list](04-screens/slash-conversations-list.md), [show](04-screens/slash-conversations-show.md), [rename](04-screens/slash-conversations-rename.md), [delete](04-screens/slash-conversations-delete.md), [clear](04-screens/slash-conversations-clear.md) |
-| `/context` | [show](04-screens/slash-context-show.md), [summarize](04-screens/slash-context-summarize.md), [refresh](04-screens/slash-context-refresh.md) |
+| `/context` | [show](04-screens/slash-context-show.md), [summarize](04-screens/slash-context-summarize.md), [prune](04-screens/slash-context-prune.md), [refresh](04-screens/slash-context-refresh.md) |
+| `/agent` | [list](04-screens/slash-agent-list.md), [show](04-screens/slash-agent-show.md) |
 | `/expand` | [slash-expand.md](04-screens/slash-expand.md) |
 
 ### User Flows
@@ -74,6 +75,7 @@ Step-by-step task flows with decision points, error branches, and screen referen
 | 08 | [Interaction Specs](08-interaction-specs.md) | Keyboard shortcuts, animation timing, state machines, thread safety, resize handling |
 | 09 | [Error Catalog](09-error-catalog.md) | 50+ error messages with IDs, triggers, severity, recovery, and consistency analysis |
 | 10 | [Accessibility](10-accessibility.md) | Screen reader audit, NO_COLOR support, non-interactive mode, narrow terminal behavior, platform matrix |
+| 11 | [Screen Flow Map](11-screen-flow-map.md) | Mermaid-based navigation map: overview diagram, per-group detail diagrams with screen IDs, transition reference table |
 
 ## How to Use This Documentation
 
@@ -91,7 +93,7 @@ Step-by-step task flows with decision points, error branches, and screen referen
 1. Compare the implementation against the screen spec
 2. Verify style tokens are used consistently
 3. Check the [Interaction Specs](08-interaction-specs.md) for keyboard and timing requirements
-4. Run through the UX Review Checklist (in the spectre-ux-expert agent file)
+4. Run through the UX Review Checklist (in the tui-ux-expert agent file)
 
 ### When designing new features
 
@@ -109,8 +111,8 @@ Step-by-step task flows with decision points, error branches, and screen referen
 | Design system documents | 2 |
 | Screen specifications | 35 |
 | User flow diagrams | 5 |
-| Technical specifications | 3 |
-| **Total** | **48** |
+| Technical specifications | 4 |
+| **Total** | **49** |
 
 ## Maintenance
 

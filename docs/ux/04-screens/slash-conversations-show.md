@@ -165,18 +165,3 @@ None. This is a read-only detail view.
 | Info Grid | Section 3 | Session metadata display |
 | Status Message | Section 1 | Error and usage messages |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| HandleShowAsync | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 131-197 |
-| Usage guard | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 133-137 |
-| Not found guard | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 142-146 |
-| Info grid construction | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 150-163 |
-| Name row (conditional) | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 152-155 |
-| Message preview loop | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 166-191 |
-| Overflow indicator | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 187-191 |
-| Resume hint | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 194-196 |
-| GetMessageText utility | `Commands/ConversationsSlashCommand.cs` | `GetMessageText` | 308-335 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

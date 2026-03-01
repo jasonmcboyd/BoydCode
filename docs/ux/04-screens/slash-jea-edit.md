@@ -194,18 +194,3 @@ JEA-21, JEA-22
 | Status Message | Section 1 | Success, error, warning, dim messages |
 | Empty State | Section 13 | Yellow warnings for empty lists |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Edit flow | `Commands/JeaSlashCommand.cs` | `HandleEditAsync` | 282-419 |
-| Profile selection helper | `Commands/JeaSlashCommand.cs` | `PromptProfileSelectionAsync` | 638-649 |
-| Change language mode | `Commands/JeaSlashCommand.cs` | `HandleEditAsync` | 321-333 |
-| Add command | `Commands/JeaSlashCommand.cs` | `HandleEditAsync` | 335-344 |
-| Remove command | `Commands/JeaSlashCommand.cs` | `HandleEditAsync` | 346-358 |
-| Toggle deny | `Commands/JeaSlashCommand.cs` | `HandleEditAsync` | 360-385 |
-| Add module | `Commands/JeaSlashCommand.cs` | `HandleEditAsync` | 388-394 |
-| Remove module | `Commands/JeaSlashCommand.cs` | `HandleEditAsync` | 396-408 |
-| Save | `Commands/JeaSlashCommand.cs` | `HandleEditAsync` | 413-418 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

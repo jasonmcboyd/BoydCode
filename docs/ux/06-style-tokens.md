@@ -73,14 +73,41 @@ For numeric indicators that change color at breakpoints:
 
 ### 1.5 NO_COLOR Compliance
 
-When `NO_COLOR` is set or `AnsiConsole.Profile.Capabilities.ColorSystem` is
-`ColorSystem.NoColors`:
+When `NO_COLOR` is set or the terminal reports no color support:
 
 - All `[color]` markup is stripped (Spectre handles this automatically)
 - `[bold]` and `[dim]` MAY still render as font weights (terminal-dependent)
 - Status symbols (checkmark, cross) remain visible as text
-- Layout borders render as ASCII fallbacks
+- View borders render as ASCII fallbacks
 - All information remains conveyed through text, symbols, and structure
+
+### 1.6 Extended Color Exception: Grey23 Background
+
+The User Message Block uses `Color.Grey23` as a background tint. This is the
+ONLY permitted use of an extended (non-4-bit) color in the application.
+
+```csharp
+new Panel(new Markup($"> {Markup.Escape(text)}"))
+    .Border(BoxBorder.None)
+    .Padding(1, 0, 1, 0)
+    .Style(new Style(background: Color.Grey23));
+```
+
+**Rationale**: A subtle background tint is the most effective way to visually
+distinguish user messages from assistant text without adding borders, color to
+the text, or other visual clutter. Grey23 is a near-black shade that works on
+both dark and light terminal themes -- on dark themes it appears as a slightly
+lighter stripe, on light themes as a slightly darker stripe. The effect is
+subtle enough to degrade gracefully:
+
+- **NO_COLOR / ColorSystem.NoColors**: Background tint is not rendered. The
+  `>` prefix still identifies user messages.
+- **Standard 16-color terminals**: Grey23 may render as the closest available
+  color (typically unchanged foreground). The `>` prefix is the fallback.
+- **Accessible mode**: No background tint; plain `> {text}`.
+
+No other extended colors are permitted. Do not add RGB backgrounds, gradients,
+or 256-color foregrounds elsewhere.
 
 ---
 
@@ -153,36 +180,50 @@ Every status indicator uses a Unicode symbol paired with colored text:
 | bullet   | \u2022    | U+2022    | `\u2022`             | List item            |
 | arrow    | \u25b6    | U+25B6    | `[dim]\u25b6[/]`     | Current/active       |
 | dash     | \u2014    | U+2014    | `[dim]\u2014[/]`     | Not set, empty       |
-| at       | @         | U+0040    | (varies by state)    | Activity indicator   |
+| dash     | \u2014    | U+2014    | `[dim]\u2014[/]`     | Not set, empty       |
 
 ### 3.2 Activity Indicator
 
-The `@` character serves as the activity indicator prefix in the indicator bar.
-It replaces the braille dot spinner from v1. Rationale: braille characters are
-noisy for screen readers and do not animate meaningfully at low refresh rates.
+The Activity region (formerly "Indicator Bar") uses an animated braille spinner
+for ALL busy states. The `@` static prefix from the old architecture is removed.
+The Activity region shows a dim horizontal rule when idle and an animated
+spinner during active turns. Between turns, there is no activity indicator.
 
-| State       | Indicator Bar Content                            |
-|-------------|--------------------------------------------------|
-| Idle        | `[dim]` horizontal rule (Spectre `Rule`)         |
-| Thinking    | `[yellow]@ Thinking...[/]`                       |
-| Streaming   | `[cyan]@ Streaming...[/]`                        |
-| Executing   | `[blue]@ Executing... (2.3s)[/]`                 |
-| Cancel hint | `[yellow]Press Esc again to cancel[/]`           |
-| Modal open  | `[dim]Esc to dismiss[/]`                         |
+- **All busy states** (Thinking, Streaming, Executing): An 8-frame braille
+  spinner animates at 100ms per frame, providing consistent animated feedback
+  that communicates active processing.
 
-In accessible mode (`BOYDCODE_ACCESSIBLE=1`), the `@` is replaced with a
-static text prefix: `[Working]`, `[Streaming]`, etc.
+| State       | Activity Region Content                          | Color    |
+|-------------|--------------------------------------------------|----------|
+| Thinking    | `⠿ Thinking...` (spinner animates)               | `[yellow]`|
+| Streaming   | `⠿ Streaming...` (spinner animates)              | `[cyan]` |
+| Executing   | `⠿ Executing... (2.3s)` (spinner animates)       | `[cyan]` |
+| Cancel hint | `Press Esc again to cancel`                      | `[yellow]`|
+| Modal open  | `Esc to dismiss`                                 | `[dim]`  |
+
+Braille spinner frame sequence (⠿ ⠻ ⠽ ⠾ ⠷ ⠯ ⠟ ⠾), 100ms per frame. The
+spinner runs continuously during all active states.
+
+**Separator**: Below the Activity region sits a static `new Rule().RuleStyle("dim")`.
+It never changes content.
+
+In accessible mode (`BOYDCODE_ACCESSIBLE=1`), all animated indicators are
+replaced with static text: `[Thinking...]`, `[Streaming...]`,
+`[Executing... (2.3s)]`.
 
 ### 3.3 Deprecated Symbols
 
-The following symbols from v1 are removed in v2:
+The following symbols from v1 are removed or replaced in v2:
 
 | Old Symbol | Replacement     | Reason                              |
 |------------|-----------------|-------------------------------------|
 | `v` (Latin)| `\u2713` (check)| Proper checkmark, universally clear |
-| Braille spinner (`\u283F` etc.) | `@` character | Screen reader noise, poor portability |
 | `*` (asterisk) | `\u25b6` (arrow) | Clearer "current item" indicator |
 | `--` (double hyphen) | `\u2014` (em dash) | Proper typographic dash |
+
+Note: The braille spinner is now used for ALL active states (Thinking, Streaming,
+and Executing). The `@` static prefix for Thinking/Streaming has been replaced
+by the animated braille spinner to provide consistent visual feedback.
 
 ### 3.4 Context Chart Symbols
 
@@ -268,9 +309,8 @@ All panels use consistent internal padding:
 | Context            | Style                  | Spectre API                        |
 |--------------------|------------------------|------------------------------------|
 | Section divider    | Dim, left-justified    | `new Rule("[bold]{title}[/]").LeftJustified().RuleStyle("dim")` |
-| Indicator bar idle | Dim, no title          | `new Rule().RuleStyle("dim")`      |
+| Layout separator   | Dim, no title          | `new Rule().RuleStyle("dim")` (static, between Activity and StatusBar) |
 | Banner separator   | Dim, no title          | `new Rule().RuleStyle("dim")`      |
-| Turn separator     | Dim, no title          | `new Rule().RuleStyle("dim")`      |
 
 ---
 
@@ -278,10 +318,17 @@ All panels use consistent internal padding:
 
 ### 6.1 Input Prompt
 
+The input view is always visible in its dedicated screen region.
+
 | Context          | Display       | Implementation                    |
 |------------------|---------------|-----------------------------------|
-| Layout active    | `> `          | AsyncInputReader renders directly |
-| Fallback mode    | `[bold blue]>[/] ` | Spectre TextPrompt          |
+| Idle (awaiting)  | `> `          | Input view with cursor            |
+| Fallback mode    | `[bold blue]>[/] ` | Blocking line input          |
+
+During active turns, the input view accepts typeahead input in dim
+styling: `[dim]> {typed text}[/]`. When messages are queued, a yellow badge
+`[N queued]` appears. The input handler routes display updates to the
+input view during active turns.
 
 ### 6.2 Interactive Prompt Labels
 
@@ -374,17 +421,20 @@ The parenthesized labels are used in prose context.
 
 ### 8.2 Height Tiers
 
-| Tier     | Height Range | Banner          | Content Rows    | Status |
-|----------|-------------|-----------------|-----------------|--------|
-| Full     | >= 30 rows   | ASCII art       | Height - 3      | Full   |
-| Standard | 15-29 rows   | Compact one-line| Height - 3      | Full   |
-| Minimal  | 10-14 rows   | None            | Height - 3      | Abbreviated |
-| Fallback | < 10 rows    | None, no Layout | Scrollback mode | Inline |
+The view hierarchy has 4 fixed rows (Activity + Input + Separator + StatusBar)
+with the Conversation region taking all remaining vertical space.
+
+| Tier     | Height Range | Banner          | Conversation Height | Status |
+|----------|-------------|-----------------|---------------------|--------|
+| Full     | >= 30 rows   | ASCII art       | Height - 4          | Full   |
+| Standard | 15-29 rows   | Compact one-line| Height - 4          | Full   |
+| Minimal  | 10-14 rows   | None            | Height - 4          | Abbreviated |
+| Fallback | < 10 rows    | None            | No persistent view hierarchy | Inline |
 
 ### 8.3 Detection
 
 ```csharp
-var width = AnsiConsole.Profile.Width;
+var width = Console.WindowWidth;
 var widthTier = width >= 120 ? "full" : width >= 80 ? "standard" : "compact";
 
 int height;
@@ -419,16 +469,16 @@ When `NO_COLOR` environment variable is set:
 - All `[color]` markup stripped (Spectre.Console automatic)
 - `[bold]` and `[dim]` may still render (terminal-dependent)
 - Unicode symbols preserved (checkmark, cross, etc.)
-- Layout structure preserved
+- View structure preserved
 - All information conveyed through text and structure
 
 ### 9.3 Non-Interactive Fallback
 
-When `AnsiConsole.Profile.Capabilities.Interactive` is false:
+When the terminal does not support interactive input (e.g., piped stdin):
 
-- No Layout widget (render to scrollback)
-- No Live display (one-shot output)
-- No AsyncInputReader (blocking `Console.ReadLine`)
-- No modal overlays (slash commands output to scrollback)
+- No persistent view hierarchy (output renders sequentially)
+- No persistent display (one-shot output)
+- No async input handler (blocking line input)
+- No modal overlays (slash commands render sequentially)
 - No animated indicators (static text)
 - All prompts require flag-based alternatives

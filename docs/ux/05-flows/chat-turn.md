@@ -10,9 +10,9 @@ decides to use tools.
 
 ## Preconditions
 
-- A session is active (`_activeSession` is set).
-- The provider is configured (`_activeProvider.IsConfigured` is true).
-- The execution engine is initialized (`_activeEngine.IsInitialized` is true).
+- A session is active.
+- The provider is configured.
+- The execution engine is initialized.
 - The layout is active and the user is at the input prompt (LAYOUT-02).
 
 ## Flow Diagram
@@ -22,8 +22,8 @@ decides to use tools.
          |
          v
     [Enter pressed]
-    Message added to AsyncInputReader history
-    Written to Channel<string>
+    Message added to input history
+    Written to input queue
          |
          v
     [Orchestrator reads input]
@@ -40,7 +40,7 @@ decides to use tools.
                      |
                      v
                 [RunAgentTurnAsync]
-                [SetAgentBusy(true)]
+                [Agent marked busy]
                      |
                      v
             +========+========+ AGENT TURN LOOP
@@ -114,8 +114,8 @@ decides to use tools.
       [No]      [Yes]
         |         |
         v         v
-      [SetAgentBusy(false)]
-      [AutoSaveSessionAsync]  [ProcessToolCallsAsync]
+      [Agent marked not busy]
+      [Auto-save session]  [Process tool calls]
       [Return to input]       (see tool-execution.md)
         |                       |
         v                       v
@@ -136,17 +136,17 @@ decides to use tools.
 
 - **Screen**: LAYOUT-02 (empty input) or LAYOUT-03 (with text)
 - **User sees**: The `> ` prompt. As they type, characters appear inline.
-  The `AsyncInputReader` supports:
+  The input handler supports:
   - Left/Right arrow: cursor movement within the line
   - Home/End: jump to start/end of line
   - Up/Down arrow: command history navigation
   - Backspace/Delete: character deletion
   - Enter: submit the line
 - **User action**: Types a message and presses Enter.
-- **System response**: The `AsyncInputReader.HandleEnter` method captures
-  the line buffer contents, adds the line to command history (avoiding
-  consecutive duplicates, capped at 100 entries), writes the line to the
-  `Channel<string>`, and resets the buffer and cursor position.
+- **System response**: The input handler captures the line buffer
+  contents, adds the line to command history (avoiding consecutive
+  duplicates, capped at 100 entries), writes the line to the input
+  queue, and resets the buffer and cursor position.
 - **Transitions to**: Step 2
 
 ### Step 2: Input Dispatch
@@ -156,9 +156,9 @@ decides to use tools.
   If the agent was already busy (from a previous turn's tool loop), the
   message enters the queue and LAYOUT-04 updates to show "[N messages
   queued]".
-- **System response**: `AgentOrchestrator.RunSessionAsync` reads from
-  `_ui.GetUserInputAsync`, which pulls from the `AsyncInputReader` channel.
-  The input is classified:
+- **System response**: The orchestrator reads from the user interface's
+  input method, which pulls from the input handler's queue. The input
+  is classified:
   - Empty/whitespace: skipped, loop back to input.
   - `/quit`, `/exit`, `quit`, `exit`: break out of session loop.
   - Starts with `/`: dispatch as slash command.
@@ -182,10 +182,9 @@ decides to use tools.
 - **Screen**: No immediate visual output, but the status area updates.
 - **User sees**: If using the layout, the input prompt may show agent
   busy state.
-- **System response**: `RunAgentTurnAsync` is called. First,
-  `_ui.SetAgentBusy(true)` is called, which tells the `TerminalLayout`
-  that the agent is processing. This affects how the input area displays
-  queued message counts.
+- **System response**: The agent turn begins. The user interface is
+  notified that the agent is busy, which affects how the input area
+  displays queued message counts.
 
   The base `LlmRequest` is constructed once and reused across rounds:
   - **SystemPrompt**: MetaPrompt (execution model description) + session
@@ -204,16 +203,13 @@ decides to use tools.
   Warning: Context compacted: 12 message(s) removed to fit context window.
   Estimated tokens: 45,000 (target: 50,000).
   ```
-- **System response**: `CompactIfNeededAsync` estimates the current
-  token count:
-  1. `session.Conversation.EstimateTokenCount()` for message tokens.
-  2. System prompt tokens estimated as `(metaPrompt.Length +
-     sessionPrompt.Length) / 4`.
-  3. If the total exceeds `contextLimit * compactionThresholdPercent /
-     100` (where `contextLimit` comes from provider capabilities or
-     appsettings), the compactor runs.
-  4. The compactor evicts older messages to bring the count to
-     `contextLimit / 2`.
+- **System response**: The system estimates the current token count:
+  1. Message tokens are estimated from the conversation.
+  2. System prompt tokens are estimated from prompt length.
+  3. If the total exceeds the compaction threshold (a percentage of the
+     provider's context window), the compactor runs.
+  4. The compactor evicts older messages to bring the count to half the
+     context limit.
   5. A warning is rendered showing how many messages were removed and
      the new estimated token count.
 - **Transitions to**: Step 6
@@ -222,14 +218,12 @@ decides to use tools.
 
 - **Screen**: CHAT-01
 - **User sees**: The "Thinking..." indicator appears:
-  - **Layout mode**: Raw text "Thinking..." in the output scroll region
-    (overwriting the current line).
-  - **Non-layout mode**: Dim italic "[dim italic]Thinking...[/]" via
-    Spectre markup.
-- **System response**: The per-round request is built as
-  `baseRequest with { Messages = currentMessages, Stream = capability }`.
-  The request is logged to the conversation logger.
-  `_ui.RenderThinkingStart()` displays the indicator.
+  - **Layout mode**: "Thinking..." text in the conversation view.
+  - **Non-layout mode**: Dim italic "Thinking..." text.
+- **System response**: The per-round request is built from the base
+  request with updated messages and streaming capability. The request
+  is logged to the conversation logger. The thinking indicator is
+  displayed.
 - **Transitions to**: Step 7a (streaming) or Step 7b (non-streaming)
 
 ### Step 7a: Streaming Response
@@ -241,16 +235,15 @@ decides to use tools.
      first token. Text flows naturally, wrapping at terminal width.
   3. When streaming completes, trailing blank lines are added to
      separate the response from subsequent output.
-- **System response**: `StreamResponseAsync` iterates over
-  `_activeProvider.Provider.StreamAsync(request)`:
-  - The `StreamAccumulator` collects all chunks to build the final
-    `LlmResponse`.
-  - `TextChunk` tokens are rendered via `_ui.RenderStreamingToken`.
-  - `ToolCallChunk` tokens are accumulated silently (tool calls are
-    processed after streaming completes).
-  - The `CompletionChunk` signals the end of the stream.
-  - The `finally` block ensures "Thinking..." is cleared and streaming
-    is completed even on error/cancellation.
+- **System response**: The streaming response iterates over chunks from
+  the provider:
+  - A stream accumulator collects all chunks to build the final response.
+  - Text chunks are rendered to the conversation view as they arrive.
+  - Tool call chunks are accumulated silently (tool calls are processed
+    after streaming completes).
+  - The completion chunk signals the end of the stream.
+  - Cleanup ensures "Thinking..." is cleared and streaming is completed
+    even on error/cancellation.
 - **Transitions to**: Step 8
 
 ### Step 7b: Non-Streaming Response
@@ -260,10 +253,9 @@ decides to use tools.
   1. "Thinking..." is cleared when the response arrives.
   2. The full response text appears as a borderless panel with 1-char
      left padding.
-- **System response**: `_activeProvider.Provider.SendAsync(request)` makes
-  a single blocking call. `_ui.RenderThinkingStop()` clears the indicator.
-  If the response has text content, `_ui.RenderAssistantText(text)` renders
-  it as a `Panel` with `BoxBorder.None`.
+- **System response**: The provider makes a single blocking call. The
+  thinking indicator is cleared. If the response has text content, it is
+  rendered as a borderless panel in the conversation view.
 - **Transitions to**: Step 8
 
 ### Step 8: Token Usage and Response Processing
@@ -277,11 +269,11 @@ decides to use tools.
   These are cumulative counts across all rounds in the session, not just
   this turn.
 - **System response**:
-  1. `_totalInputTokens` and `_totalOutputTokens` are incremented.
+  1. Cumulative input and output token counters are incremented.
   2. The response is logged to the conversation logger.
-  3. `_ui.RenderTokenUsage` displays the cumulative counts.
+  3. The token usage line is displayed with cumulative counts.
   4. The assistant's response (all content blocks) is added to the
-     conversation via `session.Conversation.AddAssistantMessage`.
+     conversation.
 - **Transitions to**: Step 9
 
 ### Step 9: Tool Use Decision
@@ -290,8 +282,8 @@ decides to use tools.
 - **User sees**: Nothing at this decision point.
 - **System response**: `response.HasToolUse` is checked:
   - **No tool calls** (`stop_reason == "end_turn"`):
-    - `_ui.SetAgentBusy(false)` releases the busy state.
-    - `AutoSaveSessionAsync` persists the session to disk.
+    - The user interface is notified that the agent is no longer busy.
+    - The session is auto-saved to disk.
     - The method returns, and the session loop waits for the next input.
   - **Has tool calls** (`stop_reason == "tool_use"`):
     - `ProcessToolCallsAsync` is called to execute each tool.
@@ -303,10 +295,9 @@ decides to use tools.
 
 - **Screen**: No visual output.
 - **User sees**: Nothing.
-- **System response**: `AutoSaveSessionAsync` updates
-  `session.LastAccessedAt` and calls `_sessionRepository.SaveAsync`.
-  If the save fails, the error is logged but not shown to the user
-  (best-effort persistence).
+- **System response**: The session's last-accessed timestamp is updated
+  and the session is saved to disk. If the save fails, the error is
+  logged but not shown to the user (best-effort persistence).
 - **Transitions to**: LAYOUT-02 (input prompt)
 
 ## Multi-Round Tool Use
@@ -320,7 +311,7 @@ Round 1:  User message -> LLM request -> Response with tool calls
 Round 2:  -> LLM request (same base, updated messages) -> Response
           -> May have more tool calls -> Execute -> Add results
 Round N:  -> LLM request -> Response with end_turn
-          -> SetAgentBusy(false) -> AutoSave -> Return to input
+          -> Agent marked not busy -> Auto-save -> Return to input
 ```
 
 Key behaviors during multi-round turns:
@@ -334,7 +325,7 @@ Key behaviors during multi-round turns:
 - Token usage updates are cumulative -- each round adds to the running
   totals.
 - The user can queue additional messages while the agent is busy. These
-  are buffered in the `AsyncInputReader` channel and shown as
+  are buffered in the input handler's queue and shown as
   "[N messages queued]" in LAYOUT-04.
 - The maximum is 50 rounds per turn. If reached, CHAT-07 renders:
   ```
@@ -351,7 +342,7 @@ Key behaviors during multi-round turns:
 |    |            | `/quit`, `/exit`, `quit`, `exit` | Break session loop |
 |    |            | Starts with `/` | Slash command dispatch |
 |    |            | Other text | Chat message |
-| D2 | Provider configured? | `_activeProvider.IsConfigured == false` | CHAT-08 error; user message removed |
+| D2 | Provider configured? | Provider is not configured | CHAT-08 error; user message removed |
 | D3 | Context compaction | Estimated tokens <= threshold | No compaction |
 |    |                    | Estimated tokens > threshold | Compact; CHAT-06 warning |
 | D4 | Streaming support | `SupportsStreaming == true` | Stream response (CHAT-02) |
@@ -436,9 +427,10 @@ Key behaviors during multi-round turns:
   Error: Reached maximum tool call rounds (50). Stopping to prevent
   runaway execution.
   ```
-- **System response**: The session is auto-saved. `SetAgentBusy(false)` is
-  called. Control returns to the input prompt. The conversation contains all
-  the rounds' messages, so the next user message will have full context.
+- **System response**: The session is auto-saved. The user interface is
+  notified that the agent is no longer busy. Control returns to the input
+  prompt. The conversation contains all the rounds' messages, so the next
+  user message will have full context.
 
 ### E9: Input Error
 
@@ -447,7 +439,7 @@ Key behaviors during multi-round turns:
   ```
   Error: Input error: {message}
   ```
-- **System response**: Exceptions from `_ui.GetUserInputAsync` (other than
+- **System response**: Exceptions from user input reading (other than
   `OperationCanceledException`) are caught, logged, and rendered. The
   session loop continues (waits for next input).
 

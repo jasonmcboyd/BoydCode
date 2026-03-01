@@ -112,10 +112,10 @@ installed the application but has never run it before.
   (_default), engine (InProcess), and current working directory. No Docker or
   Git rows appear for the ambient project.
 - **User action**: None -- this renders automatically.
-- **System response**: `ChatCommand.ExecuteAsync` resolves the ambient
-  `_default` project, resolves an empty directory list, determines the
-  provider type (Gemini by default), and finds no API key from any source
-  (CLI flag, stored profile, environment variable, appsettings).
+- **System response**: The application resolves the ambient `_default`
+  project, resolves an empty directory list, determines the provider type
+  (Gemini by default), and finds no API key from any source (CLI flag,
+  stored profile, environment variable, appsettings).
 - **Transitions to**: Step 2
 
 ### Step 2: Not Configured Footer
@@ -141,10 +141,9 @@ installed the application but has never run it before.
   horizontal separator line and an empty `> ` input prompt below it. The
   status line row is present but may be empty or show the default status.
 - **User action**: User can now type.
-- **System response**: `ChatCommand.ExecuteAsync` creates the execution
-  engine, creates a new session, initializes the conversation logger, and
-  calls `_ui.ActivateLayout()`. The `AsyncInputReader` background task
-  starts polling for key input.
+- **System response**: The application creates the execution engine,
+  creates a new session, initializes the conversation logger, and
+  activates the layout. The input handler starts accepting key input.
 - **Transitions to**: Step 4a or Step 4b
 
 ### Step 4a: User Sends a Chat Message (Error Path)
@@ -158,10 +157,9 @@ installed the application but has never run it before.
   the conversation (it is removed after the error).
 - **User action**: Reads the error, realizes they need to configure a
   provider.
-- **System response**: `AgentOrchestrator.RunAgentTurnAsync` checks
-  `_activeProvider.IsConfigured`, finds it false, renders the error, removes
-  the dangling user message from the conversation, and returns without
-  calling the LLM.
+- **System response**: The orchestrator checks whether a provider is
+  configured, finds it is not, renders the error, removes the dangling
+  user message from the conversation, and returns without calling the LLM.
 - **Transitions to**: Step 5
 
 ### Step 4b: User Types an Unknown Command (Error Path)
@@ -192,9 +190,8 @@ installed the application but has never run it before.
   The currently highlighted item uses green text. Navigation is via
   Up/Down arrow keys, selection via Enter.
 - **User action**: Navigates to their preferred provider and presses Enter.
-- **System response**: The layout is suspended for the interactive prompt
-  (SpectreHelpers handles `TerminalLayout.Current?.Suspend()`/`Resume()`
-  around prompts). The selected provider type is parsed from the string.
+- **System response**: The interactive prompt takes focus for provider
+  selection. The selected provider type is parsed from the string.
 - **Transitions to**: Step 6
 
 ### Step 6: API Key Entry
@@ -225,7 +222,7 @@ installed the application but has never run it before.
   name.
 - **System response**: A `ProviderProfile` is created and saved to
   `~/.boydcode/providers/{type}.json`. The provider is activated by
-  calling `_activeProvider.Activate(config)`. The status line is updated.
+  activating the provider. The status line is updated.
   The last-used provider is recorded.
 - **Transitions to**: Step 8
 
@@ -251,11 +248,11 @@ installed the application but has never run it before.
   output area.
 - **User action**: Types a message and presses Enter.
 - **System response**: The message is added to the conversation via
-  `session.Conversation.AddUserMessage()`. `RunAgentTurnAsync` is called.
-  The provider is now configured, so the turn proceeds. An `LlmRequest` is
-  built with the system prompt (MetaPrompt + session prompt),
-  the Shell tool definition, and the conversation messages.
-  `RenderThinkingStart()` displays the indicator.
+  The message is added to the conversation. The agent turn begins.
+  The provider is now configured, so the turn proceeds. An LLM request is
+  built with the system prompt (meta prompt + session prompt), the Shell
+  tool definition, and the conversation messages. The thinking indicator
+  is displayed.
 - **Transitions to**: Step 10
 
 ### Step 10: First AI Response
@@ -306,7 +303,7 @@ time. The error surfaces on the first LLM request:
 
 1. User configures provider with an invalid key (Step 6-8 succeed normally).
 2. User types a message (Step 9).
-3. `RunAgentTurnAsync` sends the request to the provider.
+3. The agent turn sends the request to the provider.
 4. The provider returns a 401/403 error.
 5. **Screen**: CHAT-09 -- Red bold "Error:" + extracted message + yellow
    "Suggestion: Check your API key with /provider setup or pass --api-key."

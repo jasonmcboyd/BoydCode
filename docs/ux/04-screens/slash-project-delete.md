@@ -133,14 +133,3 @@ requesting confirmation. The ambient `_default` project cannot be deleted.
 | Status Message | Section 1 | Success, error, cancelled, usage messages |
 | Confirmation Prompt | Section 8 | Delete confirmation with default No |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Delete flow | `Commands/ProjectSlashCommand.cs` | `HandleDeleteAsync` | 475-547 |
-| Ambient guard | `Commands/ProjectSlashCommand.cs` | `HandleDeleteAsync` | 487-490 |
-| Detail summary | `Commands/ProjectSlashCommand.cs` | `HandleDeleteAsync` | 500-535 |
-| Confirmation | `Commands/ProjectSlashCommand.cs` | `HandleDeleteAsync` | 539-543 |
-| Deletion | `Commands/ProjectSlashCommand.cs` | `HandleDeleteAsync` | 545-546 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

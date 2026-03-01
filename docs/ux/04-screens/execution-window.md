@@ -18,8 +18,8 @@ A complete tool execution follows five phases:
 
 ```
 1. Tool Preview    -> Panel with command/arguments displayed in Content
-2. Waiting         -> Indicator bar: "@ Executing... (0.0s)" -- no output yet
-3. Streaming       -> Indicator bar: "@ Executing... (N.Ns)" -- output buffered
+2. Waiting         -> Indicator bar: "⠿ Executing... (0.0s)" in [cyan] -- no output yet
+3. Streaming       -> Indicator bar: "⠿ Executing... (N.Ns)" in [cyan] -- output buffered
 4. Result          -> Badge in Content: checkmark/cross + line count + duration
 5. Expand          -> (on demand) Full output replayed in Content via /expand
 ```
@@ -112,15 +112,16 @@ the executing state:
   | Get-Content -Path src/Auth/AuthService.cs -TotalCount 100                                                  |
   +------------------------------------------------------------------------------------------------------------+
 
-@ Executing... (0.3s)
+⠿ Executing... (0.3s)
 > _
 Gemini | gemini-2.5-pro | my-project | main | InProcess                             Esc: cancel  /help: commands
 ```
 
 ### Indicator Bar
 
-The Indicator bar shows `@ Executing... ({elapsed})` in blue text. The elapsed
-time updates on each render cycle (~60fps). Format:
+The Indicator bar shows a braille spinner followed by `Executing... ({elapsed})`
+in `[cyan]` text. The braille character advances one frame every 100ms (8-frame
+cycle: ⠿ ⠻ ⠽ ⠾ ⠷ ⠯ ⠟ ⠾). The elapsed time updates each frame. Format:
 
 | Elapsed | Display |
 |---------|---------|
@@ -150,7 +151,7 @@ As the execution engine produces output lines, they are buffered in memory.
 The Indicator bar continues showing the executing state with updated elapsed time.
 
 ```
-@ Executing... (2.3s)
+⠿ Executing... (2.3s)
 ```
 
 The Content region is unchanged. Output lines accumulate in a buffer (maximum
@@ -360,8 +361,8 @@ them. Each tool call gets its own preview panel and result badge.
 | State | Indicator Bar | Content Region |
 |-------|---------------|----------------|
 | Tool preview | Prior state (may be streaming or idle) | Panel with command |
-| Waiting | `@ Executing... (0.0s)` (blue) | Unchanged (panel visible) |
-| Streaming output | `@ Executing... (N.Ns)` (blue) | Unchanged (output buffered) |
+| Waiting | `⠿ Executing... (0.0s)` (cyan, animated) | Unchanged (panel visible) |
+| Streaming output | `⠿ Executing... (N.Ns)` (cyan, animated) | Unchanged (output buffered) |
 | Result (success) | Idle (dim rule) or next state | Badge: checkmark + metadata |
 | Result (error) | Idle (dim rule) or next state | Badge: cross + metadata |
 | Cancelled | Idle (dim rule) | Badge: cross + "cancelled" |
@@ -435,7 +436,7 @@ them. Each tool call gets its own preview panel and result badge.
 
 - Tool preview renders without borders (plain text with "Shell:" prefix).
 - Result badge renders as text: `[OK] Shell 42 lines 0.3s` or `[ERR] Shell...`.
-- No `@` character in indicator -- uses `[Executing...]` instead.
+- No braille spinner in indicator -- uses `[Executing... (2.3s)]` static text instead.
 
 ---
 

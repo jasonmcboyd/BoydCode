@@ -91,13 +91,3 @@ None. This screen is purely static output.
 |---|---|---|
 | Simple Table | Section 4 | Table structure (though using default border, not SimpleTable) |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| List flow | `Commands/ProviderSlashCommand.cs` | `HandleListAsync` | 74-113 |
-| Table construction | `Commands/ProviderSlashCommand.cs` | `HandleListAsync` | 76-80 |
-| Status logic | `Commands/ProviderSlashCommand.cs` | `HandleListAsync` | 89-96 |
-| API key masking | `Commands/ProviderSlashCommand.cs` | `MaskApiKey` | 253-261 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

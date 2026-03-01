@@ -70,7 +70,7 @@ Usage: /conversations delete <id>
 | Token | Style Token (06-style-tokens.md) | Usage on This Screen |
 |---|---|---|
 | `[bold]` | bold (2.2) | Session ID in confirmation message and error messages |
-| `[green]v[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
+| `[green]✓[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
 | `[red]Error:[/]` | error-red (1.1) | Error prefix for active session and not-found |
 | `[dim]Cancelled.[/]` | dim (2.2) | Cancellation message |
 | `[yellow]Usage:[/]` | warning-yellow (1.1) | Usage hint prefix |
@@ -123,16 +123,3 @@ Usage: /conversations delete <id>
 | Confirmation Prompt | Section 8 | Delete confirmation with default No |
 | Status Message | Section 1 | Success, error, cancelled, and usage messages |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| HandleDeleteAsync | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 236-276 |
-| Usage guard | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 238-242 |
-| Active session guard | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 246-250 |
-| Not found guard | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 253-257 |
-| Confirmation prompt | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 259-272 |
-| Deletion | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 274 |
-| Success message | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 275 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

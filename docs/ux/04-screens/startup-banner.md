@@ -12,10 +12,13 @@ It has three jobs:
 3. **Orient** -- the user should see the active provider, model, project, engine,
    and directories so they know what context they are working in.
 
-The banner renders ONCE, BEFORE the Layout/Live context activates. It is emitted
-via standard `AnsiConsole.MarkupLine` and `AnsiConsole.Write` calls, becomes part
-of the scrollback, and is never redrawn. This is intentional: the banner is
-static content, not a TUI region.
+The banner is the first content block in the conversation view's scroll buffer.
+It is rendered once during startup and is never redrawn. This is intentional: the
+banner is static content, not an updating region.
+
+In the persistent TUI architecture, the banner is appended to the conversation
+view before the first input prompt appears. The user can scroll up to review the
+banner at any time during the session.
 
 This spec is PRESCRIPTIVE -- it describes what the screen SHOULD look like.
 
@@ -26,17 +29,16 @@ This spec is PRESCRIPTIVE -- it describes what the screen SHOULD look like.
 ```
 1. App launches         -> Terminal dimensions detected
 2. Provider activated   -> Provider/model/project metadata resolved
-3. Banner rendered      -> ASCII art (or compact), info grid, status, hint
-4. Engine initialized   -> (after banner, before loop)
-5. Layout activated     -> Banner scrolls into scrollback; TUI regions appear
+3. TUI application starts -> View hierarchy created
+4. Banner rendered      -> ASCII art (or compact), info grid, status, hint
+5. Engine initialized   -> (after banner, before first prompt)
+6. Input view ready     -> `> _` in the input view
 ```
 
-The banner is a synchronous, blocking render. It completes before the execution
-engine is created and before the Layout/Live context starts. This means:
-
-- No Live display, no Layout, no async rendering during banner
-- Standard Spectre.Console renderables only (`MarkupLine`, `Write(Rule)`, `Write(Grid)`)
-- The banner is part of stdout scrollback, not an ephemeral UI region
+The banner is rendered synchronously during application startup. It completes
+before the execution engine is created and before the first input prompt appears.
+The banner content is appended to the conversation view's scroll buffer as the
+first content block.
 
 ---
 
@@ -75,10 +77,10 @@ When the terminal has 30 or more rows, the full ASCII art banner is shown.
 
 ### Anatomy
 
-The full banner has 7 visual sections. Each is a separate render call.
+The full banner has 7 visual sections.
 
-1. **Leading blank line** -- `AnsiConsole.WriteLine()`. Provides breathing room
-   from the shell prompt.
+1. **Leading blank line** -- Provides breathing room at the top of the
+   conversation view.
 
 2. **BOYD block** (6 rows) -- `[bold cyan]` block-letter ASCII art at 2-space
    indent. The first 5 rows carry a dim metadata sidebar right-justified after
@@ -93,7 +95,7 @@ The full banner has 7 visual sections. Each is a separate render call.
 4. **Tagline** -- `[dim]v{version}  Artificial Intelligence, Personal Edition[/]`
    at 2-space indent. Version is the assembly version.
 
-5. **Rule separator** -- `new Rule().RuleStyle("dim")`. Full terminal width.
+5. **Rule separator** -- A dim horizontal rule spanning the full width.
    No title. Separated by blank lines above and below.
 
 6. **Info grid** -- Configuration key-value display using the Info Grid component
@@ -106,14 +108,14 @@ The full banner has 7 visual sections. Each is a separate render call.
    - Row 5: Git repo root + branch (only if CWD is inside a git repository)
 
 7. **Status footer** -- One of:
-   - Configured: `  [green]\u2713[/] [dim]Ready  {engine description}[/]`
+   - Configured: `  [green]✓[/] [dim]Ready  {engine description}[/]`
    - Not configured: `  [yellow bold]Not configured[/] [dim]Run[/] [bold]/provider setup[/] [dim]or pass[/] [bold]--api-key[/]`
 
 8. **Hint line** (only when configured) --
    `  [dim italic]Type a message to start, or /help for available commands.[/]`
 
-9. **Trailing blank line** -- `AnsiConsole.WriteLine()`. Provides visual
-   separation before the Layout activates.
+9. **Trailing blank line** -- Provides visual separation at the end of the
+   banner block.
 
 ### Metadata Sidebar
 
@@ -202,7 +204,7 @@ separator.
 ```
 
 **Rationale**: At 10-14 rows, every row is precious. The brand display and
-decorative separator consume space that the Content region needs. The user
+decorative separator consume space that conversation content needs. The user
 still sees enough configuration context to orient, and the status footer
 confirms readiness.
 
@@ -225,9 +227,8 @@ Or if not configured:
   BoydCode: Not configured. Run /provider setup or pass --api-key
 ```
 
-No info grid, no brand display, no rule separator. The Layout/Live context
-does not activate at this tier (see 06-style-tokens.md Section 8.2) -- the
-entire app falls back to scrollback mode.
+No info grid, no brand display, no rule separator. At this height tier, the
+app falls back to minimal output (see chat-loop.md Non-layout state).
 
 ---
 
@@ -275,8 +276,8 @@ is approximately 77 characters wide. The info grid wraps more aggressively.
    keeps sidebar lines under 80 characters.
 
 2. **Info grid wrapping**: Long values (model names, file paths) wrap within
-   their Grid column. Spectre.Console's Grid handles this automatically. The
-   key column maintains its width; the value column absorbs the wrapping.
+   their grid column. The key column maintains its width; the value column
+   absorbs the wrapping.
 
 3. **Hint line shortened**: "or /help for available commands" becomes
    "or /help for commands" to avoid wrapping.
@@ -484,214 +485,52 @@ When multiple variants apply:
 
 ---
 
-## Spectre.Console Implementation
+## Rendering Notes
 
 ### Tier Detection
 
-```csharp
-var width = AnsiConsole.Profile.Width;
-int height;
-try { height = Console.WindowHeight; }
-catch { height = 24; } // Default to standard tier
+The banner implementation detects terminal dimensions at startup and selects the
+appropriate tier:
 
-var useAsciiArt = height >= 30 && width >= 80;
-var useCompactBrand = height >= 15 && !useAsciiArt;
-var useMinimalBanner = height >= 10 && !useAsciiArt && !useCompactBrand;
-var useFallback = height < 10;
-```
+- **Full** (height >= 30, width >= 80): ASCII art with sidebar
+- **Compact** (height 15-29, width >= 80): Single-line wordmark
+- **Minimal** (height 10-14): Info grid and status only
+- **Fallback** (height < 10): Single status line
+- **Narrow** (width < 80): Compact wordmark, single-column grid
 
-### ASCII Art Rendering
+If the terminal height cannot be determined, default to 24 rows (compact tier).
 
-```csharp
-// BOYD block with sidebar
-var boydArt = new string[]
-{
-    @"  ██████╗  ██████╗ ██╗   ██╗██████╗ ",
-    @"  ██╔══██╗██╔═══██╗╚██╗ ██╔╝██╔══██╗",
-    @"  ██████╔╝██║   ██║ ╚████╔╝ ██║  ██║",
-    @"  ██╔══██╗██║   ██║  ╚██╔╝  ██║  ██║",
-    @"  ██████╔╝╚██████╔╝   ██║   ██████╔╝",
-    @"  ╚═════╝  ╚═════╝    ╚═╝   ╚═════╝ ",
-};
+### Info Grid Layout
 
-var sidebar = new string[]
-{
-    "Users:      1",
-    "Revenue:    $0",
-    "Valuation:  $0,000,000,000",
-    "Commas:     tres",
-    "Status:     pre-unicorn",
-};
+At standard width (>= 80 columns), the info grid uses a 4-column layout with
+paired key-value rows. Labels render in `[dim]`, values in `[cyan]`. Single-value
+rows (cwd, Docker, Git) span the full width.
 
-// Truncate sidebar for narrow terminals
-if (width < 100)
-{
-    sidebar = new[] { "Users:  1", "Revenue: $0", "Valuation: $0B", "Commas: tres", "Status: pre" };
-}
+At compact width (< 80 columns), the info grid uses a 2-column layout with each
+key-value pair on its own row.
 
-for (var i = 0; i < boydArt.Length; i++)
-{
-    var line = $"[bold cyan]{Markup.Escape(boydArt[i])}[/]";
-    if (i < sidebar.Length)
-    {
-        var padding = new string(' ', Math.Max(2, width - boydArt[i].Length - sidebar[i].Length - 4));
-        line += $"[dim]{padding}{Markup.Escape(sidebar[i])}[/]";
-    }
-    AnsiConsole.MarkupLine(line);
-}
+### Content Composition
 
-// CODE block
-var codeArt = new string[]
-{
-    @"                   ██████╗  ██████╗ ██████╗ ███████╗",
-    @"                  ██╔════╝ ██╔═══██╗██╔══██╗██╔════╝",
-    @"                  ██║      ██║   ██║██║  ██║█████╗  ",
-    @"                  ██║      ██║   ██║██║  ██║██╔══╝  ",
-    @"                  ╚██████╗ ╚██████╔╝██████╔╝███████╗",
-    @"                   ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝",
-};
-
-foreach (var row in codeArt)
-{
-    AnsiConsole.MarkupLine($"[bold blue]{Markup.Escape(row)}[/]");
-}
-```
-
-### Compact Wordmark Rendering
-
-```csharp
-if (width >= 80)
-{
-    AnsiConsole.MarkupLine($"  [bold cyan]BOYD[/][bold blue]CODE[/]  [dim]v{version}  AI Coding Assistant[/]");
-}
-else
-{
-    AnsiConsole.MarkupLine($"  [bold cyan]BOYD[/][bold blue]CODE[/]  [dim]v{version}[/]");
-}
-```
-
-### Info Grid
-
-```csharp
-var grid = new Grid()
-    .AddColumn(new GridColumn().PadLeft(2).PadRight(1))   // Label 1
-    .AddColumn(new GridColumn().PadRight(4))               // Value 1
-    .AddColumn(new GridColumn().PadRight(1))               // Label 2
-    .AddColumn(new GridColumn());                          // Value 2
-
-grid.AddRow(
-    new Markup("[dim]Provider[/]"),
-    new Markup($"[cyan]{Markup.Escape(providerName)}[/]"),
-    new Markup("[dim]Project[/]"),
-    new Markup($"[cyan]{Markup.Escape(projectName)}[/]")
-);
-
-grid.AddRow(
-    new Markup("[dim]Model[/]"),
-    new Markup($"[cyan]{Markup.Escape(modelName)}[/]"),
-    new Markup("[dim]Engine[/]"),
-    new Markup($"[cyan]{Markup.Escape(engineMode)}[/]")
-);
-
-// Single-value rows span all 4 columns via empty trailing cells
-if (dockerImage is not null)
-{
-    grid.AddRow(
-        new Markup("[dim]Docker[/]"),
-        new Markup($"[cyan]{Markup.Escape(dockerImage)}[/]"),
-        new Markup(""),
-        new Markup("")
-    );
-}
-
-grid.AddRow(
-    new Markup("[dim]cwd[/]"),
-    new Markup($"[cyan]{Markup.Escape(cwd)}[/]"),
-    new Markup(""),
-    new Markup("")
-);
-
-if (gitBranch is not null)
-{
-    grid.AddRow(
-        new Markup("[dim]Git[/]"),
-        new Markup($"[cyan]{Markup.Escape(gitRepoRoot)}[/] [dim]({Markup.Escape(gitBranch)})[/]"),
-        new Markup(""),
-        new Markup("")
-    );
-}
-
-AnsiConsole.Write(grid);
-```
-
-For compact width (< 80 columns), use a 2-column grid instead:
-
-```csharp
-var compactGrid = new Grid()
-    .AddColumn(new GridColumn().PadLeft(1).PadRight(1))
-    .AddColumn(new GridColumn());
-
-compactGrid.AddRow(new Markup("[dim]Provider[/]"), new Markup($"[cyan]{Markup.Escape(providerName)}[/]"));
-compactGrid.AddRow(new Markup("[dim]Model[/]"), new Markup($"[cyan]{Markup.Escape(modelName)}[/]"));
-compactGrid.AddRow(new Markup("[dim]Project[/]"), new Markup($"[cyan]{Markup.Escape(projectName)}[/]"));
-compactGrid.AddRow(new Markup("[dim]Engine[/]"), new Markup($"[cyan]{Markup.Escape(engineMode)}[/]"));
-// ... docker, cwd, git rows
-```
-
-### Status Footer
-
-```csharp
-if (isConfigured)
-{
-    var engineDesc = isContainer
-        ? "Commands execute inside a Docker container."
-        : "Commands run in a constrained PowerShell runspace.";
-    AnsiConsole.MarkupLine($"  [green]\u2713[/] [dim]Ready  {Markup.Escape(engineDesc)}[/]");
-}
-else
-{
-    AnsiConsole.MarkupLine(
-        "  [yellow bold]Not configured[/]  [dim]Run[/] [bold]/provider setup[/] [dim]or pass[/] [bold]--api-key[/]");
-}
-```
-
-### Hint and Resume
-
-```csharp
-if (isConfigured && heightTier != "minimal" && heightTier != "fallback")
-{
-    AnsiConsole.WriteLine();
-    if (width >= 80)
-        AnsiConsole.MarkupLine("  [dim italic]Type a message to start, or /help for available commands.[/]");
-    else
-        AnsiConsole.MarkupLine("  [dim italic]Type a message, or /help[/]");
-}
-
-if (isResumedSession)
-{
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine(
-        $"  [dim italic]Resumed session {Markup.Escape(shortSessionId)}" +
-        $" ({messageCount} messages from {Markup.Escape(timestamp)})[/]");
-}
-```
+The banner is composed as a sequence of styled content blocks (art lines, rule,
+grid, status line, hint) and rendered into the conversation view as the first
+content block. The content renderer handles all markup styling, escaping of
+user-provided values, and width adaptation.
 
 ---
 
-## Transition to Layout
+## Transition to First Prompt
 
 After the banner renders, the following sequence occurs:
 
 1. Execution engine is created via `IExecutionEngineFactory`
 2. Session is created or resumed via `ISessionRepository`
-3. `ActivateLayout()` is called, which:
-   - Creates the Layout widget with Content, Indicator, Input, StatusBar regions
-   - Starts the `AnsiConsole.Live(layout)` context
-   - Starts the `AsyncInputReader` background task
-   - The banner content scrolls up into the Content region's scrollback
+3. The input view shows `> _` and accepts keyboard input
+4. The user types their first message
 
-The banner is never cleared. `AnsiConsole.Clear()` is never called. The user
-can scroll up in their terminal to see the banner at any time during the session.
+The TUI application is already active when the banner renders. The banner is
+the first content block in the conversation view's scroll buffer. It is rendered
+once and never redrawn. The user can scroll up in the conversation view to see
+the banner at any time during the session.
 
 ---
 
@@ -706,11 +545,11 @@ can scroll up in their terminal to see the banner at any time during the session
   width. The ASCII art and info grid remain left-aligned. Excess width is empty
   space. No visual issues.
 
-- **Non-interactive/piped environment**: `Console.WindowHeight` may throw.
-  The catch block defaults to `height = 24`, selecting the compact banner
-  tier. When stdout is piped, Spectre.Console strips all markup automatically.
-  The ASCII art renders as plain text (box-drawing characters are not markup).
-  The info grid renders as tab-separated values. The Rule renders as dashes.
+- **Non-interactive/piped environment**: Terminal dimension detection may fail.
+  The fallback defaults to `height = 24`, selecting the compact banner tier.
+  When output is piped, markup is stripped automatically. The ASCII art renders
+  as plain text (box-drawing characters are not markup). The info grid renders
+  as tab-separated values. The rule renders as dashes.
 
 - **No git repository**: The Git row in the info grid is omitted entirely.
   No empty state placeholder is shown -- the row simply does not exist.
@@ -728,9 +567,9 @@ can scroll up in their terminal to see the banner at any time during the session
 - **Provider activation failure**: `isConfigured` remains false. The banner
   shows the "Not configured" status footer.
 
-- **Unicode not supported**: When `AnsiConsole.Profile.Capabilities.Unicode`
-  is false, the block-drawing characters in the ASCII art may not render. In
-  this case, fall back to the compact wordmark regardless of height tier.
+- **Unicode not supported**: When the terminal does not support Unicode, the
+  block-drawing characters in the ASCII art may not render. In this case,
+  fall back to the compact wordmark regardless of height tier.
 
 - **Version string**: The version is read from the assembly at startup. If
   unavailable, use `"dev"` as the version string.
@@ -755,7 +594,7 @@ can scroll up in their terminal to see the banner at any time during the session
   The block characters are still visible as ASCII art.
 - Info grid labels lose dim styling, values lose cyan coloring. Structure
   remains readable via the Grid layout.
-- The checkmark symbol `\u2713` remains visible as a text character.
+- The checkmark symbol `✓` remains visible as a text character.
 - "Not configured" loses yellow styling but retains bold weight.
 
 ### Accessible Mode (BOYDCODE_ACCESSIBLE=1)
@@ -788,8 +627,8 @@ Type a message to start, or /help for available commands.
 
 ## Performance
 
-The banner renders in a single synchronous pass. No Live context, no async
-operations, no network calls. Expected render time: < 10ms.
+The banner renders in a single synchronous pass. No async operations, no
+network calls. Expected render time: < 10ms.
 
 Provider activation (API key validation, OAuth token refresh) happens BEFORE
 the banner renders. If activation involves network calls (OAuth token refresh),
@@ -829,8 +668,8 @@ a brief `Connecting...` line before the banner. This is not in v2 scope.
 | `[bold blue]` | Brand secondary (1.3) | "CODE" ASCII art / wordmark |
 | `[dim]` | Muted (1.1) | Sidebar, tagline, info labels, engine desc |
 | `[cyan]` | Info (1.1) | Info grid values |
-| `[green]` + `\u2713` | Success (1.1) | "Ready" status |
+| `[green]` + `✓` | Success (1.1) | "Ready" status |
 | `[yellow bold]` | Warning emphasis (1.3) | "Not configured" status |
 | `[bold]` | Level 1 (2.1) | "/provider setup", "--api-key" in guidance |
 | `[dim italic]` | Level 4 (2.1) | Hint line, resume notice |
-| Rule `.RuleStyle("dim")` | Muted (1.1) | Banner separator |
+| Dim Rule | Muted (1.1) | Banner separator |

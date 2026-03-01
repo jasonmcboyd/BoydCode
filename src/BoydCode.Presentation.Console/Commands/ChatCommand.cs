@@ -262,16 +262,8 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
 
     var bannerRenderable = BannerRenderable.Build(bannerData);
 
-    // Write banner to stdout scrollback (part of terminal history)
-    AnsiConsole.Write(bannerRenderable);
-    AnsiConsole.WriteLine();
-
-    // Run the interactive loop
+    // Activate persistent layout first, then add banner as first content block
     _ui.ActivateLayout();
-
-    // Also add banner to TUI content region so it's visible after layout takes over.
-    // Without this, the TUI immediately fills the screen and pushes the banner above
-    // the visible area — the user would have to scroll up to see it.
     SpectreHelpers.OutputRenderable(bannerRenderable);
 
     try

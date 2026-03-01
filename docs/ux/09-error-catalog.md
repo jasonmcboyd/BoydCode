@@ -48,12 +48,12 @@ They appear when the LLM API call fails during an agent turn.
 |---|---|---|---|---|---|---|
 | ERR-PROV-01 | `{extracted message}` + `Suggestion: Check your API key with /provider setup or pass --api-key.` | Exception message contains "API KEY", "UNAUTHORIZED", "AUTHENTICATION", "PERMISSION_DENIED", or "FORBIDDEN" | Recoverable | Run `/provider setup` or pass `--api-key` | stderr | `AgentOrchestrator.cs:462-467` |
 | ERR-PROV-02 | `{extracted message}` + `Suggestion: Wait a moment and retry, or switch providers with /provider setup.` | Exception message contains "RATE LIMIT", "TOO MANY REQUESTS", "429", or "QUOTA" | Recoverable | Wait and retry; or switch provider | stderr | `AgentOrchestrator.cs:469-473` |
-| ERR-PROV-03 | `{extracted message}` + `Suggestion: Start a new session or switch to a model with a larger context window.` | Exception message contains "CONTEXT", "TOKEN LIMIT", "TOO LONG", or "MAX.*TOKEN" | Recoverable | Use `/context compact` or start new session | stderr | `AgentOrchestrator.cs:475-479` |
+| ERR-PROV-03 | `{extracted message}` + `Suggestion: Start a new session or switch to a model with a larger context window.` | Exception message contains "CONTEXT", "TOKEN LIMIT", "TOO LONG", or "MAX.*TOKEN" | Recoverable | Use `/context summarize` or start new session | stderr | `AgentOrchestrator.cs:475-479` |
 | ERR-PROV-04 | `{extracted message}` + `Suggestion: Check your internet connection and try again.` | Exception is `HttpRequestException` or message contains "CONNECTION", "TIMEOUT", "NETWORK" | Recoverable | Check network connectivity | stderr | `AgentOrchestrator.cs:481-485` |
 | ERR-PROV-05 | `{extracted message}` + `Suggestion: The provider may be experiencing issues. Try again in a few moments.` | Exception message contains "500", "SERVER ERROR", "OVERLOADED", "503" | Recoverable | Wait and retry | stderr | `AgentOrchestrator.cs:487-491` |
 | ERR-PROV-06 | `{extracted message}` (no suggestion) | None of the above patterns match | Recoverable | Review the error message; check provider status | stderr | `AgentOrchestrator.cs:493` |
 | ERR-PROV-07 | `No LLM provider configured. Use /provider setup to configure one.` | `RunAgentTurnAsync` called when `_activeProvider.IsConfigured` is false | Recoverable | Run `/provider setup` | stderr | `AgentOrchestrator.cs:137` |
-| ERR-PROV-08 | `Reached maximum tool call rounds ({maxToolRounds}). Stopping to prevent runaway execution.` | Agent loop hits 50 rounds without `end_turn` stop reason | Recoverable | Start new message or use `/context compact` | stderr | `AgentOrchestrator.cs:217` |
+| ERR-PROV-08 | `Reached maximum tool call rounds ({maxToolRounds}). Stopping to prevent runaway execution.` | Agent loop hits 50 rounds without `end_turn` stop reason | Recoverable | Start new message or use `/context summarize` | stderr | `AgentOrchestrator.cs:217` |
 
 **Error extraction:** `FormatProviderError()` attempts to extract a
 human-readable message from JSON error bodies embedded in exception messages
@@ -103,7 +103,7 @@ the `[yellow]Usage:[/]` pattern via `SpectreHelpers.Usage()`.
 
 | ID | Message | Trigger | Implementation |
 |---|---|---|---|
-| USG-01 | `Usage: /context show\|compact\|summarize [topic]` | `/context` with missing or unknown subcommand | `ContextSlashCommand.cs:77` |
+| USG-01 | `Usage: /context show\|summarize [topic]\|prune\|refresh` | `/context` with missing or unknown subcommand | `ContextSlashCommand.cs:77` |
 | USG-02 | `Usage: /project create\|list\|show\|edit\|delete` | `/project` with unknown subcommand | `ProjectSlashCommand.cs:82` |
 | USG-03 | `Usage: /project create <name>` | `/project create` without name in non-interactive mode | `ProjectSlashCommand.cs:97` |
 | USG-04 | `Usage: /project show <name>` | `/project show` without name, no active project, non-interactive | `ProjectSlashCommand.cs:219` |
@@ -185,7 +185,7 @@ the `[yellow]Usage:[/]` pattern via `SpectreHelpers.Usage()`.
 | ID | Message | Trigger | Severity | Recovery | Stream | Implementation |
 |---|---|---|---|---|---|---|
 | ERR-CTX-01 | `No LLM provider configured.` | `/context summarize` without an active provider | Recoverable | Run `/provider setup` | stdout | `ContextSlashCommand.cs:445` |
-| ERR-CTX-02 | `Summarization produced no output.` | LLM returns empty text for summarization request | Recoverable | Try again or use `/context compact` | stdout | `ContextSlashCommand.cs:494` |
+| ERR-CTX-02 | `Summarization produced no output.` | LLM returns empty text for summarization request | Recoverable | Try again with `/context summarize` | stdout | `ContextSlashCommand.cs:494` |
 | ERR-CTX-03 | `Summarization failed: {ex.Message}` | Exception during summarization LLM call | Recoverable | Original conversation restored; try again | stdout | `ContextSlashCommand.cs:512` |
 
 ---
@@ -215,7 +215,7 @@ These are not errors but could be confused for them. Included for completeness.
 
 | ID | Message | Trigger | Pattern | Implementation |
 |---|---|---|---|---|
-| INFO-01 | `Nothing to compact.` | `/context compact` with empty conversation | Plain text | `ContextSlashCommand.cs:409` |
+| INFO-01 | `Nothing to compact.` | `/context summarize` with empty conversation | Plain text | `ContextSlashCommand.cs:409` |
 | INFO-02 | `Not enough conversation to summarize (need at least 4 messages).` | `/context summarize` with < 4 messages | Plain text | `ContextSlashCommand.cs:450` |
 | INFO-03 | `No saved sessions found.` | `/conversations list` with no saved sessions | Plain text | `ConversationsSlashCommand.cs:71` |
 | INFO-04 | `No projects found.` | `/project list` with no projects | Plain text | `ProjectSlashCommand.cs:166` |
@@ -280,7 +280,7 @@ messages. Instead, it uses raw `AnsiConsole.MarkupLine("[red]...[/]")` and
 language compared to the rest of the application:
 
 - No `Error:` prefix on error messages (lines 42, 52, 87, 92, 101)
-- `[green]Successfully logged in![/]` instead of `[green]v[/] ...` (line 114)
+- `[green]Successfully logged in![/]` instead of `[green]✓[/] ...` (line 114)
 - `[yellow]...[/]` instead of `[yellow]Warning:[/] ...` (line 134)
 
 ### 13.4 Warning Rendered via RenderError

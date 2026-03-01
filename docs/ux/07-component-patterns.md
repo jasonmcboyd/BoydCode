@@ -2,7 +2,7 @@
 
 This document defines the REQUIRED component library for BoydCode v2. Every
 reusable UI pattern is specified here with ASCII mockups, usage guidance,
-Spectre.Console implementation notes, and accessibility considerations.
+rendering notes, and accessibility considerations.
 
 All mockups assume 80-column terminal unless labeled "120 columns."
 
@@ -38,7 +38,7 @@ References: `00-vision.md` for architecture and principles.
 23. [Crash Panel](#23-crash-panel)
 24. [Banner](#24-banner)
 25. [Status Bar](#25-status-bar)
-26. [Indicator Bar](#26-indicator-bar)
+26. [Activity Region](#26-activity-region-formerly-indicator-bar)
 27. [Context Usage Bar](#27-context-usage-bar)
 
 ---
@@ -48,13 +48,17 @@ References: `00-vision.md` for architecture and principles.
 ### Description
 
 Renders the user's message in the conversation. Visually distinct from
-assistant messages through an accent-colored prompt indicator.
+assistant messages through a subtle grey23 background tint and `>` prefix.
+Rendered as a borderless Panel for the background effect.
 
 ### Mockup (80 columns)
 
 ```
-  [bold blue]>[/] Can you add error handling to the auth module?
+ > Can you add error handling to the auth module?
 ```
+
+The entire line has a `Color.Grey23` background. The `>` prefix is plain text
+(not colored). The padding creates 1-character horizontal margins.
 
 ### Mockup (120 columns)
 
@@ -62,26 +66,41 @@ Same format. User messages do not change with width.
 
 ### When to Use
 
-Every user message in the conversation history.
+Every user message in the conversation. User messages are appended to the
+conversation view immediately when submitted.
 
-### Spectre.Console Implementation
+### Echo Behavior
 
-```csharp
-new Markup($"  [bold blue]>[/] {Markup.Escape(userMessage)}")
-```
+When the user submits a message, it is immediately appended to the
+conversation view as a borderless panel with grey23 background, then the
+activity bar transitions to the Thinking state.
 
-Wrapped in a `Padder` if needed. The `>` symbol is always `[bold blue]`.
+### Rendering
+
+The user message is rendered as a borderless panel with 1-character
+horizontal padding and a `Color.Grey23` background. The `>` prefix and
+message text use plain (Level 2) style. The message text is escaped before
+rendering to prevent markup injection.
+
+The grey23 background is an intentional exception to the ANSI 4-bit color rule
+(see 06-style-tokens.md Section 1.6). It provides a subtle blockquote-style
+tint that distinguishes user messages from assistant text without using borders
+or colored text.
 
 ### Style Tokens
 
-- `[bold blue]` (accent) for the `>` indicator
-- Level 2 (plain) for the message text
-- Level 1 indent (2 spaces)
+- `Color.Grey23` background (see 06-style-tokens.md Section 1.6)
+- Level 2 (plain) for the `>` prefix and message text
+- `BoxBorder.None` with `Padding(1, 0, 1, 0)` (1 horizontal, 0 vertical)
+- No color on the `>` prefix -- it is plain text
 
 ### Accessibility
 
-- The `>` symbol identifies user messages without color
+- The `>` symbol identifies user messages without color or background
 - Screen readers see: `> {message text}` which is clear
+- In NO_COLOR mode, the background tint is not rendered; the `>` prefix
+  provides the visual distinction
+- In accessible mode, rendered as plain `> {text}` with no background
 
 ---
 
@@ -105,16 +124,10 @@ from user messages by the absence of the `>` indicator and by 2-space indent.
 Every assistant text response. May contain multiple paragraphs. Tool calls
 and results render as separate inline components (see patterns 4 and 5).
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-new Panel(Markup.Escape(assistantText))
-    .Border(BoxBorder.None)
-    .PadLeft(2)
-```
-
-The `Panel` with `BoxBorder.None` provides word-wrapping without visible borders.
-`PadLeft(2)` creates the standard indent.
+Rendered as a borderless panel with word-wrapping and 2-space left indent.
+No visible borders. The assistant text is escaped before rendering.
 
 ### Style Tokens
 
@@ -151,11 +164,10 @@ blank line separates turns.
 After every completed assistant turn. Not between tool calls within the same
 turn (those are continuous).
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-new Markup($"  [dim]{inputTokens:N0} in / {outputTokens:N0} out / {totalTokens:N0} total[/]")
-```
+Dim text with 2-space indent, formatted as:
+`[dim]{inputTokens} in / {outputTokens} out / {totalTokens} total[/]`
 
 ### Style Tokens
 
@@ -197,20 +209,15 @@ Same structure, panel stretches to fill available width.
 
 Every tool call emitted by the LLM. Renders before execution begins.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-new Panel(Markup.Escape(formattedPreview))
-    .Header($"[dim]{Markup.Escape(toolName)}[/]")
-    .Border(BoxBorder.Rounded)
-    .BorderColor(Color.Grey)
-    .Padding(1, 0)
-    .Expand()
-```
+Rendered as a rounded-border panel that expands to fill available width.
+The tool name appears in the panel header (dim style). The command content
+is escaped and displayed in plain text. Horizontal padding of 1 character.
 
 ### Style Tokens
 
-- `BoxBorder.Rounded` with `Color.Grey` border
+- Rounded border with grey border color
 - `[dim]` for the header (tool name)
 - Level 2 (plain) for command content
 - `Padding(1, 0)`
@@ -253,15 +260,13 @@ status, tool name, output line count, and duration.
 
 After every tool execution completes.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-// Success
-new Markup($"  [green]\u2713[/] [dim]{Markup.Escape(toolName)}  {lineCount} lines | {duration}[/]")
+A single line of styled text with 2-space indent:
+- Success: `  [green]`checkmark`[/] [dim]{toolName}  {lineCount} lines | {duration}[/]`
+- Error: `  [red]`cross`[/] [dim]{toolName}  {lineCount} lines | {duration}[/]`
 
-// Error
-new Markup($"  [red]\u2717[/] [dim]{Markup.Escape(toolName)}  {lineCount} lines | {duration}[/]")
-```
+The tool name is escaped before rendering.
 
 ### Style Tokens
 
@@ -276,42 +281,41 @@ new Markup($"  [red]\u2717[/] [dim]{Markup.Escape(toolName)}  {lineCount} lines 
 
 ### Description
 
-In-place indicator shown while a tool is executing. Appears in the indicator
-bar (not the content region) so it does not scroll away.
+In-place indicator shown while a tool is executing. Appears in the activity
+bar (not the conversation view) so it does not scroll away.
 
 ### Mockup
 
-The indicator bar shows:
+The activity bar shows:
 
 ```
-@ Executing... (2.3s)
+[cyan]⠿ Executing... (2.3s)[/]
 ```
 
-The `@` character replaces the braille spinner. The elapsed time updates
-in-place via the Live context refresh.
+A braille spinner animates at 100ms per frame. The elapsed time updates each
+frame alongside the spinner character. This uses the same spinner as the
+Thinking and Streaming states (see Activity Region, pattern #26).
 
 ### When to Use
 
 Between `RenderExecutingStart()` and `RenderExecutingStop()`.
 
-### Spectre.Console Implementation
+### Rendering
 
-The indicator bar is a Size(1) row in the Layout. During execution:
-
-```csharp
-layout["Indicator"].Update(
-    new Markup($"[blue]@ Executing... ({elapsed})[/]"));
-ctx.Refresh();
-```
+The activity bar is a single-row region. During execution, the spinner
+cycles through 8 braille frames at 100ms intervals, updating the elapsed
+time on each frame. The spinner frame advances by 1 every 100ms.
 
 ### Style Tokens
 
-- `[blue]` (accent) for executing state
-- `@` symbol as activity indicator
+- `[cyan]` (info) for executing state
+- Braille spinner (8-frame, 100ms/frame) as animation
+- Frame sequence: ⠿ ⠻ ⠽ ⠾ ⠷ ⠯ ⠟ ⠾
 
 ### Accessibility
 
-In accessible mode, render as static text: `[Executing... 2.3s]`
+In accessible mode, render as static text: `[Executing... (2.3s)]`. No
+spinner animation. Update elapsed time on each refresh cycle.
 
 ---
 
@@ -339,15 +343,10 @@ pattern -- every user action should produce one.
 - To report errors, warnings, or validation failures
 - To show secondary metadata or hints
 
-### Spectre.Console Implementation
+### Rendering
 
-Use `SpectreHelpers` methods. They handle escaping internally.
-
-```csharp
-SpectreHelpers.Success("Project my-project created.");
-SpectreHelpers.Error("Could not connect to the API.");
-SpectreHelpers.Warning("Context is 85% full.");
-```
+Status messages are rendered via the user interface's status helper methods,
+which handle escaping internally. Pass plain text -- never pre-escape.
 
 ### Style Tokens
 
@@ -374,12 +373,10 @@ or slash command output.
 To separate named sections within slash command output (project details,
 JEA profile views, context breakdown).
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-SpectreHelpers.Section("Directories");
-// Renders: blank line + Rule("[bold]Directories[/]").LeftJustified().RuleStyle("dim")
-```
+A blank line followed by a left-justified horizontal rule with bold title
+text and dim rule line style.
 
 ### Style Tokens
 
@@ -417,13 +414,11 @@ values are cyan.
 
 Startup banner, `/project show`, `/provider show`.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-SpectreHelpers.InfoGrid()       // Creates 4-column Grid with padding
-SpectreHelpers.AddInfoRow(grid, "Provider", "Gemini", "Project", "my-project")
-SpectreHelpers.AddInfoRow(grid, "cwd", path)
-```
+A 4-column grid with dim labels and cyan values. When a row has only one
+key-value pair (e.g., a long path), it spans both columns. The grid has
+2-space left indent.
 
 ### Style Tokens
 
@@ -453,12 +448,10 @@ Standard data table for listing items. Simple border, bold headers, clean cells.
 
 `/project list`, `/jea list`, `/conversations list`, `/provider list`.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-var table = SpectreHelpers.SimpleTable("Name", "Dirs", "Docker", "Engine");
-table.AddRow("my-project", "3", "python", "--");
-```
+A simple-bordered table with bold column headers. Empty cells display a dim
+em-dash (`[dim]\u2014[/]`).
 
 ### Style Tokens
 
@@ -472,9 +465,9 @@ table.AddRow("my-project", "3", "python", "--");
 
 ### Description
 
-A Panel that replaces the Content region to show slash command output without
-blocking the conversation. The modal appears instantly, can be dismissed with
-Esc, and restores the conversation view on dismissal.
+A bordered window that overlays the conversation to show slash command output
+without blocking it. The window appears instantly, can be dismissed with Esc,
+and restores the conversation view on dismissal.
 
 This is the KEY NEW PATTERN in BoydCode v2. It enables non-blocking access
 to configuration and information while the AI continues working.
@@ -555,40 +548,22 @@ Read-only slash commands that do not need interactive prompts:
 
 ### Behavior
 
-1. User types the slash command (even while AI is streaming).
-2. The Content region in the Layout is replaced with the modal Panel.
-3. The Indicator bar shows `[dim]Esc to dismiss[/]`.
+1. User triggers a modal slash command (via message queue or direct input).
+2. A modeless window opens over the conversation view, showing the content.
+3. The activity bar shows `[dim]Esc to dismiss[/]`.
 4. The AI continues working in the background -- tokens accumulate in the
-   data model but are not visible.
+   conversation model but are not visible while the window is open.
 5. User presses Esc (or Enter).
-6. The Content region restores the conversation view, now including any
-   tokens that arrived while the modal was open.
-7. The Indicator bar returns to its prior state.
+6. The window closes. The conversation view is fully visible again,
+   including any tokens that arrived while the window was open.
+7. The activity bar returns to its prior state.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-// Build modal content
-var content = BuildModalContent(command, args);
-var panel = new Panel(content)
-    .Header($"[bold]{Markup.Escape(title)}[/]")
-    .Border(BoxBorder.Rounded)
-    .Expand()
-    .Padding(2, 1);
-
-// Show in Content region
-layout["Content"].Update(panel);
-_modalActive = true;
-_indicatorState = IndicatorState.Modal;
-ctx.Refresh();
-
-// Wait for dismiss key (handled by AsyncInputReader dispatch)
-// On Esc:
-layout["Content"].Update(BuildConversationView());
-_modalActive = false;
-_indicatorState = _priorIndicatorState;
-ctx.Refresh();
-```
+A rounded-border window with bold title in the header. The window expands
+to fill available width. Content has 2-character horizontal padding and
+1-character vertical padding. A `[dim]Esc to dismiss[/]` hint appears at
+the bottom of the content.
 
 ### Style Tokens
 
@@ -611,12 +586,12 @@ Command          Description
 
 ### Interaction with Streaming
 
-When a modal is open and the AI is streaming:
-- Tokens accumulate in the `StringBuilder` / conversation model
-- The Content region shows the modal, not the streaming text
+When a window is open and the AI is streaming:
+- Tokens accumulate in the conversation model
+- The window covers the conversation view; streaming text is not visible
 - When dismissed, the conversation view shows all accumulated text
 - The user sees the conversation "jump forward" to the current state
-- This is intentional -- the modal is a lens over the data, not a pause button
+- This is intentional -- the window is a lens over the data, not a pause button
 
 ---
 
@@ -641,23 +616,20 @@ addition to arrows).
 Any choice from a list of 3-10 options. For 2 options, consider Confirmation
 Prompt instead. For 10+ options, consider grouping or search.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-SpectreHelpers.Select("Choose a [green]template[/]:", choices);
-// Internally: SelectionPrompt with HighlightStyle(Color.Green)
-// Wraps in SuspendLayout/ResumeLayout
-```
+Presented as a selection list with green highlight on the selected item.
+The prompt title uses `[green]` markup for the field name.
 
 ### Style Tokens
 
-- `Color.Green` highlight for selected item
+- Green highlight for selected item
 - `[green]` in prompt title for the field name
 
-### Note on Modals
+### Note on Interactive Prompts
 
-Selection prompts CANNOT render inside the Live context. They require
-Suspend/Resume. This is why `/project create` suspends the Live context.
+Interactive selection prompts open as modal dialogs that block until the
+user makes a selection. This is why `/project create` uses a modal dialog.
 
 ---
 
@@ -683,13 +655,12 @@ Free-text input with optional validation, default values, and hints.
 
 Named text input during wizard flows.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-SpectreHelpers.PromptNonEmpty("Project [green]name[/]:");
-SpectreHelpers.PromptOptional("Docker image [dim](Enter to skip)[/]:");
-SpectreHelpers.PromptWithDefault("Model:", "gemini-2.5-pro");
-```
+Text input with label. Three variants:
+- **Required**: Validates non-empty input before accepting.
+- **Optional**: Accepts empty input (Enter to skip).
+- **With default**: Pre-fills a default value; Enter accepts the default.
 
 ### Style Tokens
 
@@ -714,11 +685,10 @@ Yes/no question for non-destructive confirmations.
 
 Before applying changes that are easily reversible.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-SpectreHelpers.Confirm("Save changes?", defaultValue: true);
-```
+A yes/no prompt. The default value determines which option is capitalized
+in the `[y/N]` or `[Y/n]` hint.
 
 ---
 
@@ -747,10 +717,10 @@ then asks for confirmation.
 
 `/project delete`, `/conversations delete`, `/jea delete`, `/provider remove`.
 
-### Spectre.Console Implementation
+### Rendering
 
-Section divider + bulleted detail list + Confirm prompt. All wrapped in
-SuspendLayout/ResumeLayout.
+Section divider + bulleted detail list + Confirm prompt. Presented as a
+modal dialog that blocks until the user confirms or cancels.
 
 ### Style Tokens
 
@@ -790,17 +760,11 @@ menu after each edit. "Done" option exits the loop.
 
 `/project edit`, `/jea edit`.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-while (true)
-{
-    var choice = SpectreHelpers.Select(
-        $"Edit [bold]{Markup.Escape(name)}[/]:", editChoices);
-    if (choice == "Done") break;
-    // Handle the selected field edit
-}
-```
+A repeating selection prompt loop. After each field edit, the menu
+re-displays with updated values. Selecting "Done" exits the loop.
+Presented as a modal dialog.
 
 ### Style Tokens
 
@@ -827,11 +791,12 @@ the conversation.
 
 After each LLM response (each round in a multi-round agentic turn).
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-new Markup($"  [dim]{input:N0} in / {output:N0} out / {total:N0} total[/]")
-```
+Dim text with 2-space indent, formatted as:
+`  [dim]{input} in / {output} out / {total} total[/]`
+
+Numbers are formatted with thousand separators.
 
 ### Style Tokens
 
@@ -871,30 +836,25 @@ The cursor position is implicit -- tokens append at the end.
 
 Every streaming LLM response.
 
-### Spectre.Console Implementation
+### Rendering
 
-Within the Live context, the streaming message is a `Markup` renderable that
-grows as tokens arrive:
-
-```csharp
-_streamBuffer.Append(token);
-var streamBlock = new Markup($"  {Markup.Escape(_streamBuffer.ToString())}");
-// Update the last message in the conversation view
-layout["Content"].Update(BuildConversationWithStream(streamBlock));
-ctx.Refresh();
-```
+As each token arrives, it is appended to a text buffer. The conversation
+view re-renders with the growing text and auto-scrolls to keep the latest
+content visible. The streaming block is always the last element in the
+conversation view.
 
 ### Style Tokens
 
-- Level 2 (plain) for streamed text
-- Level 1 indent (2 spaces)
-- No markup on streamed text (it is user-generated content from the LLM)
+- Level 2 (plain) for streamed text rendered as `Markup`
+- Level 1 indent (2 spaces) prepended to the escaped text
+- No additional markup on streamed text (it is LLM output, escaped before render)
 
 ### Performance
 
-- Rate-limit `ctx.Refresh()` to ~60fps (16ms minimum between refreshes)
+- Rate-limit screen updates to ~60fps (16ms minimum between refreshes)
 - Cache finalized message renderables
 - Only rebuild the streaming portion on each token
+- The conversation view uses its full height for visible content calculation
 
 ---
 
@@ -903,37 +863,38 @@ ctx.Refresh();
 ### Description
 
 Shown when the LLM request has been sent but no response tokens have arrived.
-Renders in the Indicator bar, not in the content area.
+Renders in the activity bar, not in the conversation view.
 
 ### Mockup
 
-Indicator bar shows:
+The activity bar shows:
 
 ```
-@ Thinking...
+⠿ Thinking...
 ```
 
-In yellow text. The `@` character does not animate (replaces braille spinner).
+In yellow text. The braille character animates at 100ms per frame (8-frame
+cycle), the same spinner used for all active states. When the first token
+arrives, the activity bar transitions to Streaming.
 
 ### When to Use
 
 Between `RenderThinkingStart()` and the first token or `RenderThinkingStop()`.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-layout["Indicator"].Update(new Markup("[yellow]@ Thinking...[/]"));
-ctx.Refresh();
-```
+The activity bar displays yellow text with the braille spinner character
+and "Thinking..." label. The spinner animates at 100ms per frame. When the
+first response token arrives, the activity bar transitions to Streaming.
 
 ### Style Tokens
 
 - `[yellow]` (warning/attention) for thinking state
-- `@` activity indicator
+- Braille spinner (8-frame, 100ms/frame) -- same as Executing and Streaming
 
 ### Accessibility
 
-In accessible mode: `[Thinking...]` (static text, no special character).
+In accessible mode: `[Thinking...]` (static text, no animation).
 
 ---
 
@@ -942,17 +903,17 @@ In accessible mode: `[Thinking...]` (static text, no special character).
 ### Description
 
 Feedback shown after the first Esc/Ctrl+C press during agent activity.
-Appears in the Indicator bar and auto-dismisses after 1 second.
+Appears in the activity bar and auto-dismisses after 1 second.
 
 ### Mockup
 
-Indicator bar shows:
+The activity bar shows:
 
 ```
 Press Esc again to cancel
 ```
 
-In yellow text. Replaces whatever was in the indicator bar.
+In yellow text. Replaces the spinner that was in the activity bar.
 
 ### When to Use
 
@@ -960,21 +921,14 @@ First Esc/Ctrl+C press during thinking, streaming, or execution.
 
 ### Behavior
 
-1. First press: Indicator bar shows cancel hint (yellow text).
+1. First press: Activity bar shows cancel hint (yellow text, no spinner).
 2. Second press within 1 second: Cancellation fires.
-3. Timeout (1 second): Indicator bar reverts to prior state.
+3. Timeout (1 second): Activity bar reverts to prior state (with spinner).
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-layout["Indicator"].Update(
-    new Markup("[yellow]Press Esc again to cancel[/]"));
-ctx.Refresh();
-
-// After 1 second timeout:
-layout["Indicator"].Update(_priorIndicatorContent);
-ctx.Refresh();
-```
+The activity bar shows yellow text: "Press Esc again to cancel" (no
+spinner). After 1 second, the activity bar reverts to its prior state.
 
 ### Style Tokens
 
@@ -1003,11 +957,9 @@ table -- always explain why there is nothing to show.
 
 Any list, table, or collection that might be empty.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-new Markup($"  [dim]{Markup.Escape(emptyMessage)}[/]")
-```
+Dim text with 2-space indent. The message text is escaped before rendering.
 
 ### Style Tokens
 
@@ -1050,15 +1002,11 @@ Error messages that explain what happened, why, and what the user can do.
 
 All error conditions. Every error MUST include actionable guidance.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-// Simple error -- via SpectreHelpers (writes to stderr)
-SpectreHelpers.Error("Could not connect to the API.");
-
-// Error with suggestion -- via IUserInterface (writes to stderr)
-_ui.RenderError("Could not connect to the API.\n  Suggestion: Check your network connection");
-```
+Simple errors are rendered via the user interface's error method, which
+handles escaping internally. Errors with suggestions append the suggestion
+text on the next line with 2-space indent.
 
 ### Style Tokens
 
@@ -1095,15 +1043,12 @@ panel with error details and log file path.
 
 Top-level exception handler in `Program.cs`.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-var panel = new Panel(errorContent)
-    .Header("[red bold] boydcode crash [/]")
-    .BorderColor(Color.Red)
-    .Padding(1, 1, 1, 1);
-AnsiConsole.Write(panel);
-```
+A rounded-border panel with red border and red bold header text. The panel
+displays the error message and log file path. Padding of 1 character on all
+sides. This renders outside the TUI application (after it has been disposed
+or before it starts), so it writes directly to the terminal.
 
 ### Style Tokens
 
@@ -1118,7 +1063,8 @@ AnsiConsole.Write(panel);
 ### Description
 
 Startup display showing brand identity, session configuration, and readiness
-status. Renders once and becomes scrollback.
+status. Renders once at startup and becomes part of the scrollable
+conversation history.
 
 ### Mockup (120 columns, full height)
 
@@ -1173,11 +1119,12 @@ status. Renders once and becomes scrollback.
 
 Application startup, before the interactive loop begins.
 
-### Spectre.Console Implementation
+### Rendering
 
-The banner renders BEFORE the Layout/Live context activates. It uses standard
-Spectre.Console calls (`AnsiConsole.MarkupLine`, `AnsiConsole.Write(rule)`,
-`AnsiConsole.Write(grid)`) and becomes part of scrollback.
+The banner is the first content appended to the conversation view when the
+application starts. It is composed from the figlet art, info grid, and
+status message components. Once rendered, it becomes part of the scrollable
+conversation history.
 
 ### Style Tokens
 
@@ -1218,16 +1165,13 @@ Persistent bottom row showing session metadata and contextual keybinding hints.
 
 ### When to Use
 
-Always visible as the bottom row of the Layout during the interactive session.
+Always visible as the bottom row of the view hierarchy. Displays session
+metadata on the left and contextual keybinding hints on the right.
 
-### Spectre.Console Implementation
+### Rendering
 
-A Size(1) row in the Layout, rendered as a `Grid` or `Columns` with left-aligned
-metadata and right-aligned hints.
-
-```csharp
-layout["StatusBar"].Update(BuildStatusBar(widthTier));
-```
+A single-row region with left-aligned metadata and right-aligned hints.
+Content adapts to terminal width (see Responsive Behavior below).
 
 ### Style Tokens
 
@@ -1244,36 +1188,37 @@ layout["StatusBar"].Update(BuildStatusBar(widthTier));
 
 ---
 
-## 26. Indicator Bar
+## 26. Activity Region (formerly Indicator Bar)
 
 ### Description
 
-Single-row indicator between the content area and the input line. In idle state,
-it is a dim horizontal rule. In active states, it shows agent status.
+Single-row activity indicator in the view hierarchy. Shows agent state with
+an animated braille spinner during active turns. In idle state, displays a
+dim horizontal rule.
 
-### Mockup -- Idle
-
-```
-────────────────────────────────────────────────────────────
-```
+All busy states use the same animated 8-frame braille spinner at 100ms per
+frame.
 
 ### Mockup -- Thinking
 
 ```
-[yellow]@ Thinking...[/]
+[yellow]⠿ Thinking...[/]
 ```
 
 ### Mockup -- Streaming
 
 ```
-[cyan]@ Streaming...[/]
+[cyan]⠿ Streaming...[/]
 ```
 
 ### Mockup -- Executing
 
 ```
-[blue]@ Executing... (2.3s)[/]
+[cyan]⠿ Executing... (2.3s)[/]
 ```
+
+The braille character animates at 100ms per frame (8-frame cycle). The elapsed
+time advances each frame.
 
 ### Mockup -- Cancel hint
 
@@ -1287,28 +1232,49 @@ it is a dim horizontal rule. In active states, it shows agent status.
 [dim]Esc to dismiss[/]
 ```
 
+### Companion: Separator
+
+Below the input view sits a static separator row:
+
+```
+────────────────────────────────────────────────────────────────
+```
+
+A dim horizontal rule on a single-row region. It never changes content. It
+visually separates the input view from the status bar.
+
 ### When to Use
 
-Always present as a Size(1) row in the Layout.
+Always present as a single-row region in the view hierarchy.
 
-### Spectre.Console Implementation
+### Rendering
 
-```csharp
-// Idle
-layout["Indicator"].Update(new Rule().RuleStyle("dim"));
+All busy states display left-aligned styled text with the braille spinner
+character (except cancel hint and modal dismiss, which use text only):
 
-// Active states
-layout["Indicator"].Update(new Markup("[yellow]@ Thinking...[/]"));
-```
+- **Thinking**: `[yellow]{spinner} Thinking...[/]`
+- **Streaming**: `[cyan]{spinner} Streaming...[/]`
+- **Executing**: `[cyan]{spinner} Executing... ({elapsed})[/]`
+- **Cancel hint**: `[yellow]Press Esc again to cancel[/]` (no spinner)
+- **Modal dismiss**: `[dim]Esc to dismiss[/]` (no spinner)
+- **Idle**: dim horizontal rule
+
+Spinner frames cycle at 100ms: `["⠿", "⠻", "⠽", "⠾", "⠷", "⠯", "⠟", "⠾"]`
 
 ### Style Tokens
 
-- Idle: dim Rule
-- Thinking: `[yellow]`
-- Streaming: `[cyan]`
-- Executing: `[blue]`
-- Cancel hint: `[yellow]`
-- Modal: `[dim]`
+- Thinking: `[yellow]` left-aligned Markup, braille spinner prefix
+- Streaming: `[cyan]` left-aligned Markup, braille spinner prefix
+- Executing: `[cyan]` left-aligned Markup, braille spinner prefix, elapsed time
+- Cancel hint: `[yellow]` left-aligned Markup (no spinner)
+- Modal: `[dim]` left-aligned Markup (no spinner)
+- Separator: dim Rule (static, never changes)
+
+### Key Change from Old Architecture
+
+In the old architecture, the Indicator Bar used a static `@` prefix for
+Thinking and Streaming states. This has been replaced with the animated
+braille spinner for all busy states.
 
 ---
 
@@ -1335,10 +1301,10 @@ modal overlay.
 
 `/context show` modal overlay.
 
-### Spectre.Console Implementation
+### Rendering
 
-The bar is built character-by-character using block characters with color markup.
-The legend uses black square characters with semantic colors.
+The bar is built character-by-character using block characters with color
+markup. The legend uses black square characters with semantic colors.
 
 ### Style Tokens
 

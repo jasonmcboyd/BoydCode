@@ -40,7 +40,7 @@ Error: No active session.
 
 | Token | Style Token (06-style-tokens.md) | Usage on This Screen |
 |---|---|---|
-| `[green]v[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
+| `[green]✓[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
 | `[red]Error:[/]` | error-red (1.1) | Error prefix |
 
 ## Interactive Elements
@@ -80,15 +80,3 @@ None. No confirmation prompt. The operation is immediate.
 |---|---|---|
 | Status Message | Section 1 | Success and error messages |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| HandleClearAsync | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 278-292 |
-| No session guard | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 281-285 |
-| Clear + count | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 287 |
-| Logging | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 288 |
-| Auto-save | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 289 |
-| Success message | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 291 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

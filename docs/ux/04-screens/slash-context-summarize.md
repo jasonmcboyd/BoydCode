@@ -143,7 +143,7 @@ Error: Summarization produced no output.
 | `Color.Grey` | (color) | Panel border color (signals provisional content) |
 | `[dim]` | dim (2.2) | Token savings line |
 | `[green]` | success-green (1.1) | Selection prompt highlight; revision instructions label |
-| `[green]v[/]` | success-green + success indicator (1.1, 3.1) | Success message prefix |
+| `[green]✓[/]` | success-green + success indicator (1.1, 3.1) | Success message prefix |
 | `[red]Error:[/]` | error-red (1.1) | Error prefix for all error states |
 | `[dim]Cancelled.[/]` | dim (2.2) | Cancel confirmation message |
 
@@ -229,29 +229,3 @@ Error: Summarization produced no output.
 | Status Message | Section 1 | Success and error messages |
 | Modal Panel | Section (Panel) | Preview panel wrapping LLM summary text |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| HandleSummarizeAsync | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 542-668 |
-| Guard: no session | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 544-549 |
-| Guard: no provider | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 551-555 |
-| Guard: too few messages | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 564-568 |
-| Recent exchange extraction | `Commands/ContextSlashCommand.cs` | `ExtractRecentExchange` | 740-757 |
-| Token estimation | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 575 |
-| EstimateContentBlockTokens helper | `Commands/ContextSlashCommand.cs` | `EstimateContentBlockTokens` | 713-737 |
-| System prompt construction | `Commands/ContextSlashCommand.cs` | `BuildSummarizeSystemPrompt` | 670-694 |
-| LlmRequest construction | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 584-592 |
-| LLM call with indicator | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 596-606 |
-| Error handler | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 608-614 |
-| Empty summary guard | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 616-620 |
-| Preview panel construction | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 624-629 |
-| Token savings display | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 632-637 |
-| Non-interactive auto-apply | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 640-645 |
-| Selection prompt | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 648-650 |
-| Apply path | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 654-657 |
-| Revise path | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 659-661 |
-| Cancel path | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 663-665 |
-| ApplySummary helper | `Commands/ContextSlashCommand.cs` | `ApplySummary` | 696-711 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

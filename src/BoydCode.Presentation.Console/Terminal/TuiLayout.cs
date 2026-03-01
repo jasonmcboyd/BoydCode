@@ -1,12 +1,11 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Text;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
 namespace BoydCode.Presentation.Console.Terminal;
 
-internal enum IndicatorState
+internal enum ActivityState
 {
   Idle,
   Thinking,
@@ -19,37 +18,42 @@ internal enum IndicatorState
 internal sealed class TuiLayout : IDisposable
 {
   private const int MinTerminalHeight = 10;
-  private const int MaxContentBlocks = 200;
+  private const int MaxContentBlocks = 2000;
+  private const int MaxInputLines = 10;
   private const int RenderIntervalMs = 16; // ~60fps
+  private static readonly string[] SpinnerFrames = ["\u283F", "\u283B", "\u283D", "\u283E", "\u2837", "\u282F", "\u281F", "\u283E"];
 
-  // Shared state — guarded by _contentLock for the list, volatile/Interlocked for scalars
+  // Shared state -- guarded by _contentLock for the list, volatile/Interlocked for scalars
   private readonly object _contentLock = new();
   private readonly List<IRenderable> _contentBlocks = [];
   private volatile bool _isActive;
   private volatile bool _disposed;
 
-  // Indicator state
-  private volatile IndicatorState _indicatorState = IndicatorState.Idle;
-  private readonly Stopwatch _executingStopwatch = new();
+  // Scroll state
+  private int _viewportOffset; // 0 = pinned to bottom, >0 = scrolled up N blocks
 
-  // Input line state
-  private volatile string _inputText = "";
-  private volatile int _inputCursorPosition;
+  // Activity state
+  private volatile ActivityState _activityState = ActivityState.Idle;
+  private readonly Stopwatch _executingStopwatch = new();
+  private readonly Stopwatch _masterStopwatch = new();
 
   // Status bar
   private volatile string _statusText = "";
 
-  // Agent state
-  private volatile bool _agentBusy;
-  private volatile int _queueCount;
-
   // Streaming state
   private readonly object _streamLock = new();
   private StringBuilder? _streamBuffer;
-  private bool _streamActive;
+  private volatile bool _streamActive;
 
-  // Modal overlay (plumbing for Phase 4)
+  // Modal overlay
   private volatile IRenderable? _modalContent;
+
+  // Input region state
+  private volatile string _inputText = "";
+  private volatile int _inputCursorPosition;
+  private volatile bool _agentBusy;
+  private volatile int _queueCount;
+  private volatile int _currentInputHeight = 1;
 
   // Suspend/resume coordination
   private readonly ManualResetEventSlim _suspendRequested = new(false);
@@ -65,9 +69,9 @@ internal sealed class TuiLayout : IDisposable
 
   public bool IsActive => _isActive;
 
-  // ─────────────────────────────────────────────
-  //  Lifecycle
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
+  //  Lifecycle — persistent for entire session
+  // -----------------------------------------------
 
   public void Activate()
   {
@@ -80,6 +84,8 @@ internal sealed class TuiLayout : IDisposable
 
     Current = this;
     _isActive = true;
+    _activityState = ActivityState.Idle;
+    _masterStopwatch.Start();
 
     _renderCts = new CancellationTokenSource();
     _renderTask = Task.Run(() => RenderLoopAsync(_renderCts.Token));
@@ -105,7 +111,7 @@ internal sealed class TuiLayout : IDisposable
     }
     catch
     {
-      // Best effort — render loop is non-critical
+      // Best effort -- render loop is non-critical
     }
 
     _renderCts?.Dispose();
@@ -118,13 +124,24 @@ internal sealed class TuiLayout : IDisposable
     }
   }
 
+  public void BeginTurn()
+  {
+    _activityState = ActivityState.Thinking;
+    _masterStopwatch.Restart();
+  }
+
+  public void EndTurn()
+  {
+    _activityState = ActivityState.Idle;
+  }
+
   public void Suspend()
   {
     if (!_isActive) return;
 
     if (Interlocked.Increment(ref _suspendDepth) > 1)
     {
-      // Already suspended — no need to wait for acknowledgement again
+      // Already suspended -- no need to wait for acknowledgement again
       return;
     }
 
@@ -141,7 +158,7 @@ internal sealed class TuiLayout : IDisposable
 
     if (Interlocked.Decrement(ref _suspendDepth) > 0)
     {
-      // Still nested — don't actually resume yet
+      // Still nested -- don't actually resume yet
       return;
     }
 
@@ -150,9 +167,9 @@ internal sealed class TuiLayout : IDisposable
     _resumeSignal.Set();
   }
 
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
   //  Content model
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
 
   public void AddContent(IRenderable renderable)
   {
@@ -160,6 +177,7 @@ internal sealed class TuiLayout : IDisposable
     {
       _contentBlocks.Add(renderable);
       TrimContentBlocks();
+      if (_viewportOffset > 0) _viewportOffset++;
     }
   }
 
@@ -169,6 +187,7 @@ internal sealed class TuiLayout : IDisposable
     {
       _contentBlocks.Add(new Text(text));
       TrimContentBlocks();
+      if (_viewportOffset > 0) _viewportOffset++;
     }
   }
 
@@ -178,6 +197,7 @@ internal sealed class TuiLayout : IDisposable
     {
       _contentBlocks.Add(new Markup(markup));
       TrimContentBlocks();
+      if (_viewportOffset > 0) _viewportOffset++;
     }
   }
 
@@ -209,6 +229,7 @@ internal sealed class TuiLayout : IDisposable
         {
           _contentBlocks.Add(new Text(finalText));
           TrimContentBlocks();
+          if (_viewportOffset > 0) _viewportOffset++;
         }
       }
       _streamBuffer = null;
@@ -216,41 +237,84 @@ internal sealed class TuiLayout : IDisposable
     }
   }
 
-  // ─────────────────────────────────────────────
-  //  Indicator bar
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
+  //  Scroll
+  // -----------------------------------------------
 
-  public void SetIndicator(IndicatorState state, string? text = null)
+  public bool IsScrolledToBottom
   {
-    _indicatorState = state;
-    if (state == IndicatorState.Executing)
+    get
+    {
+      lock (_contentLock)
+      {
+        return _viewportOffset == 0;
+      }
+    }
+  }
+
+  public void ScrollUp(int blocks = 5)
+  {
+    lock (_contentLock)
+    {
+      _viewportOffset = Math.Min(_viewportOffset + blocks, Math.Max(_contentBlocks.Count - 1, 0));
+    }
+  }
+
+  public void ScrollDown(int blocks = 5)
+  {
+    lock (_contentLock)
+    {
+      _viewportOffset = Math.Max(_viewportOffset - blocks, 0);
+    }
+  }
+
+  public void ScrollToTop()
+  {
+    lock (_contentLock)
+    {
+      _viewportOffset = Math.Max(_contentBlocks.Count - 1, 0);
+    }
+  }
+
+  public void ScrollToBottom()
+  {
+    lock (_contentLock)
+    {
+      _viewportOffset = 0;
+    }
+  }
+
+  // -----------------------------------------------
+  //  Activity bar
+  // -----------------------------------------------
+
+  public void SetActivity(ActivityState state, string? text = null)
+  {
+    _activityState = state;
+    if (state == ActivityState.Executing)
     {
       _executingStopwatch.Restart();
     }
   }
 
-  // ─────────────────────────────────────────────
-  //  Input line
-  // ─────────────────────────────────────────────
-
-  public void UpdateInput(string text, int cursorPosition)
-  {
-    _inputText = text;
-    _inputCursorPosition = cursorPosition;
-  }
-
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
   //  Status bar
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
 
   public void UpdateStatus(string status)
   {
     _statusText = status;
   }
 
-  // ─────────────────────────────────────────────
-  //  Agent state
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
+  //  Input region
+  // -----------------------------------------------
+
+  public void UpdateInput(string text, int cursorPosition)
+  {
+    _inputText = text;
+    _inputCursorPosition = cursorPosition;
+  }
 
   public void SetAgentBusy(bool busy)
   {
@@ -262,27 +326,27 @@ internal sealed class TuiLayout : IDisposable
     _queueCount = count;
   }
 
-  // ─────────────────────────────────────────────
-  //  Modal overlay (plumbing for Phase 4)
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
+  //  Modal overlay
+  // -----------------------------------------------
 
   public void ShowModal(IRenderable content)
   {
     _modalContent = content;
-    _indicatorState = IndicatorState.Modal;
+    _activityState = ActivityState.Modal;
   }
 
   public void DismissModal()
   {
     _modalContent = null;
-    _indicatorState = IndicatorState.Idle;
+    _activityState = ActivityState.Idle;
   }
 
   public bool IsModalActive => _modalContent is not null;
 
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
   //  Dispose
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
 
   public void Dispose()
   {
@@ -295,9 +359,9 @@ internal sealed class TuiLayout : IDisposable
     _resumeSignal.Dispose();
   }
 
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
   //  Render loop
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
 
   private async Task RenderLoopAsync(CancellationToken ct)
   {
@@ -339,7 +403,8 @@ internal sealed class TuiLayout : IDisposable
               ctx.UpdateTarget(layout);
               ctx.Refresh();
 
-              await Task.Delay(RenderIntervalMs, ct).ConfigureAwait(false);
+              var interval = _streamActive ? RenderIntervalMs : 100;
+              await Task.Delay(interval, ct).ConfigureAwait(false);
             }
           }).ConfigureAwait(false);
       }
@@ -360,6 +425,7 @@ internal sealed class TuiLayout : IDisposable
   private Layout BuildLayout()
   {
     int termHeight;
+    int termWidth;
     try
     {
       termHeight = System.Console.WindowHeight;
@@ -368,16 +434,34 @@ internal sealed class TuiLayout : IDisposable
     {
       termHeight = 24;
     }
+    try
+    {
+      termWidth = System.Console.WindowWidth;
+    }
+    catch
+    {
+      termWidth = 120;
+    }
 
-    // Content region gets all available space minus 3 fixed rows
-    var contentHeight = Math.Max(termHeight - 3, 5);
+    // Calculate dynamic input height
+    _currentInputHeight = CalculateInputLineCount(_inputText, termWidth);
+    var maxInputHeight = Math.Min(MaxInputLines, termHeight / 4);
+    _currentInputHeight = Math.Clamp(_currentInputHeight, 1, maxInputHeight);
+
+    // Fixed overhead: Activity(1) + Rule1(1) + Rule2(1) + StatusBar(1) = 4
+    var contentHeight = Math.Max(termHeight - 4 - _currentInputHeight, 3);
 
     var layout = new Layout("Root")
       .SplitRows(
-        new Layout("Content").MinimumSize(5).Ratio(1),
-        new Layout("Indicator").Size(1),
-        new Layout("Input").Size(1),
+        new Layout("Content").MinimumSize(3).Ratio(1),
+        new Layout("Activity").Size(1),
+        new Layout("Rule1").Size(1),
+        new Layout("Input").Size(_currentInputHeight),
+        new Layout("Rule2").Size(1),
         new Layout("StatusBar").Size(1));
+
+    layout["Rule1"].Update(new Rule().RuleStyle("dim"));
+    layout["Rule2"].Update(new Rule().RuleStyle("dim"));
 
     // Content region
     var contentRenderable = BuildContentRegion(contentHeight);
@@ -390,11 +474,11 @@ internal sealed class TuiLayout : IDisposable
       layout["Content"].Update(modal);
     }
 
-    // Indicator bar
-    layout["Indicator"].Update(BuildIndicator());
+    // Activity bar
+    layout["Activity"].Update(BuildActivity());
 
-    // Input line
-    layout["Input"].Update(BuildInputLine());
+    // Input region
+    layout["Input"].Update(BuildInputRegion(termWidth));
 
     // Status bar
     layout["StatusBar"].Update(BuildStatusBar());
@@ -405,25 +489,38 @@ internal sealed class TuiLayout : IDisposable
   private IRenderable BuildContentRegion(int contentHeight)
   {
     var blocks = new List<IRenderable>();
+    var showMoreIndicator = false;
 
     lock (_contentLock)
     {
-      // Take the tail of the content blocks that fits the available height
-      var maxBlocks = Math.Max(contentHeight / 2, 1);
-      var startIndex = Math.Max(_contentBlocks.Count - maxBlocks, 0);
-      for (var i = startIndex; i < _contentBlocks.Count; i++)
+      // Viewport-aware rendering
+      var endIndex = _contentBlocks.Count - _viewportOffset;
+      if (endIndex < 0) endIndex = 0;
+      var startIndex = Math.Max(endIndex - contentHeight, 0);
+
+      for (var i = startIndex; i < endIndex && i < _contentBlocks.Count; i++)
       {
         blocks.Add(_contentBlocks[i]);
       }
+
+      showMoreIndicator = _viewportOffset > 0;
     }
 
-    // Add streaming content if active
-    lock (_streamLock)
+    // Show streaming content only when pinned to bottom
+    if (_viewportOffset == 0)
     {
-      if (_streamActive && _streamBuffer is not null && _streamBuffer.Length > 0)
+      lock (_streamLock)
       {
-        blocks.Add(new Text(_streamBuffer.ToString()));
+        if (_streamActive && _streamBuffer is not null && _streamBuffer.Length > 0)
+        {
+          blocks.Add(new Markup($"  {Markup.Escape(_streamBuffer.ToString())}"));
+        }
       }
+    }
+
+    if (showMoreIndicator)
+    {
+      blocks.Add(new Markup("[dim]\u2193 More content below[/]"));
     }
 
     if (blocks.Count == 0)
@@ -434,75 +531,39 @@ internal sealed class TuiLayout : IDisposable
     return new Rows(blocks);
   }
 
-  private Rule BuildIndicator()
+  private IRenderable BuildActivity()
   {
-    string? title = _indicatorState switch
-    {
-      IndicatorState.Thinking => AccessibilityConfig.Accessible
-        ? "Thinking..."
-        : "[yellow]Thinking...[/]",
-      IndicatorState.Streaming => AccessibilityConfig.Accessible
-        ? "Streaming..."
-        : "[cyan]Streaming...[/]",
-      IndicatorState.Executing => AccessibilityConfig.Accessible
-        ? $"Executing... ({FormatDuration(_executingStopwatch.Elapsed)})"
-        : $"[blue]Executing... ({Markup.Escape(FormatDuration(_executingStopwatch.Elapsed))})[/]",
-      IndicatorState.CancelHint => AccessibilityConfig.Accessible
-        ? "Press Esc again to cancel"
-        : "[yellow]Press Esc again to cancel[/]",
-      IndicatorState.Modal => AccessibilityConfig.Accessible
-        ? "Esc to dismiss"
-        : "[dim]Esc to dismiss[/]",
-      _ => null,
-    };
+    var frameIndex = (int)(_masterStopwatch.ElapsedMilliseconds / 100) % SpinnerFrames.Length;
+    var spinner = SpinnerFrames[frameIndex];
 
-    return title is not null
-      ? new Rule(title).RuleStyle("dim")
-      : new Rule().RuleStyle("dim");
+    if (AccessibilityConfig.Accessible)
+    {
+      return _activityState switch
+      {
+        ActivityState.Thinking => new Text("[Thinking...]"),
+        ActivityState.Streaming => new Text("[Streaming...]"),
+        ActivityState.Executing => new Text($"[Executing... ({FormatDuration(_executingStopwatch.Elapsed)})]"),
+        ActivityState.CancelHint => new Text("Press Esc again to cancel"),
+        ActivityState.Modal => new Text("Esc to dismiss"),
+        _ => new Rule().RuleStyle("dim"),
+      };
+    }
+
+    return _activityState switch
+    {
+      ActivityState.Thinking => new Markup($"[yellow]{spinner} Thinking...[/]"),
+      ActivityState.Streaming => new Markup($"[cyan]{spinner} Streaming...[/]"),
+      ActivityState.Executing => BuildExecutingActivity(spinner),
+      ActivityState.CancelHint => new Markup("[yellow]Press Esc again to cancel[/]"),
+      ActivityState.Modal => new Markup("[dim]Esc to dismiss[/]"),
+      _ => new Rule().RuleStyle("dim"),
+    };
   }
 
-  private Markup BuildInputLine()
+  private Markup BuildExecutingActivity(string spinner)
   {
-    var text = _inputText;
-    var cursorPos = _inputCursorPosition;
-
-    var sb = new StringBuilder();
-    sb.Append("[bold blue]>[/] ");
-
-    if (text.Length == 0)
-    {
-      sb.Append("[invert] [/]");
-    }
-    else if (cursorPos >= text.Length)
-    {
-      sb.Append(Markup.Escape(text));
-      sb.Append("[invert] [/]");
-    }
-    else
-    {
-      if (cursorPos > 0)
-      {
-        sb.Append(Markup.Escape(text[..cursorPos]));
-      }
-      sb.Append("[invert]");
-      sb.Append(Markup.Escape(text[cursorPos].ToString()));
-      sb.Append("[/]");
-      if (cursorPos + 1 < text.Length)
-      {
-        sb.Append(Markup.Escape(text[(cursorPos + 1)..]));
-      }
-    }
-
-    // Queue count on the right when agent is busy
-    if (_agentBusy && _queueCount > 0)
-    {
-      var queueLabel = _queueCount == 1
-        ? "[1 queued]"
-        : $"[{_queueCount} queued]";
-      sb.Append(CultureInfo.InvariantCulture, $"  [dim]{Markup.Escape(queueLabel)}[/]");
-    }
-
-    return new Markup(sb.ToString());
+    var duration = Markup.Escape(FormatDuration(_executingStopwatch.Elapsed));
+    return new Markup($"[cyan]{spinner} Executing... ({duration})[/]");
   }
 
   private IRenderable BuildStatusBar()
@@ -512,12 +573,54 @@ internal sealed class TuiLayout : IDisposable
     {
       return new Text("");
     }
+
+    int termWidth;
+    try { termWidth = System.Console.WindowWidth; } catch { termWidth = 120; }
+
+    var hints = "Esc: cancel  /help: commands";
+    var available = termWidth - text.Length - hints.Length - 2;
+
+    if (available >= 4)
+    {
+      var padding = new string(' ', available);
+      return new Markup($"[dim]{Markup.Escape(text)}{padding}{Markup.Escape(hints)}[/]");
+    }
+
     return new Markup($"[dim]{Markup.Escape(text)}[/]");
   }
 
-  // ─────────────────────────────────────────────
+  private Markup BuildInputRegion(int termWidth)
+  {
+    var text = _inputText;
+    var cursorPos = _inputCursorPosition;
+
+    if (_agentBusy)
+    {
+      var prompt = $"> {text}";
+      if (_queueCount > 0)
+      {
+        var badge = $" [{_queueCount} queued]";
+        var available = termWidth - prompt.Length - badge.Length;
+        if (available >= 0)
+        {
+          return new Markup($"[dim]{Markup.Escape(prompt)}[/][yellow]{Markup.Escape(badge)}[/]");
+        }
+      }
+
+      return new Markup($"[dim]{Markup.Escape(prompt)}[/]");
+    }
+
+    // Render with cursor indicator
+    var before = text[..Math.Min(cursorPos, text.Length)];
+    var cursor = cursorPos < text.Length ? text[cursorPos].ToString() : " ";
+    var after = cursorPos < text.Length - 1 ? text[(cursorPos + 1)..] : "";
+
+    return new Markup($"[bold blue]>[/] {Markup.Escape(before)}[underline]{Markup.Escape(cursor)}[/]{Markup.Escape(after)}");
+  }
+
+  // -----------------------------------------------
   //  Helpers
-  // ─────────────────────────────────────────────
+  // -----------------------------------------------
 
   private void TrimContentBlocks()
   {
@@ -525,7 +628,18 @@ internal sealed class TuiLayout : IDisposable
     while (_contentBlocks.Count > MaxContentBlocks)
     {
       _contentBlocks.RemoveAt(0);
+      if (_viewportOffset > 0) _viewportOffset--;
     }
+  }
+
+  private static int CalculateInputLineCount(string text, int termWidth)
+  {
+    if (string.IsNullOrEmpty(text)) return 1;
+
+    // Account for "> " prefix (2 chars)
+    var availableWidth = Math.Max(termWidth - 2, 1);
+    var lines = 1 + (text.Length / availableWidth);
+    return lines;
   }
 
   private static bool CanUseLayout()

@@ -169,16 +169,3 @@ is saved to disk upon completion.
 | Selection Prompt | Section 5 | Language mode, add action, allow/deny |
 | Status Message | Section 1 | Success, error, dim file path |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Create flow | `Commands/JeaSlashCommand.cs` | `HandleCreateAsync` | 206-276 |
-| Name validation | `Commands/JeaSlashCommand.cs` | `ValidateProfileName` | 651-673 |
-| Language mode selection | `Commands/JeaSlashCommand.cs` | `HandleCreateAsync` | 224-232 |
-| Add loop | `Commands/JeaSlashCommand.cs` | `HandleCreateAsync` | 237-268 |
-| Profile save | `Commands/JeaSlashCommand.cs` | `HandleCreateAsync` | 270-275 |
-| File path helper | `Commands/JeaSlashCommand.cs` | `GetProfileFilePath` | 718-725 |
-| Profile name regex | `Commands/JeaSlashCommand.cs` | `ProfileNameRegex` | 727-728 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

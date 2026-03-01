@@ -171,18 +171,3 @@ inspection command for understanding a project's setup.
 | Status Message | Section 1 | Error, usage, tip messages |
 | Empty State | Section 13 | Dim tip for unconfigured projects |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Show flow | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 215-362 |
-| Name resolution | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 217-225 |
-| Info grid | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 243-275 |
-| Directory table | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 278-309 |
-| Meta prompt | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 312-323 |
-| System prompt | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 325-337 |
-| JEA profiles | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 339-346 |
-| Stale warning | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 350-356 |
-| Minimal tip | `Commands/ProjectSlashCommand.cs` | `HandleShowAsync` | 358-361 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

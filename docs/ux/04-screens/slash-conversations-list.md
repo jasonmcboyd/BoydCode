@@ -127,17 +127,3 @@ None. This is a read-only table display.
 | Simple Table | Section 4 | Conversation list table |
 | Empty State | Section 13 | "No saved conversations found." |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| HandleListAsync | `Commands/ConversationsSlashCommand.cs` | `HandleListAsync` | 76-129 |
-| Empty state | `Commands/ConversationsSlashCommand.cs` | `HandleListAsync` | 80-84 |
-| Sort + limit | `Commands/ConversationsSlashCommand.cs` | `HandleListAsync` | 86-89 |
-| Table construction | `Commands/ConversationsSlashCommand.cs` | `HandleListAsync` | 91 |
-| Row population | `Commands/ConversationsSlashCommand.cs` | `HandleListAsync` | 94-119 |
-| Current session footer | `Commands/ConversationsSlashCommand.cs` | `HandleListAsync` | 124-128 |
-| Preview extraction | `Commands/ConversationsSlashCommand.cs` | `GetFirstMessagePreview` | 294-306 |
-| Message text extraction | `Commands/ConversationsSlashCommand.cs` | `GetMessageText` | 308-335 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

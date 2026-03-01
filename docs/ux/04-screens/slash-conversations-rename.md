@@ -56,7 +56,7 @@ Usage: /conversations rename <id> [name]
 
 | Token | Style Token (06-style-tokens.md) | Usage on This Screen |
 |---|---|---|
-| `[green]v[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
+| `[green]✓[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
 | `[red]Error:[/]` | error-red (1.1) | Error prefix |
 | `[yellow]Usage:[/]` | warning-yellow (1.1) | Usage hint prefix |
 | `[bold]` | bold (2.2) | Session ID in not-found error message |
@@ -114,16 +114,3 @@ Usage: /conversations rename <id> [name]
 | Status Message | Section 1 | Success, error, and usage messages |
 | Text Prompt | Section 7 | Non-empty name collection via `PromptNonEmpty` |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| HandleRenameAsync | `Commands/ConversationsSlashCommand.cs` | `HandleRenameAsync` | 199-234 |
-| Usage guard | `Commands/ConversationsSlashCommand.cs` | `HandleRenameAsync` | 201-205 |
-| Not found guard | `Commands/ConversationsSlashCommand.cs` | `HandleRenameAsync` | 210-214 |
-| Inline name | `Commands/ConversationsSlashCommand.cs` | `HandleRenameAsync` | 219 |
-| Interactive prompt | `Commands/ConversationsSlashCommand.cs` | `HandleRenameAsync` | 223 |
-| Non-interactive fallback | `Commands/ConversationsSlashCommand.cs` | `HandleRenameAsync` | 225-229 |
-| Save + success | `Commands/ConversationsSlashCommand.cs` | `HandleRenameAsync` | 231-233 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

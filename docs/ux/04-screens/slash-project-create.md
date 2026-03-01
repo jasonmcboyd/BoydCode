@@ -186,17 +186,3 @@ PROJ-09, PROJ-10, PROJ-11, PROJ-12
 | Confirmation Prompt | Section 8 | Configure now, require container |
 | Empty State | Section 13 | Not used (project is always created) |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Create flow | `Commands/ProjectSlashCommand.cs` | `HandleCreateAsync` | 93-154 |
-| Name prompt | `Commands/ProjectSlashCommand.cs` | `HandleCreateAsync` | 101-103 |
-| Duplicate check | `Commands/ProjectSlashCommand.cs` | `HandleCreateAsync` | 105-109 |
-| Configure prompt | `Commands/ProjectSlashCommand.cs` | `HandleCreateAsync` | 122 |
-| Section picker | `Commands/ProjectSlashCommand.cs` | `HandleCreateAsync` | 131 |
-| Directory loop | `Commands/ProjectSlashCommand.cs` | `AddDirectoriesLoop` | 553-569 |
-| System prompt | `Commands/ProjectSlashCommand.cs` | `PromptSystemPrompt` | 572-585 |
-| Container settings | `Commands/ProjectSlashCommand.cs` | `ConfigureContainer` | 587-602 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

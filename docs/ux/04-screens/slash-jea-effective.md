@@ -105,7 +105,7 @@ None. This screen is purely static output.
    total allowed command count.
 
 5. **Allowed commands section**: If there are allowed commands, they are listed
-   under a section divider with `[green]v[/]` markers, indented 4 spaces.
+   under a section divider with `[green]✓[/]` markers, indented 4 spaces.
 
 6. **Modules section**: If there are modules, they are listed under a separate
    section divider, indented 4 spaces without markers.
@@ -138,16 +138,3 @@ None. This screen is purely static output.
 | Section Divider | Section 2 | "Allowed commands" and "Modules" headings |
 | Status Message | Section 1 | Not directly used, but the `[dim]` footer follows the pattern |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Effective flow | `Commands/JeaSlashCommand.cs` | `HandleEffectiveAsync` | 475-523 |
-| Global seeding | `Commands/JeaSlashCommand.cs` | `EnsureGlobalProfileAsync` | 107-122 |
-| Project resolution | `Commands/JeaSlashCommand.cs` | `HandleEffectiveAsync` | 479-493 |
-| Composition | `Commands/JeaSlashCommand.cs` | `HandleEffectiveAsync` | 495 |
-| Allowed commands | `Commands/JeaSlashCommand.cs` | `HandleEffectiveAsync` | 501-508 |
-| Modules | `Commands/JeaSlashCommand.cs` | `HandleEffectiveAsync` | 510-517 |
-| Source footer | `Commands/JeaSlashCommand.cs` | `HandleEffectiveAsync` | 519-521 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

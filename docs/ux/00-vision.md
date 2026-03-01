@@ -1,9 +1,9 @@
-# UX Vision: BoydCode v2
+# UX Vision: BoydCode
 
-This document is the north star for BoydCode's redesigned user experience. It
-describes what the application SHOULD look like and feel like -- not what it
-currently is. Every screen spec, component pattern, and style token derives from
-the principles and architecture defined here.
+This document is the north star for BoydCode's user experience. It describes
+what the application SHOULD look like and feel like -- not what it currently is.
+Every screen spec, component pattern, and style token derives from the
+principles and architecture defined here.
 
 ---
 
@@ -20,20 +20,35 @@ dialog, status bar, progress indicator) serves the human better than a CLI
 pattern, use it. BoydCode is a TUI -- a text user interface -- and TUIs borrow
 freely from every tradition.
 
-### Principle 2: Spectre.Console is the Rendering Engine
+### Principle 2: All Visual Output Through the Rendering Pipeline
 
-All visual output goes through Spectre.Console's rendering pipeline. No raw ANSI
-escape sequences (`\x1b[...`). No direct `Console.Write` for visual content. The
-framework handles capability detection, color depth negotiation, unicode
-fallbacks, NO_COLOR compliance, and terminal width adaptation. Bypassing it means
-losing all of those for free.
+No raw ANSI escape sequences (`\x1b[...`). No direct `Console.Write` for visual
+content. All visual output flows through a two-layer rendering architecture:
+
+- **The application shell** manages the screen. It owns the application
+  lifecycle, the view hierarchy, layout, keyboard input, focus navigation, and
+  windowing. It provides the four persistent screen regions, handles scrolling
+  natively, and dispatches events without polling loops. Background threads post
+  updates to the main thread for safe rendering.
+
+- **The content renderer** produces rich formatted content -- styled text,
+  tables, panels, rules, trees, grids -- that is displayed inside the
+  application shell's views. It handles color, typography, measurement, unicode
+  fallbacks, and NO_COLOR compliance.
+
+These two layers are complementary. The shell manages *where* content appears
+and *how* the user interacts with it. The renderer decides *what* that content
+looks like. Bypassing either layer means losing capability for free: the shell's
+event-driven input and thread-safe updates, or the renderer's styled output and
+terminal adaptation.
 
 **What this means concretely:**
-- Layout regions via `Layout` widget, not `ESC[1;{n}r` scroll regions
-- In-place updates via `AnsiConsole.Live()`, not cursor save/restore
-- Spinners via Spectre's `Spinner` type, not hand-rolled braille loops
-- Styled text via `[markup]` tags, not `\x1b[2m` dim sequences
-- Status bars via Layout regions, not cursor-positioned raw writes
+- Screen regions via the view hierarchy, not `ESC[1;{n}r` scroll regions
+- In-place updates via the event loop, not cursor save/restore
+- Spinners via built-in spinner views, not hand-rolled braille loops
+- Styled text via markup tags, not `\x1b[2m` dim sequences
+- Windowed overlays via first-class window and dialog views, not cursor-positioned raw writes
+- Thread-safe updates via main-thread invocation, not console locks
 
 ### Principle 3: Non-Blocking by Default
 
@@ -42,9 +57,10 @@ manifests in three ways:
 
 1. **Async input**: The user can type while the AI is thinking, streaming, or
    executing. Messages queue and process in order.
-2. **Modal overlays**: Read-only slash commands (/help, /project show, /context
-   show, /conversations list, /jea list) render as overlays that do not block the
-   conversation. The AI continues working underneath.
+2. **Windowed overlays**: Read-only slash commands (/help, /project show,
+   /context show, /conversations list, /jea list) render as windows that float
+   over the conversation without blocking it. The AI continues working
+   underneath.
 3. **Streaming everything**: LLM responses stream token by token. Tool output
    streams line by line. Nothing buffers to completion before showing output.
 
@@ -86,84 +102,85 @@ streaming content.
 
 ### The Four Regions
 
-BoydCode's screen is divided into four named regions managed by Spectre.Console's
-`Layout` widget inside a `Live` display context.
+BoydCode's screen is divided into four persistent regions that remain visible
+for the entire session.
 
 ```
 +==============================================================================+
 |                                                                              |
-|  CONTENT REGION                                                              |
+|  CONVERSATION                                                                |
 |                                                                              |
-|  This is where the conversation lives. User messages, assistant responses,   |
-|  tool execution panels, slash command results -- everything renders here.    |
-|  This region takes all remaining vertical space (Ratio-based sizing).        |
+|  Scrollable conversation history. User messages, assistant responses, tool   |
+|  execution badges, streaming text -- everything that IS the conversation     |
+|  renders here. This region takes all remaining vertical space.               |
 |                                                                              |
-|  When a modal overlay is active, this region is replaced by the modal        |
-|  content. The underlying conversation state is preserved and restored        |
-|  when the modal is dismissed.                                                |
+|  The user can scroll back through the full conversation history at any       |
+|  time. New content auto-scrolls to the bottom.                               |
 |                                                                              |
 +------------------------------------------------------------------------------+
-|  INDICATOR BAR  (1 row, Size(1))                                             |
+|  ACTIVITY BAR  (1 row)                                                       |
 |  Idle: dim horizontal rule                                                   |
 |  Active: spinner + "Thinking..." / "Executing..." / "Streaming..."           |
 +------------------------------------------------------------------------------+
-|  > INPUT LINE  (1 row, external to Live -- handled by AsyncInputReader)      |
+|  > INPUT  (1 row)                                                            |
+|  Text input with line editing, command history, and key dispatch             |
 +------------------------------------------------------------------------------+
-|  STATUS BAR  (1 row, Size(1))                                                |
+|  STATUS BAR  (1 row)                                                         |
 |  Provider | Model | Project | Branch | Engine    Esc: cancel  /help: commands |
 +==============================================================================+
 ```
 
 ### Region Behaviors
 
-**Content Region** (Ratio 1, minimum 5 rows)
-- Renders the conversation as a composed renderable (Rows of message blocks)
-- During streaming, the last message block updates in-place via Live refresh
-- Shows only the tail of the conversation (most recent messages that fit)
-- When a modal overlay is requested, the Content region's renderable is replaced
-  with the modal Panel. The conversation data is unchanged -- only the view.
-- After modal dismissal, the conversation view is restored.
+**Conversation** (all remaining vertical space)
+- Scrollable view of the full conversation history, not just the tail that fits.
+  The user can scroll up to review earlier messages at any time.
+- During streaming, new tokens append at the bottom and the view auto-scrolls
+  to follow.
+- Content is composed from message blocks: user messages, assistant text, tool
+  call badges, tool result badges, token usage, and streaming text.
+- This view shows ONLY conversation content. Non-conversation output (help,
+  agent lists, JEA profiles, project details) opens in separate windows -- never
+  injected into the conversation.
 
-**Indicator Bar** (Size 1)
-- Idle state: `new Rule().RuleStyle("dim")` -- a dim horizontal line
-- Thinking state: `new Markup("[yellow]@ Thinking...[/]")` with spinner character
-- Streaming state: `new Markup("[cyan]@ Streaming...[/]")`
-- Executing state: `new Markup("[blue]@ Executing... (2.3s)[/]")` with elapsed time
-- Cancel hint state: `new Markup("[yellow]Press Esc again to cancel[/]")`
-- The indicator bar is always one row. State transitions are instantaneous.
+**Activity Bar** (1 row)
+- Idle state: a dim horizontal rule.
+- Thinking state: spinner + "Thinking..." in yellow.
+- Streaming state: spinner + "Streaming..." in cyan.
+- Executing state: spinner + "Executing... (2.3s)" in cyan with elapsed time.
+- Cancel hint state: "Press Esc again to cancel" in yellow.
+- State transitions are instantaneous. The bar is always exactly one row.
 
-**Input Line** (not part of Layout -- external)
-- Handled by `AsyncInputReader` which polls `Console.KeyAvailable` and manages
-  a line buffer with cursor editing, history, and key dispatch.
-- Renders below the Layout via manual cursor positioning (the one place where
-  cursor control is needed -- but it is isolated to the input handler).
-- Alternatively, the input line can be a Size(1) row in the Layout that renders
-  a Markup of the current buffer. The AsyncInputReader updates the Markup text
-  and the Live context refreshes it.
+**Input** (1 row)
+- Text input with cursor editing, command history (Up/Down), and Home/End
+  navigation.
+- The user can type at any time, including while the AI is working. Messages
+  queue and process in order.
+- Horizontal scrolling with directional indicators when text exceeds the
+  visible width.
 
-**Status Bar** (Size 1)
-- Left side: `Provider | Model | Project | Branch | Engine`
-- Right side: Contextual keybinding hints (adapts to current state)
-- Renders as a `Grid` or `Columns` with left-aligned and right-aligned content.
+**Status Bar** (1 row)
+- Left side: Provider | Model | Project | Branch | Engine.
+- Right side: Contextual keybinding hints (adapts to current state).
 - Updates when provider, project, or session changes.
 
-### Modal Overlay System
+### Windowing System
 
-Modals are the key innovation in BoydCode v2. They enable non-blocking slash
-commands that render over the conversation without interrupting it.
+Windows are the mechanism for displaying non-conversation content without
+polluting the conversation view. They float over the conversation and can be
+dismissed independently.
 
 **How it works:**
 
 1. User types `/project show` while the AI is streaming a response.
-2. The Content region's renderable is replaced with a Panel showing project
-   details. The indicator bar shows "Modal: /project show -- Esc to dismiss".
+2. A window opens over the conversation, showing project details. The window
+   title identifies the command.
 3. The AI continues streaming in the background. Tokens accumulate in the
-   conversation data model but are not visible until the modal is dismissed.
-4. User presses Esc. The Content region restores the conversation view, now
-   including all tokens that arrived while the modal was open.
-5. The indicator bar returns to its prior state (e.g., "Streaming...").
+   conversation and are visible when the window is dismissed.
+4. User presses Esc. The window closes and the conversation view is fully
+   visible again.
 
-**Which commands are modal (read-only, no prompts needed):**
+**Which commands open read-only windows (modeless, Esc to dismiss):**
 - `/help` -- Show available commands
 - `/project show` -- Display current project config
 - `/project list` -- List all projects
@@ -177,44 +194,43 @@ commands that render over the conversation without interrupting it.
 - `/context show` -- Display context usage
 - `/expand` -- Show last tool output
 
-**Which commands suspend the Live context (need interactive prompts):**
-- `/project create` -- Wizard with TextPrompt, SelectionPrompt
-- `/project edit` -- Edit menu with SelectionPrompt
-- `/project delete` -- Confirmation prompt
-- `/provider setup` -- API key prompt, SelectionPrompt
-- `/provider remove` -- Confirmation prompt
-- `/jea create` -- TextPrompt for name
-- `/jea edit` -- Edit menu with SelectionPrompt
-- `/jea delete` -- Confirmation prompt
-- `/jea assign` / `/jea unassign` -- SelectionPrompt
-- `/conversations delete` -- Confirmation prompt
+**Which commands open interactive dialogs (modal, blocks until complete):**
+- `/project create` -- Wizard with text fields and selection lists
+- `/project edit` -- Edit menu with selection list
+- `/project delete` -- Confirmation dialog
+- `/provider setup` -- API key input, selection list
+- `/provider remove` -- Confirmation dialog
+- `/jea create` -- Text input for name
+- `/jea edit` -- Edit menu with selection list
+- `/jea delete` -- Confirmation dialog
+- `/jea assign` / `/jea unassign` -- Selection list
+- `/conversations delete` -- Confirmation dialog
 
 **Which commands are inline (render in the conversation flow):**
-- `/conversations clear` -- Clears conversation, shows confirmation in content area
-- `/context refresh` -- Refreshes context, shows confirmation in content area
-- `/context summarize` -- Runs summarization, shows result in content area
+- `/conversations clear` -- Clears conversation, shows confirmation in conversation
+- `/context refresh` -- Refreshes context, shows confirmation in conversation
+- `/context summarize` -- Runs summarization, shows result in conversation
 
-### Rendering Pipeline
+### Input Processing
 
 ```
-User input -> AsyncInputReader -> Channel<string>
-                                      |
-                                      v
-ChatCommand session loop -> reads from Channel
+User input -> Input view -> message queue
+                                |
+                                v
+ChatCommand session loop -> reads from queue
     |                           |
     |-- slash command?          |-- user message?
     |   |                       |
-    |   |-- modal?              v
-    |   |   Show overlay    AgentOrchestrator.RunAgentTurnAsync
+    |   |-- read-only?          v
+    |   |   Open window     AgentOrchestrator.RunAgentTurnAsync
     |   |                       |
     |   |-- interactive?        |-- RenderThinkingStart
-    |   |   Suspend Live        |-- StreamResponseAsync
-    |   |   Run prompts             |-- tokens -> conversation model
-    |   |   Resume Live             |-- update Content region
-    |   |                           |-- refresh Live
+    |   |   Open dialog         |-- StreamResponseAsync
+    |   |                           |-- tokens -> conversation model
+    |   |                           |-- append to conversation view
     |   |-- inline?             |-- ProcessToolCallsAsync
     |       Render in               |-- RenderToolExecution
-    |       content area            |-- RenderExecutingStart
+    |       conversation            |-- RenderExecutingStart
     |                               |-- output lines -> model
     |                               |-- RenderToolResult
     v                           |-- RenderStreamingComplete
@@ -232,45 +248,45 @@ provides the summary.
 
 ### Color Palette (6 semantic colors)
 
-| Token       | Spectre Markup | Meaning                          | Paired With    |
-|-------------|----------------|----------------------------------|----------------|
-| success     | `[green]`      | Completed, allowed, ready        | Checkmark text |
-| error       | `[red]`        | Failed, denied, broken           | "Error:" text  |
-| warning     | `[yellow]`     | Caution, degraded, not ideal     | "Warning:" text|
-| info        | `[cyan]`       | Data values, identifiers, paths  | Label text     |
-| accent      | `[blue]`       | Brand, interactive, commands     | Context text   |
-| muted       | `[dim]`        | Metadata, hints, secondary       | Primary text   |
+| Token       | Meaning                          | Paired With    |
+|-------------|----------------------------------|----------------|
+| success     | Completed, allowed, ready        | Checkmark text |
+| error       | Failed, denied, broken           | "Error:" text  |
+| warning     | Caution, degraded, not ideal     | "Warning:" text|
+| info        | Data values, identifiers, paths  | Label text     |
+| accent      | Brand, interactive, commands     | Context text   |
+| muted       | Metadata, hints, secondary       | Primary text   |
 
 Colors are NEVER used alone. Every colored element has a text or symbol companion
 that conveys the same meaning without color (for NO_COLOR and colorblind users).
 
 ### Typography Hierarchy (4 levels)
 
-| Level | Markup           | Usage                                    |
+| Level | Style            | Usage                                    |
 |-------|------------------|------------------------------------------|
-| 1     | `[bold]`         | Headings, entity names, primary actions  |
-| 2     | (plain)          | Body text, standard content              |
-| 3     | `[dim]`          | Metadata, timestamps, secondary info     |
-| 4     | `[dim italic]`   | Hints, ephemeral status, contextual tips |
+| 1     | Bold             | Headings, entity names, primary actions  |
+| 2     | Plain            | Body text, standard content              |
+| 3     | Dim              | Metadata, timestamps, secondary info     |
+| 4     | Dim italic       | Hints, ephemeral status, contextual tips |
 
 ### Status Symbols (Unicode)
 
-| Symbol | Codepoint | Markup             | Meaning           |
-|--------|-----------|--------------------|--------------------|
-| check  | U+2713    | `[green]\u2713[/]` | Success/allowed    |
-| cross  | U+2717    | `[red]\u2717[/]`   | Error/denied       |
-| warn   | U+26A0    | `[yellow]\u26a0[/]`| Warning            |
-| bullet | U+2022    | `\u2022`           | List item          |
-| arrow  | U+25B6    | `[dim]\u25b6[/]`   | Indicator/pointer  |
-| dash   | U+2014    | `[dim]\u2014[/]`   | Empty/not set      |
+| Symbol | Codepoint | Meaning           |
+|--------|-----------|-------------------|
+| check  | U+2713    | Success/allowed   |
+| cross  | U+2717    | Error/denied      |
+| warn   | U+26A0    | Warning           |
+| bullet | U+2022    | List item         |
+| arrow  | U+25B6    | Indicator/pointer |
+| dash   | U+2014    | Empty/not set     |
 
 ### Border Styles (3 types)
 
-| Style               | Spectre API            | Usage                      |
-|----------------------|------------------------|----------------------------|
-| Rounded              | `BoxBorder.Rounded`    | Modal overlays, tool preview |
-| None                 | `BoxBorder.None`       | Conversation messages      |
-| Heavy (Rule)         | `new Rule().RuleStyle()`| Section separators        |
+| Style    | Usage                                |
+|----------|--------------------------------------|
+| Rounded  | Windows, dialogs, tool preview panel |
+| None     | Conversation messages                |
+| Rule     | Section separators                   |
 
 ### Spacing Rules
 
@@ -278,7 +294,7 @@ that conveys the same meaning without color (for NO_COLOR and colorblind users).
 - 0 blank lines within a turn (between text blocks)
 - 2-space left indent for all content within the conversation
 - 1 blank line before and after section dividers
-- Panel internal padding: `Padding(1, 0)` (1 horizontal, 0 vertical)
+- Panel internal padding: 1 character horizontal, 0 vertical
 
 ---
 
@@ -292,8 +308,8 @@ that conveys the same meaning without color (for NO_COLOR and colorblind users).
 | Up/Down Arrow  | Input line           | Command history navigation      |
 | Left/Right     | Input line           | Cursor movement within line     |
 | Home/End       | Input line           | Jump to start/end of line       |
-| Esc            | Modal open           | Dismiss modal overlay           |
-| Esc            | AI active (1st)      | Show cancel hint in indicator   |
+| Esc            | Window open          | Dismiss window                  |
+| Esc            | AI active (1st)      | Show cancel hint in activity bar|
 | Esc            | AI active (2nd)      | Cancel current operation        |
 | Ctrl+C         | AI active            | Same as Esc (cancel semantics)  |
 | Ctrl+C         | Idle                 | No effect (input line active)   |
@@ -305,10 +321,10 @@ All slash commands start with `/`. The first word after `/` is the command name.
 Remaining words are subcommands and arguments.
 
 ```
-/help                       -> Modal: show help
-/project show               -> Modal: show project details
-/project create             -> Suspend: wizard prompts
-/context show               -> Modal: context usage
+/help                       -> Window: show help
+/project show               -> Window: show project details
+/project create             -> Dialog: wizard prompts
+/context show               -> Window: context usage
 /conversations clear        -> Inline: clear conversation
 /quit                       -> Exit session
 ```
@@ -316,127 +332,22 @@ Remaining words are subcommands and arguments.
 ### Cancellation Flow
 
 1. User presses Esc (or Ctrl+C) while AI is active.
-2. Indicator bar shows: `Press Esc again to cancel` (yellow text).
+2. Activity bar shows: `Press Esc again to cancel` (yellow text).
 3. If user presses Esc again within 1 second: cancellation fires.
-4. If 1 second passes: indicator bar reverts to prior state.
+4. If 1 second passes: activity bar reverts to prior state.
 5. On cancellation: current operation stops, partial results are kept,
    conversation state is consistent, user can continue.
 
 ### Message Queue
 
-When the AI is busy, user messages queue in a Channel. The queue count appears
-in the status bar: `[2 queued]`. Messages process in FIFO order after the current
-turn completes. This enables "fire and forget" workflows where the user types
-several instructions and walks away.
+When the AI is busy, user messages queue. The queue count appears in the status
+bar: `[2 queued]`. Messages process in FIFO order after the current turn
+completes. This enables "fire and forget" workflows where the user types several
+instructions and walks away.
 
 ---
 
-## 5. Rendering Pipeline: From Raw ANSI to Spectre.Console
-
-### What Changes
-
-| Current (v1)                        | New (v2)                              |
-|-------------------------------------|---------------------------------------|
-| `ESC[1;{n}r` scroll regions        | `Layout` widget with `Ratio`/`Size`   |
-| `ESC[s` / `ESC[u` cursor save      | `Live` context with `ctx.Refresh()`   |
-| `ESC[{r};{c}H` cursor positioning  | `layout["Region"].Update(renderable)` |
-| `ESC[2K` clear line                 | Replace renderable content            |
-| `ESC[2m` / `ESC[22m` dim           | `[dim]` Spectre markup                |
-| `Console.Write(braille)` spinner    | `Spinner` type in renderable          |
-| `_consoleLock` for thread safety    | Live context render loop (single thread) |
-| `TerminalLayout` class (553 lines)  | ~50 lines of Layout construction     |
-| `ExecutionWindow` raw ANSI (499 lines) | Panel + Markup renderables         |
-
-### What Stays
-
-| Component                           | Reason                                |
-|-------------------------------------|---------------------------------------|
-| `AsyncInputReader`                  | Correct pattern for non-blocking input|
-| `SpectreHelpers`                    | Consistent helper abstractions        |
-| `IUserInterface` abstraction        | Clean layer boundary                  |
-| Channel-based message queue         | Correct async pattern                 |
-| CancellationScope double-press      | Good UX pattern                       |
-| Command history (up/down)           | Expected terminal behavior            |
-
-### Content Region Rendering Strategy
-
-The Content region displays the conversation as a single composed renderable.
-This renderable is rebuilt on each refresh cycle from the conversation data model.
-
-```
-Rows(
-    // ... older messages (only as many as fit in the region height)
-    UserMessageBlock("Can you add error handling to the auth module?"),
-    AssistantMessageBlock(
-        TextSegment("I'll examine the auth module and add error handling."),
-        ToolCallBadge("Shell", "Get-Content src/Auth/AuthService.cs"),
-        ToolResultBadge("Shell", "42 lines", "0.3s", isError: false),
-        TextSegment("I've added try-catch blocks around the key operations..."),
-    ),
-    TokenUsageBar(inputTokens: 4521, outputTokens: 892),
-    // Streaming in progress:
-    AssistantMessageBlock(
-        StreamingTextSegment("Now let me update the tests to cover the new"),
-        // cursor blinks here as tokens arrive
-    ),
-)
-```
-
-Each message type is a composed renderable:
-- **UserMessageBlock**: `[bold blue]>[/] {message text}` with 2-space indent
-- **AssistantMessageBlock**: Plain text with 2-space indent, tool badges inline
-- **ToolCallBadge**: Compact `[dim]Shell[/] command preview` with optional expand
-- **ToolResultBadge**: `[green]\u2713[/] Shell 42 lines 0.3s` or error variant
-- **TokenUsageBar**: `[dim]4,521 in / 892 out / 5,413 total[/]`
-- **StreamingTextSegment**: Plain text that grows as tokens arrive
-
-### Responsive Behavior
-
-Three tiers based on terminal width:
-
-| Tier     | Width      | Adaptations                               |
-|----------|------------|-------------------------------------------|
-| Full     | >= 120 col | Side-by-side info in status bar, full tool |
-|          |            | previews, wide conversation lines          |
-| Standard | 80-119 col | Stacked status info, wrapped tool previews |
-| Compact  | < 80 col   | Abbreviated status, narrower margins       |
-
-Terminal height affects how many conversation turns are visible in the Content
-region. Minimum usable height is 10 rows (below this, fall back to non-layout
-scrollback mode).
-
----
-
-## 6. Migration Path
-
-### Phase 1: Layout Foundation
-Replace `TerminalLayout.cs` (raw ANSI scroll regions) with a Spectre.Console
-`Layout` widget. Keep the same 4-zone structure but implement it through Layout
-regions. Keep `AsyncInputReader` unchanged. Validate that all existing
-functionality works with the new rendering.
-
-### Phase 2: Content Rendering
-Replace raw `Console.Write`/`AnsiConsole.Write` output routing with composed
-renderables in the Content region. Implement UserMessageBlock and
-AssistantMessageBlock as Spectre renderables. Streaming tokens update the last
-AssistantMessageBlock.
-
-### Phase 3: Modal Overlays
-Implement the modal overlay system for read-only slash commands. Test that
-modals can be opened and dismissed while the AI is streaming.
-
-### Phase 4: Visual Polish
-Apply the new style token system. Replace "v" with checkmark. Fix all
-consistency issues from the style audit. Implement responsive tier adaptations.
-
-### Phase 5: Execution Redesign
-Replace `ExecutionWindow.cs` (raw ANSI spinner and scrolling window) with
-Spectre.Console renderables that update within the Content region via the
-Live context.
-
----
-
-## 7. What Success Looks Like
+## 5. What Success Looks Like
 
 When the redesign is complete, a user opening BoydCode should experience:
 
@@ -448,8 +359,8 @@ When the redesign is complete, a user opening BoydCode should experience:
    Streaming feels smooth and responsive.
 
 3. **Non-blocking workflow**: Typing `/help` while the AI is working shows help
-   immediately without interrupting the stream. Dismissing it returns to the
-   conversation exactly where it was.
+   immediately in a floating window without interrupting the stream. Dismissing
+   it returns to the conversation exactly where it was.
 
 4. **Consistent polish**: Every color means the same thing everywhere. Every
    error explains what to do. Every success has a checkmark. The app feels

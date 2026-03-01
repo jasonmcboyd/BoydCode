@@ -16,8 +16,8 @@ tool calls, cancellation during execution, and error paths.
 
 - An agent turn is in progress (`RunAgentTurnAsync` is running).
 - The LLM response has `HasToolUse == true`.
-- The execution engine is initialized (`_activeEngine.IsInitialized`).
-- `SetAgentBusy(true)` has been called.
+- The execution engine is initialized.
+- The agent is marked as busy.
 
 ## Flow Diagram
 
@@ -65,11 +65,11 @@ tool calls, cancellation during execution, and error paths.
          |
          v
     [Start execution]
-    _ui.RenderExecutingStart()
+    [Render execution start]
          |
          v
     [Create cancellation monitor]
-    BeginCancellationMonitor links Esc/Ctrl+C to executionCts
+    Links Esc/Ctrl+C to per-execution cancellation
          |
          v
     EXEC-02: Waiting spinner
@@ -95,7 +95,7 @@ tool calls, cancellation during execution, and error paths.
     +--------+---+---+---------+
                  |
                  v
-           _ui.RenderExecutingStop()
+           [Render execution stop]
                  |
                  v
            [Format output for LLM]
@@ -133,7 +133,7 @@ tool calls, cancellation during execution, and error paths.
 - **System response**: Each `ToolUseBlock` is checked:
   1. Name must be "Shell" (case-insensitive). The LLM occasionally
      hallucinates other tool names; the error message redirects it.
-  2. `_activeEngine.IsInitialized` must be true.
+  2. The execution engine must be initialized.
   If either check fails, a tool result is added to the conversation
   and the loop continues to the next tool call without executing.
 - **Transitions to**: Step 2 (on success) or next tool call (on failure)
@@ -148,16 +148,13 @@ tool calls, cancellation during execution, and error paths.
   | Get-ChildItem -Path C:\Users\jason\source -Recurse |
   +----------------------------------------------------+
   ```
-  The preview body is formatted by `FormatToolPreview`, which parses the
-  `ArgumentsJson` and extracts the `command` property. For the Shell tool,
-  multi-statement commands (separated by `; `) are displayed on separate
-  lines. The panel body is escaped with `Markup.Escape` to prevent markup
-  injection from LLM-generated content.
+  The preview body is formatted from the tool's arguments, extracting
+  the `command` property. For the Shell tool, multi-statement commands
+  (separated by `; `) are displayed on separate lines. The panel body
+  is escaped to prevent markup injection from LLM-generated content.
 - **User action**: Reads the command about to be executed.
-- **System response**: `_ui.RenderToolExecution(toolName, argumentsJson)`
-  renders the panel. In layout mode, it is written to the output scroll
-  region via `_layout.WriteRenderable`. In non-layout mode, it is written
-  via `AnsiConsole.Write`.
+- **System response**: The user interface renders the tool call panel.
+  It appears in the conversation view.
 - **Transitions to**: Step 3
 
 ### Step 3: Execution Start
@@ -172,15 +169,14 @@ tool calls, cancellation during execution, and error paths.
 - **User action**: Waits for execution to complete, or presses Esc/Ctrl+C
   to initiate cancellation.
 - **System response**:
-  1. `_ui.RenderExecutingStart()` sets `_isExecuting = true`, resets the
-     execution window state, and starts the spinner background task.
-  2. The `ArgumentsJson` is parsed to extract the `command` string.
-  3. A linked `CancellationTokenSource` is created, combining the session's
+  1. The execution display is started (resets state, starts the spinner).
+  2. The tool arguments are parsed to extract the `command` string.
+  3. A linked cancellation token is created, combining the session's
      cancellation token with a per-execution token.
-  4. `BeginCancellationMonitor` sets up the double-press cancellation
-     handler (see cancellation.md).
-  5. `_activeEngine.Engine.ExecuteAsync` is called with the command, working
-     directory, output callback, and linked cancellation token.
+  4. The double-press cancellation handler is set up (see
+     cancellation.md).
+  5. The execution engine runs the command with the working directory,
+     output callback, and linked cancellation token.
 - **Transitions to**: Step 4a, 4b, 4c, or 4d
 
 ### Step 4a: Output Lines Arrive (Layout Mode)
@@ -193,11 +189,10 @@ tool calls, cancellation during execution, and error paths.
   The line count and elapsed time update as new output arrives. Individual
   output lines are buffered but not shown (they are available via `/expand`
   after execution completes).
-- **System response**: `ExecutionWindow.AddOutputLine` transitions from
-  `Waiting` to `Streaming` state on the first output line (stopping the
-  spinner). In layout mode, lines are buffered in `_outputBuffer` and a
-  progress indicator is written to the output scroll region. Lines are
-  capped at 10,000 in the buffer.
+- **System response**: The execution display transitions from waiting
+  to streaming state on the first output line (stopping the spinner).
+  In compact display mode, lines are buffered and a progress indicator
+  is shown. Lines are capped at 10,000 in the buffer.
 - **Transitions to**: Step 5
 
 ### Step 4b: Output Lines Arrive (Non-Layout, Filling Phase)
@@ -210,9 +205,9 @@ tool calls, cancellation during execution, and error paths.
     Line 2 of output
     Line 3 of output
   ```
-- **System response**: When `_outputBuffer.Count <= WindowSize (5)`,
-  `RedrawWindow` writes each new line directly to the console. Lines are
-  truncated to fit terminal width minus 6 characters.
+- **System response**: When there are 5 or fewer output lines, each new
+  line is written directly to the console. Lines are truncated to fit
+  terminal width minus 6 characters.
 - **Transitions to**: Step 4c (when > 5 lines) or Step 5 (execution ends)
 
 ### Step 4c: Output Lines Arrive (Non-Layout, Scrolling Phase)
@@ -230,10 +225,10 @@ tool calls, cancellation during execution, and error paths.
   New lines push older lines out of the window. The counter updates with
   each new line. Redraws are throttled to 50ms intervals to prevent
   flicker.
-- **System response**: `RedrawWindow` uses ANSI cursor-up sequences to
-  rewrite the visible window. The last 5 lines from `_outputBuffer` are
-  displayed. Lines that exceed terminal width are truncated with "...".
-  A `_redrawPending` flag handles throttled redraws.
+- **System response**: The output display uses cursor-up sequences to
+  rewrite the visible window. The last 5 lines from the output buffer
+  are displayed. Lines that exceed terminal width are truncated with
+  "...". Redraws are throttled to prevent flicker.
 - **Transitions to**: Step 5
 
 ### Step 4d: No Output
@@ -294,17 +289,16 @@ tool calls, cancellation during execution, and error paths.
   Summary with truncated result text. No collapse/expand capability.
 
 - **System response**:
-  1. `_ui.RenderExecutingStop()` calls `ExecutionWindow.Stop()`, which
-     stops the spinner, completes any pending redraws, and clears residual
-     text.
+  1. The execution display is stopped (spinner cleared, pending redraws
+     completed, residual text cleared).
   2. The output is formatted for the LLM:
      - If the command had errors and error output, it is appended with
        an "Errors:" section.
      - If the error contains "is not recognized", the list of available
        commands is appended to help the LLM self-correct.
      - Output exceeding 30,000 characters is truncated with "...".
-  3. `_ui.RenderToolResult` calls `ExecutionWindow.RenderToolResult` with
-     the tool name, display output, and error flag.
+  3. The tool result is rendered with the tool name, display output,
+     and error flag.
   4. The output buffer is saved for `/expand` (if ANSI mode).
   5. The tool result is logged and added to the conversation as a
      `ToolResultBlock` keyed by the `ToolUseBlock.Id` for correlation.
@@ -338,7 +332,7 @@ summary. The cancellation monitor is per-execution (each call gets its
 own linked CancellationTokenSource).
 
 The `/expand` command only expands the last tool call's output (the most
-recent `_lastOutputBuffer`). Previous tool outputs are not retained for
+recent tool call's output buffer). Previous tool outputs are not retained for
 expansion.
 
 ## Cancellation During Execution
@@ -372,7 +366,7 @@ When the user presses Esc or Ctrl+C during tool execution:
   (only if session ct is NOT cancelled)
     |
     v
-  _ui.RenderExecutingStop()
+  [Execution display stopped]
     |
     v
   EXEC-14: "[Shell] Command cancelled."
@@ -400,8 +394,8 @@ Key details:
 |---|---|---|---|
 | D1 | Tool name | "Shell" (case-insensitive) | Proceed to execution |
 |    |           | Any other name | EXEC-16: error result, skip execution |
-| D2 | Engine initialized | `_activeEngine.IsInitialized == true` | Proceed |
-|    |                    | `== false` | EXEC-17: error result, skip execution |
+| D2 | Engine initialized | Engine is initialized | Proceed |
+|    |                    | Engine is not initialized | EXEC-17: error result, skip execution |
 | D3 | Output mode | Interactive + ANSI capable | Contained output (buffered, windowed) |
 |    |             | Otherwise | Non-contained (direct write) |
 | D4 | Layout mode | Layout active | Progress indicator line (EXEC-03) |
@@ -542,6 +536,6 @@ user can type `/expand` to see the full output:
 - **Screen**: EXPAND-01 (output shown), EXPAND-02 (nothing to expand),
   or EXPAND-03 (already expanded)
 - **Behavior**: Each output line is printed with 2-space indent. The
-  `_lastOutputExpanded` flag prevents double-expansion.
+  A flag prevents double-expansion.
 - **Limitation**: Only the most recent tool call's output is retained.
   If multiple tool calls occurred, only the last one can be expanded.

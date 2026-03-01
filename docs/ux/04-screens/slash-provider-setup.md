@@ -130,15 +130,3 @@ connecting BoydCode to an LLM service.
 | Text Prompt | Section 7 | Model prompt with default, secret API key prompt |
 | Status Message | Section 1 | Error, usage messages |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Setup flow | `Commands/ProviderSlashCommand.cs` | `HandleSetupAsync` | 115-171 |
-| Provider resolution | `Commands/ProviderSlashCommand.cs` | `HandleSetupAsync` | 125-139 |
-| API key prompt | `Commands/ProviderSlashCommand.cs` | `HandleSetupAsync` | 149-153 |
-| Model prompt | `Commands/ProviderSlashCommand.cs` | `HandleSetupAsync` | 155-156 |
-| Profile save + activate | `Commands/ProviderSlashCommand.cs` | `HandleSetupAsync` | 158-168 |
-| Config builder | `Commands/ProviderSlashCommand.cs` | `BuildConfigFromProfile` | 239-251 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

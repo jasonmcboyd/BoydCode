@@ -268,17 +268,3 @@ With warning (no Docker image):
 | Status Message | Section 1 | Success, error, warning messages |
 | Empty State | Section 13 | "No directories configured" |
 
-## Implementation
-
-| Element | File | Method/Region | Lines |
-|---|---|---|---|
-| Edit flow | `Commands/ProjectSlashCommand.cs` | `HandleEditAsync` | 368-453 |
-| Menu loop | `Commands/ProjectSlashCommand.cs` | `HandleEditAsync` | 388-443 |
-| Choice formatting | `Commands/ProjectSlashCommand.cs` | `FormatEditChoice` | 765-769 |
-| Edit directories | `Commands/ProjectSlashCommand.cs` | `EditDirectories` | 609-685 |
-| Edit system prompt | `Commands/ProjectSlashCommand.cs` | `EditSystemPrompt` | 688-717 |
-| Edit Docker image | `Commands/ProjectSlashCommand.cs` | `EditDockerImage` | 719-743 |
-| Edit require container | `Commands/ProjectSlashCommand.cs` | `EditRequireContainer` | 746-759 |
-| Session context refresh | `Commands/ProjectSlashCommand.cs` | `RefreshSessionContext` | 461-469 |
-
-All file paths are relative to `src/BoydCode.Presentation.Console/`.

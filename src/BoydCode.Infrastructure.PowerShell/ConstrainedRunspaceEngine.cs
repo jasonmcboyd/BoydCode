@@ -52,6 +52,12 @@ public sealed partial class ConstrainedRunspaceEngine : IExecutionEngine
       iss.Commands.Add(new SessionStateApplicationEntry(appName));
     }
 
+    // Add core providers (FileSystem, Variable, Environment, etc.) so cmdlets can access paths and drives
+    foreach (var provider in defaultIss.Providers)
+    {
+      iss.Providers.Add(provider);
+    }
+
     // Import modules specified by profiles
     foreach (var module in effective.Modules)
     {
@@ -109,7 +115,14 @@ public sealed partial class ConstrainedRunspaceEngine : IExecutionEngine
     // Set working directory
     ps.AddScript($"Set-Location -LiteralPath '{workingDirectory.Replace("'", "''")}'");
     ps.Invoke();
+    if (ps.HadErrors)
+    {
+      var error = string.Join(Environment.NewLine, ps.Streams.Error.Select(e => e.ToString()));
+      sw.Stop();
+      return new ShellExecutionResult(string.Empty, $"Failed to set working directory: {error}", HadErrors: true, sw.Elapsed);
+    }
     ps.Commands.Clear();
+    ps.Streams.ClearStreams();
 
     // Execute the actual command
     ps.AddScript(command);

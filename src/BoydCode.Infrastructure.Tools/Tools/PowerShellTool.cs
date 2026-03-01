@@ -50,6 +50,15 @@ public sealed class PowerShellTool : ITool
             : $"{output}\n\nErrors:\n{result.ErrorOutput}";
       }
 
+      if (result.HadErrors && output.Contains("is not recognized", StringComparison.OrdinalIgnoreCase))
+      {
+        var commands = _activeEngine.Engine?.GetAvailableCommands();
+        if (commands is { Count: > 0 })
+        {
+          output += $"\n\nAvailable commands: {string.Join(", ", commands)}";
+        }
+      }
+
       if (output.Length > 30_000)
       {
         output = string.Concat(output.AsSpan(0, 29_997), "...");

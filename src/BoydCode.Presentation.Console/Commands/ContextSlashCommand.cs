@@ -21,19 +21,22 @@ public sealed class ContextSlashCommand : ISlashCommand
   private readonly IContextCompactor _contextCompactor;
   private readonly IToolRegistry _toolRegistry;
   private readonly AppSettings _settings;
+  private readonly ActiveExecutionEngine _activeEngine;
 
   public ContextSlashCommand(
       ActiveSession activeSession,
       ActiveProvider activeProvider,
       IContextCompactor contextCompactor,
       IToolRegistry toolRegistry,
-      IOptions<AppSettings> settings)
+      IOptions<AppSettings> settings,
+      ActiveExecutionEngine activeEngine)
   {
     _activeSession = activeSession;
     _activeProvider = activeProvider;
     _contextCompactor = contextCompactor;
     _toolRegistry = toolRegistry;
     _settings = settings.Value;
+    _activeEngine = activeEngine;
   }
 
   public SlashCommandDescriptor Descriptor { get; } = new(
@@ -96,7 +99,7 @@ public sealed class ContextSlashCommand : ISlashCommand
 
     // ── Compute token categories ──────────────────
 
-    var metaPromptTokens = EstimateStringTokens(MetaPrompt.Text);
+    var metaPromptTokens = EstimateStringTokens(MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []));
     var sessionPromptTokens = EstimateStringTokens(session.SystemPrompt);
     var systemPromptTokens = metaPromptTokens + sessionPromptTokens;
 
@@ -159,7 +162,7 @@ public sealed class ContextSlashCommand : ISlashCommand
     RenderLegend("\u25a0", "blue", "System prompt", systemPromptTokens, contextLimit);
     RenderLegend("\u25a0", "mediumpurple1", "Tools", toolTokensTotal, contextLimit);
     RenderLegend("\u25a0", "green", "Messages", messageTokensTotal, contextLimit);
-    RenderLegend("\u25cb", "grey", "Free space", freeTokens, contextLimit);
+    RenderLegend("\u25a0", "grey", "Free space", freeTokens, contextLimit);
     RenderLegend("\u25a0", "darkorange", "Compact buffer", bufferTokens, contextLimit);
     AnsiConsole.WriteLine();
 

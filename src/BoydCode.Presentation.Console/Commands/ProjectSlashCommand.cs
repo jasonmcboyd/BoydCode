@@ -351,6 +351,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
       return;
     }
 
+    var lastIndex = 0;
     while (true)
     {
       var dirSummary = project.Directories.Count > 0
@@ -383,12 +384,14 @@ public sealed class ProjectSlashCommand : ISlashCommand
                 "Done",
             };
 
-      var choice = SpectreHelpers.Select($"Edit [bold]{Markup.Escape(project.Name)}[/]:", choices);
+      var choice = SpectreHelpers.Select($"Edit [bold]{Markup.Escape(project.Name)}[/]:", choices, lastIndex);
 
       if (choice == "Done")
       {
         break;
       }
+
+      lastIndex = choices.IndexOf(choice);
 
       var section = choice.Split("  ", StringSplitOptions.RemoveEmptyEntries)[0].Trim();
 

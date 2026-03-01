@@ -301,16 +301,20 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     var modules = new List<string>(profile.Modules);
     var languageMode = profile.LanguageMode;
 
+    var lastIndex = 0;
     while (true)
     {
       var choice = SpectreHelpers.Select(
           $"Edit [bold]{Markup.Escape(name)}[/]:",
-          EditProfileChoices);
+          EditProfileChoices,
+          lastIndex);
 
       if (choice == "Done")
       {
         break;
       }
+
+      lastIndex = Array.IndexOf(EditProfileChoices, choice);
 
       switch (choice)
       {

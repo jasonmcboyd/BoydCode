@@ -330,7 +330,9 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     AnsiConsole.WriteLine();
   }
 
-  internal static string BuildSystemPrompt(Project project, IReadOnlyList<ResolvedDirectory> resolvedDirs)
+  internal static string BuildSystemPrompt(
+      Project project,
+      IReadOnlyList<ResolvedDirectory> resolvedDirs)
   {
     var customPrompt = project.SystemPrompt ?? Project.DefaultSystemPrompt;
     var userPrompt = $"You are working on project '{project.Name}'.\n\n{customPrompt}";

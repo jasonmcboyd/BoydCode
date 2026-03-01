@@ -1,10 +1,103 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace BoydCode.Presentation.Console;
 
 internal static class SpectreHelpers
 {
+  // ──────────────────────────────────────────────
+  //  VIM-STYLE KEY REMAPPING (j/k → ↓/↑)
+  // ──────────────────────────────────────────────
+
+  private static readonly Lazy<VimAnsiConsole> s_vimConsole =
+    new(() => new VimAnsiConsole(AnsiConsole.Console));
+
+  private sealed class VimConsoleInput : IAnsiConsoleInput
+  {
+    private readonly IAnsiConsoleInput _inner;
+    private readonly ConcurrentQueue<ConsoleKeyInfo> _buffer = new();
+
+    public VimConsoleInput(IAnsiConsoleInput inner)
+    {
+      _inner = inner;
+    }
+
+    public void PreloadDownArrows(int count)
+    {
+      for (var i = 0; i < count; i++)
+      {
+        _buffer.Enqueue(new ConsoleKeyInfo(
+          '\0', ConsoleKey.DownArrow, shift: false, alt: false, control: false));
+      }
+    }
+
+    public bool IsKeyAvailable()
+    {
+      return !_buffer.IsEmpty || _inner.IsKeyAvailable();
+    }
+
+    public ConsoleKeyInfo? ReadKey(bool intercept)
+    {
+      if (_buffer.TryDequeue(out var buffered))
+      {
+        return buffered;
+      }
+
+      var key = _inner.ReadKey(intercept);
+      return key.HasValue ? RemapVimKey(key.Value) : null;
+    }
+
+    public async Task<ConsoleKeyInfo?> ReadKeyAsync(bool intercept, CancellationToken cancellationToken)
+    {
+      if (_buffer.TryDequeue(out var buffered))
+      {
+        return buffered;
+      }
+
+      var key = await _inner.ReadKeyAsync(intercept, cancellationToken);
+      return key.HasValue ? RemapVimKey(key.Value) : null;
+    }
+
+    private static ConsoleKeyInfo RemapVimKey(ConsoleKeyInfo key)
+    {
+      if (key.Modifiers != 0)
+      {
+        return key;
+      }
+
+      return key.Key switch
+      {
+        ConsoleKey.J => new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, shift: false, alt: false, control: false),
+        ConsoleKey.K => new ConsoleKeyInfo('\0', ConsoleKey.UpArrow, shift: false, alt: false, control: false),
+        _ => key,
+      };
+    }
+  }
+
+  private sealed class VimAnsiConsole : IAnsiConsole
+  {
+    private readonly IAnsiConsole _inner;
+
+    public VimAnsiConsole(IAnsiConsole inner)
+    {
+      _inner = inner;
+      VimInput = new VimConsoleInput(inner.Input);
+    }
+
+    public VimConsoleInput VimInput { get; }
+
+    public Profile Profile => _inner.Profile;
+    public IAnsiConsoleCursor Cursor => _inner.Cursor;
+    public IAnsiConsoleInput Input => VimInput;
+    public IExclusivityMode ExclusivityMode => _inner.ExclusivityMode;
+    public RenderPipeline Pipeline => _inner.Pipeline;
+
+    public void Clear(bool home) => _inner.Clear(home);
+    public void Write(IRenderable renderable) => _inner.Write(renderable);
+  }
+
   // ──────────────────────────────────────────────
   //  STATUS MESSAGES (escape internally)
   // ──────────────────────────────────────────────
@@ -53,19 +146,32 @@ internal static class SpectreHelpers
       new TextPrompt<string>(label)
         .AllowEmpty());
 
-  public static string Select(string title, IEnumerable<string> choices) =>
-    AnsiConsole.Prompt(
+  public static string Select(string title, IEnumerable<string> choices, int defaultIndex = 0) =>
+    SelectCore(
       new SelectionPrompt<string>()
         .Title(title)
         .AddChoices(choices)
-        .HighlightStyle(new Style(Color.Green)));
+        .HighlightStyle(new Style(Color.Green)),
+      defaultIndex);
 
-  public static T Select<T>(string title, IEnumerable<T> choices) where T : notnull =>
-    AnsiConsole.Prompt(
+  public static T Select<T>(string title, IEnumerable<T> choices, int defaultIndex = 0) where T : notnull =>
+    SelectCore(
       new SelectionPrompt<T>()
         .Title(title)
         .AddChoices(choices)
-        .HighlightStyle(new Style(Color.Green)));
+        .HighlightStyle(new Style(Color.Green)),
+      defaultIndex);
+
+  private static T SelectCore<T>(SelectionPrompt<T> prompt, int defaultIndex) where T : notnull
+  {
+    var vim = s_vimConsole.Value;
+    if (defaultIndex > 0)
+    {
+      vim.VimInput.PreloadDownArrows(defaultIndex);
+    }
+
+    return prompt.Show(vim);
+  }
 
   public static bool Confirm(string prompt, bool defaultValue = true) =>
     AnsiConsole.Confirm(prompt, defaultValue);

@@ -29,19 +29,22 @@ public sealed class ContextSlashCommandTests
     ActiveProvider? activeProvider = null,
     IContextCompactor? contextCompactor = null,
     IToolRegistry? toolRegistry = null,
-    AppSettings? settings = null)
+    AppSettings? settings = null,
+    ActiveExecutionEngine? activeEngine = null)
   {
     activeSession ??= new ActiveSession();
     activeProvider ??= new ActiveProvider(Substitute.For<ILlmProviderFactory>());
     contextCompactor ??= new EvictionContextCompactor();
     toolRegistry ??= Substitute.For<IToolRegistry>();
     settings ??= new AppSettings();
+    activeEngine ??= new ActiveExecutionEngine();
     return new ContextSlashCommand(
       activeSession,
       activeProvider,
       contextCompactor,
       toolRegistry,
-      Options.Create(settings));
+      Options.Create(settings),
+      activeEngine);
   }
 
   private static (ActiveProvider provider, ILlmProvider mockLlm) CreateActiveProvider()

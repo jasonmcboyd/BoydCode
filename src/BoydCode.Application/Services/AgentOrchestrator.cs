@@ -15,6 +15,7 @@ namespace BoydCode.Application.Services;
 public sealed partial class AgentOrchestrator
 {
   private readonly ActiveProvider _activeProvider;
+  private readonly ActiveExecutionEngine _activeEngine;
   private readonly IToolRegistry _toolRegistry;
   private readonly IPermissionEngine _permissionEngine;
   private readonly IUserInterface _ui;
@@ -28,6 +29,7 @@ public sealed partial class AgentOrchestrator
 
   public AgentOrchestrator(
       ActiveProvider activeProvider,
+      ActiveExecutionEngine activeEngine,
       IToolRegistry toolRegistry,
       IPermissionEngine permissionEngine,
       IUserInterface ui,
@@ -38,6 +40,7 @@ public sealed partial class AgentOrchestrator
       ILogger<AgentOrchestrator> logger)
   {
     _activeProvider = activeProvider;
+    _activeEngine = activeEngine;
     _toolRegistry = toolRegistry;
     _permissionEngine = permissionEngine;
     _ui = ui;
@@ -129,9 +132,10 @@ public sealed partial class AgentOrchestrator
     const int maxToolRounds = 50;
 
     // Build the base request from session state — tier-1/2 fields are stable across rounds
+    var metaPrompt = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
     var systemPrompt = session.SystemPrompt is not null
-        ? $"{MetaPrompt.Text}\n\n---\n\n{session.SystemPrompt}"
-        : MetaPrompt.Text;
+        ? $"{metaPrompt}\n\n---\n\n{session.SystemPrompt}"
+        : metaPrompt;
 
     var baseRequest = new LlmRequest
     {
@@ -246,7 +250,8 @@ public sealed partial class AgentOrchestrator
   private async Task CompactIfNeededAsync(Session session, CancellationToken ct)
   {
     var messageTokens = session.Conversation.EstimateTokenCount();
-    var systemPromptTokens = (MetaPrompt.Text.Length + (session.SystemPrompt?.Length ?? 0)) / 4;
+    var metaPromptText = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
+    var systemPromptTokens = (metaPromptText.Length + (session.SystemPrompt?.Length ?? 0)) / 4;
     var estimated = messageTokens + systemPromptTokens;
 
     var contextLimit = _activeProvider.Provider!.Capabilities.MaxContextWindowTokens > 0

@@ -57,6 +57,7 @@ internal static class SessionSerializer
       WorkingDirectory = session.WorkingDirectory,
       CreatedAt = session.CreatedAt,
       LastAccessedAt = session.LastAccessedAt,
+      ProjectName = session.ProjectName,
       SystemPrompt = session.SystemPrompt,
       Messages = messages,
     };
@@ -77,6 +78,7 @@ internal static class SessionSerializer
     var session = new Session(doc.Id, doc.WorkingDirectory, conversation, doc.CreatedAt)
     {
       LastAccessedAt = doc.LastAccessedAt,
+      ProjectName = doc.ProjectName,
       SystemPrompt = doc.SystemPrompt,
     };
 

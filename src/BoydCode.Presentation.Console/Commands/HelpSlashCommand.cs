@@ -46,8 +46,8 @@ public sealed class HelpSlashCommand : ISlashCommand
       foreach (var sub in descriptor.Subcommands)
       {
         table.AddRow(
-            $"  [dim]{Markup.Escape(descriptor.Prefix)} {Markup.Escape(sub.Usage)}[/]",
-            $"[dim]{Markup.Escape(sub.Description)}[/]");
+            $"  [dim]{Markup.Escape(sub.Usage)}[/]",
+            $"  [dim]{Markup.Escape(sub.Description)}[/]");
       }
     }
 

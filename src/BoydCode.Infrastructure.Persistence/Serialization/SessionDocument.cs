@@ -21,6 +21,9 @@ internal sealed class SessionDocument
   [JsonPropertyName("last_accessed_at")]
   public DateTimeOffset LastAccessedAt { get; set; }
 
+  [JsonPropertyName("project_name")]
+  public string? ProjectName { get; set; }
+
   [JsonPropertyName("system_prompt")]
   public string? SystemPrompt { get; set; }
 

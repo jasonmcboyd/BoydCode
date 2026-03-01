@@ -21,6 +21,7 @@ public sealed partial class AgentOrchestrator
   private readonly IUserInterface _ui;
   private readonly IHookEngine _hookEngine;
   private readonly IContextCompactor _contextCompactor;
+  private readonly ISessionRepository _sessionRepository;
   private readonly AppSettings _settings;
   private readonly ISlashCommandRegistry _slashCommandRegistry;
   private readonly ILogger<AgentOrchestrator> _logger;
@@ -35,6 +36,7 @@ public sealed partial class AgentOrchestrator
       IUserInterface ui,
       IHookEngine hookEngine,
       IContextCompactor contextCompactor,
+      ISessionRepository sessionRepository,
       IOptions<AppSettings> settings,
       ISlashCommandRegistry slashCommandRegistry,
       ILogger<AgentOrchestrator> logger)
@@ -46,6 +48,7 @@ public sealed partial class AgentOrchestrator
     _ui = ui;
     _hookEngine = hookEngine;
     _contextCompactor = contextCompactor;
+    _sessionRepository = sessionRepository;
     _settings = settings.Value;
     _slashCommandRegistry = slashCommandRegistry;
     _logger = logger;
@@ -118,6 +121,8 @@ public sealed partial class AgentOrchestrator
         _ui.RenderError(FormatProviderError(ex));
       }
     }
+
+    await AutoSaveSessionAsync(session, ct);
   }
 
   public async Task RunAgentTurnAsync(Session session, CancellationToken ct = default)
@@ -185,6 +190,7 @@ public sealed partial class AgentOrchestrator
       // Process tool calls or stop
       if (!response.HasToolUse)
       {
+        await AutoSaveSessionAsync(session, ct);
         return;
       }
 
@@ -193,6 +199,7 @@ public sealed partial class AgentOrchestrator
 
     LogMaxToolRoundsReached(_logger, maxToolRounds);
     _ui.RenderError($"Reached maximum tool call rounds ({maxToolRounds}). Stopping to prevent runaway execution.");
+    await AutoSaveSessionAsync(session, ct);
   }
 
   private async Task ProcessToolCallsAsync(Session session, IEnumerable<ToolUseBlock> toolCalls, CancellationToken ct)
@@ -331,6 +338,19 @@ public sealed partial class AgentOrchestrator
     return accumulator.ToResponse();
   }
 
+  private async Task AutoSaveSessionAsync(Session session, CancellationToken ct)
+  {
+    try
+    {
+      session.LastAccessedAt = DateTimeOffset.UtcNow;
+      await _sessionRepository.SaveAsync(session, ct);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+      LogAutoSaveFailed(_logger, ex);
+    }
+  }
+
   /// <summary>
   /// Extracts a user-friendly error message from provider exceptions.
   /// Provider SDKs often embed JSON error bodies in their exception messages
@@ -430,4 +450,7 @@ public sealed partial class AgentOrchestrator
 
   [LoggerMessage(Level = LogLevel.Warning, Message = "Reached maximum tool call rounds: {MaxRounds}")]
   private static partial void LogMaxToolRoundsReached(ILogger logger, int maxRounds);
+
+  [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to auto-save session")]
+  private static partial void LogAutoSaveFailed(ILogger logger, Exception exception);
 }

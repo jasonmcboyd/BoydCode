@@ -25,6 +25,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
   private readonly DirectoryGuard _directoryGuard;
   private readonly IPermissionEngine _permissionEngine;
   private readonly IUserInterface _ui;
+  private readonly ISessionRepository _sessionRepository;
 
   public sealed class Settings : CommandSettings
   {
@@ -62,7 +63,8 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       DirectoryResolver directoryResolver,
       DirectoryGuard directoryGuard,
       IPermissionEngine permissionEngine,
-      IUserInterface ui)
+      IUserInterface ui,
+      ISessionRepository sessionRepository)
   {
     _appSettings = appSettings;
     _engineFactory = engineFactory;
@@ -77,6 +79,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     _directoryGuard = directoryGuard;
     _permissionEngine = permissionEngine;
     _ui = ui;
+    _sessionRepository = sessionRepository;
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -171,11 +174,34 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     var engine = await _engineFactory.CreateAsync(executionConfig, resolvedDirs, project.Name);
     await _activeEngine.SetAsync(engine, executionConfig.Mode);
 
-    // Create session
-    var session = new Session(workingDirectory);
-    session.ProjectName = project.Name;
-    session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs);
-    _activeSession.Set(session);
+    // Create or resume session
+    Session session;
+    if (!string.IsNullOrEmpty(settings.ResumeSessionId))
+    {
+      var loaded = await _sessionRepository.LoadAsync(settings.ResumeSessionId);
+      if (loaded is null)
+      {
+        _ui.RenderError($"Session '{settings.ResumeSessionId}' not found.");
+        return (int)ExitCode.GeneralError;
+      }
+
+      session = loaded;
+      session.WorkingDirectory = workingDirectory;
+      session.ProjectName = project.Name;
+      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs);
+      _activeSession.Set(session);
+
+      var messageCount = session.Conversation.Messages.Count;
+      var createdDate = session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+      _ui.RenderHint($"Resumed session {session.Id} ({messageCount} messages from {createdDate})");
+    }
+    else
+    {
+      session = new Session(workingDirectory);
+      session.ProjectName = project.Name;
+      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs);
+      _activeSession.Set(session);
+    }
 
     // Run the interactive loop
     try

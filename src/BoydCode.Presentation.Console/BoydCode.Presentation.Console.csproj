@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BoydCode.Presentation.Console</RootNamespace>
+    <AssemblyName>boydcode</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Spectre.Console.Cli" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BoydCode.Application\BoydCode.Application.csproj" />
+    <ProjectReference Include="..\BoydCode.Domain\BoydCode.Domain.csproj" />
+    <ProjectReference Include="..\BoydCode.Infrastructure.LLM\BoydCode.Infrastructure.LLM.csproj" />
+    <ProjectReference Include="..\BoydCode.Infrastructure.PowerShell\BoydCode.Infrastructure.PowerShell.csproj" />
+    <ProjectReference Include="..\BoydCode.Infrastructure.Tools\BoydCode.Infrastructure.Tools.csproj" />
+    <ProjectReference Include="..\BoydCode.Infrastructure.Persistence\BoydCode.Infrastructure.Persistence.csproj" />
+    <ProjectReference Include="..\BoydCode.Infrastructure.Container\BoydCode.Infrastructure.Container.csproj" />
+  </ItemGroup>
+</Project>

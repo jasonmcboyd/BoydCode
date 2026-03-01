@@ -88,7 +88,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
 
     foreach (var dir in resolvedDirs.Where(d => !d.Exists))
     {
-      AnsiConsole.MarkupLine($"[yellow]Warning: Directory does not exist: {Markup.Escape(dir.Path)}[/]");
+      _ui.RenderError($"Warning: Directory does not exist: {dir.Path}");
     }
 
     if (project.PermissionMode is not null || project.PermissionRules is not null)
@@ -100,7 +100,13 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     LlmProviderType providerType;
     if (!string.IsNullOrEmpty(settings.Provider))
     {
-      providerType = ParseProvider(settings.Provider);
+      var (parsed, wasRecognized) = ParseProvider(settings.Provider);
+      providerType = parsed;
+      if (!wasRecognized)
+      {
+        _ui.RenderError(
+            $"Unknown provider '{settings.Provider}'. Valid options: anthropic, gemini, openai, ollama. Defaulting to Gemini.");
+      }
     }
     else
     {
@@ -147,11 +153,16 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       }
       catch (InvalidOperationException ex)
       {
-        AnsiConsole.MarkupLine($"[yellow]Failed to initialize provider: {Markup.Escape(ex.Message)}[/]");
+        _ui.RenderError($"Failed to initialize provider: {ex.Message}");
       }
     }
 
     RenderBanner(llmConfig, workingDirectory, isConfigured, project.Name, resolvedDirs, executionConfig.Mode, project.DockerImage);
+
+    if (isConfigured)
+    {
+      _ui.RenderHint("Type a message to start, or /help for available commands.");
+    }
 
     // Create execution engine via factory
     var engine = await _engineFactory.CreateAsync(executionConfig, resolvedDirs, project.Name);
@@ -180,24 +191,24 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     catch (OperationCanceledException)
     {
       // User cancelled (Ctrl+C) — exit gracefully
+      return (int)ExitCode.UserCancelled;
     }
     catch (Exception ex)
     {
-      AnsiConsole.MarkupLine($"[red]Fatal error: {Markup.Escape(ex.Message)}[/]");
-      AnsiConsole.MarkupLine("[dim]The session has ended. Please restart boydcode.[/]");
-      return 1;
+      _ui.RenderError($"Fatal error: {ex.Message}\n  Suggestion: The session has ended. Please restart boydcode.");
+      return (int)ExitCode.GeneralError;
     }
 
-    return 0;
+    return (int)ExitCode.Success;
   }
 
-  private static LlmProviderType ParseProvider(string provider) => provider.ToUpperInvariant() switch
+  private static (LlmProviderType Type, bool WasRecognized) ParseProvider(string provider) => provider.ToUpperInvariant() switch
   {
-    "ANTHROPIC" or "CLAUDE" => LlmProviderType.Anthropic,
-    "GEMINI" or "GOOGLE" => LlmProviderType.Gemini,
-    "OPENAI" or "GPT" => LlmProviderType.OpenAi,
-    "OLLAMA" or "LOCAL" => LlmProviderType.Ollama,
-    _ => LlmProviderType.Gemini,
+    "ANTHROPIC" or "CLAUDE" => (LlmProviderType.Anthropic, true),
+    "GEMINI" or "GOOGLE" => (LlmProviderType.Gemini, true),
+    "OPENAI" or "GPT" => (LlmProviderType.OpenAi, true),
+    "OLLAMA" or "LOCAL" => (LlmProviderType.Ollama, true),
+    _ => (LlmProviderType.Gemini, false),
   };
 
   private static string? GetApiKeyFromEnvironment(LlmProviderType provider) => provider switch
@@ -212,37 +223,84 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
 
   private static void RenderBanner(LlmProviderConfig config, string workingDirectory, bool isConfigured, string projectName, IReadOnlyList<ResolvedDirectory>? resolvedDirectories, ExecutionMode executionMode, string? dockerImage)
   {
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine("[bold cyan]██████╗  ██████╗ ██╗   ██╗██████╗[/]                              [dim]Users:         1[/]");
-    AnsiConsole.MarkupLine("[bold cyan]██╔══██╗██╔═══██╗╚██╗ ██╔╝██╔══██╗[/]                             [dim]Revenue:       $0[/]");
-    AnsiConsole.MarkupLine("[bold cyan]██████╔╝██║   ██║ ╚████╔╝ ██║  ██║[/]                             [dim]Valuation:     $0,000,000,000[/]");
-    AnsiConsole.MarkupLine("[bold cyan]██╔══██╗██║   ██║  ╚██╔╝  ██║  ██║[/]                             [dim]Commas:        tres[/]");
-    AnsiConsole.MarkupLine("[bold cyan]██████╔╝╚██████╔╝   ██║   ██████╔╝[/]                             [dim]Status:        pre-unicorn[/]");
-    AnsiConsole.MarkupLine("[bold cyan]╚═════╝  ╚═════╝    ╚═╝   ╚═════╝[/]");
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine("[bold blue]                 ██████╗  ██████╗ ██████╗ ███████╗[/]");
-    AnsiConsole.MarkupLine("[bold blue]                ██╔════╝ ██╔═══██╗██╔══██╗██╔════╝[/]");
-    AnsiConsole.MarkupLine("[bold blue]                ██║      ██║   ██║██║  ██║█████╗[/]");
-    AnsiConsole.MarkupLine("[bold blue]                ██║      ██║   ██║██║  ██║██╔══╝[/]");
-    AnsiConsole.MarkupLine("[bold blue]                ╚██████╗ ╚██████╔╝██████╔╝███████╗[/]");
-    AnsiConsole.MarkupLine("[bold blue]                 ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝[/]");
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine("[dim]Boyd Code™ v0.1[/]");
-    AnsiConsole.MarkupLine("[dim italic]Artificial Intelligence, Personal Edition[/]");
+    // Detect short terminals and use compact banner
+    var isCompact = false;
+    try
+    {
+      isCompact = System.Console.WindowHeight < 30;
+    }
+    catch
+    {
+      // WindowHeight may throw on non-interactive terminals
+    }
+
     AnsiConsole.WriteLine();
 
-    var lines = new List<string>
-        {
-            $"  Provider [cyan]{Markup.Escape(config.ProviderType.ToString())}[/]",
-            $"  Model    [cyan]{Markup.Escape(config.Model)}[/]",
-            $"  cwd      [cyan]{Markup.Escape(workingDirectory)}[/]",
-            $"  Project  [cyan]{Markup.Escape(projectName)}[/]",
-            $"  Engine   [cyan]{Markup.Escape(executionMode.ToString())}[/]",
-        };
+    if (isCompact)
+    {
+      AnsiConsole.MarkupLine("  [bold cyan]BOYD[/][bold blue]CODE[/]  [dim]v0.1  AI Coding Assistant[/]");
+    }
+    else
+    {
+      // BOYD ascii art with dim metadata floated right of rows 2-6.
+      AnsiConsole.MarkupLine("  [bold cyan]██████╗  ██████╗ ██╗   ██╗██████╗[/]           [dim]Users:      1[/]");
+      AnsiConsole.MarkupLine("  [bold cyan]██╔══██╗██╔═══██╗╚██╗ ██╔╝██╔══██╗[/]          [dim]Revenue:    $0[/]");
+      AnsiConsole.MarkupLine("  [bold cyan]██████╔╝██║   ██║ ╚████╔╝ ██║  ██║[/]          [dim]Valuation:  $0,000,000,000[/]");
+      AnsiConsole.MarkupLine("  [bold cyan]██╔══██╗██║   ██║  ╚██╔╝  ██║  ██║[/]          [dim]Commas:     tres[/]");
+      AnsiConsole.MarkupLine("  [bold cyan]██████╔╝╚██████╔╝   ██║   ██████╔╝[/]          [dim]Status:     pre-unicorn[/]");
+      AnsiConsole.MarkupLine("  [bold cyan]╚═════╝  ╚═════╝    ╚═╝   ╚═════╝[/]");
+
+      // CODE ascii art indented beneath BOYD
+      AnsiConsole.MarkupLine("  [bold blue]                 ██████╗  ██████╗ ██████╗ ███████╗[/]");
+      AnsiConsole.MarkupLine("  [bold blue]                ██╔════╝ ██╔═══██╗██╔══██╗██╔════╝[/]");
+      AnsiConsole.MarkupLine("  [bold blue]                ██║      ██║   ██║██║  ██║█████╗[/]");
+      AnsiConsole.MarkupLine("  [bold blue]                ██║      ██║   ██║██║  ██║██╔══╝[/]");
+      AnsiConsole.MarkupLine("  [bold blue]                ╚██████╗ ╚██████╔╝██████╔╝███████╗[/]");
+      AnsiConsole.MarkupLine("  [bold blue]                 ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝[/]");
+
+      // Version + tagline on one line
+      AnsiConsole.MarkupLine("  [dim]v0.1  Artificial Intelligence, Personal Edition[/]");
+    }
+
+    AnsiConsole.WriteLine();
+
+    // Thin rule separator
+    AnsiConsole.Write(new Rule().RuleStyle("dim"));
+    AnsiConsole.WriteLine();
+
+    // Session info as a clean two-column grid (label / value / label / value)
+    var grid = new Grid();
+    grid.AddColumn(new GridColumn().PadLeft(2).PadRight(1).NoWrap());
+    grid.AddColumn(new GridColumn().PadRight(4));
+    grid.AddColumn(new GridColumn().PadRight(1).NoWrap());
+    grid.AddColumn(new GridColumn());
+
+    grid.AddRow(
+        new Markup("[dim]Provider[/]"),
+        new Markup($"[cyan]{Markup.Escape(config.ProviderType.ToString())}[/]"),
+        new Markup("[dim]Project[/]"),
+        new Markup($"[cyan]{Markup.Escape(projectName)}[/]"));
+
+    grid.AddRow(
+        new Markup("[dim]Model[/]"),
+        new Markup($"[cyan]{Markup.Escape(config.Model)}[/]"),
+        new Markup("[dim]Engine[/]"),
+        new Markup($"[cyan]{Markup.Escape(executionMode.ToString())}[/]"));
+
+    // cwd gets full width (value spans remaining columns)
+    grid.AddRow(
+        new Markup("[dim]cwd[/]"),
+        new Markup($"[cyan]{Markup.Escape(workingDirectory)}[/]"),
+        new Markup(""),
+        new Markup(""));
 
     if (dockerImage is not null)
     {
-      lines.Add($"  Docker   [cyan]{Markup.Escape(dockerImage)}[/]");
+      grid.AddRow(
+          new Markup("[dim]Docker[/]"),
+          new Markup($"[cyan]{Markup.Escape(dockerImage)}[/]"),
+          new Markup(""),
+          new Markup(""));
     }
 
     if (resolvedDirectories is not null)
@@ -250,32 +308,31 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       foreach (var dir in resolvedDirectories.Where(d => d.IsGitRepository))
       {
         var branchInfo = dir.GitBranch is not null ? $" ({dir.GitBranch})" : "";
-        lines.Add($"  Git      [cyan]{Markup.Escape(dir.RepoRoot ?? dir.Path)}{Markup.Escape(branchInfo)}[/]");
+        grid.AddRow(
+            new Markup("[dim]Git[/]"),
+            new Markup($"[cyan]{Markup.Escape(dir.RepoRoot ?? dir.Path)}{Markup.Escape(branchInfo)}[/]"),
+            new Markup(""),
+            new Markup(""));
       }
     }
 
+    AnsiConsole.Write(grid);
+    AnsiConsole.WriteLine();
+
+    // Status footer
     if (isConfigured)
     {
       var engineNote = executionMode == ExecutionMode.Container
-          ? "[dim]Commands execute inside a Docker container.[/]"
-          : "[dim]Commands run in a constrained PowerShell runspace.[/]";
-      lines.Add($"  Status   [green]Ready[/]");
-      lines.Add("");
-      lines.Add($"  [dim]Type[/] /quit [dim]or[/] exit [dim]to exit.[/] {engineNote}");
+          ? "Commands execute inside a Docker container."
+          : "Commands run in a constrained PowerShell runspace.";
+      AnsiConsole.MarkupLine($"  [green]Ready[/]  [dim]{engineNote}[/]");
     }
     else
     {
-      lines.Add("");
-      lines.Add("  [yellow bold]Not configured[/]");
-      lines.Add("  [dim]Use[/] [bold]/provider setup[/] [dim]to configure an API key, or pass[/] [bold]--api-key[/][dim].[/]");
+      AnsiConsole.MarkupLine("  [yellow bold]Not configured[/]");
+      AnsiConsole.MarkupLine("  [dim]Use[/] [bold]/provider setup[/] [dim]to configure an API key, or pass[/] [bold]--api-key[/][dim].[/]");
     }
 
-    var panel = new Panel(new Markup(string.Join("\n", lines)))
-        .Border(BoxBorder.Rounded)
-        .BorderColor(Color.Blue)
-        .Padding(1, 0, 1, 0);
-
-    AnsiConsole.Write(panel);
     AnsiConsole.WriteLine();
   }
 

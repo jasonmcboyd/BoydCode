@@ -1,6 +1,7 @@
 using BoydCode.Application;
 using BoydCode.Application.Interfaces;
 using BoydCode.Application.Services;
+using BoydCode.Domain.Enums;
 using BoydCode.Infrastructure.Container;
 using BoydCode.Infrastructure.LLM;
 using BoydCode.Infrastructure.Persistence;
@@ -10,6 +11,7 @@ using BoydCode.Presentation.Console;
 using BoydCode.Presentation.Console.Commands;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -49,6 +51,9 @@ try
 {
   // Build host for DI
   var hostBuilder = Host.CreateApplicationBuilder(args);
+
+  // Suppress default console logging (info: lines clutter the splash screen)
+  hostBuilder.Logging.SetMinimumLevel(LogLevel.Warning);
 
   // Bind configuration sections
   hostBuilder.Services.Configure<BoydCode.Domain.Configuration.AppSettings>(
@@ -111,7 +116,7 @@ catch (Exception ex)
 {
   CrashLogger.LogException(ex);
   RenderCrashMessage(ex);
-  return 1;
+  return (int)ExitCode.GeneralError;
 }
 
 static void RenderCrashMessage(Exception ex)

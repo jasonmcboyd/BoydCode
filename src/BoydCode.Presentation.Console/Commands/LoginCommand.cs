@@ -30,11 +30,17 @@ public sealed class LoginCommand : AsyncCommand
 
   public override async Task<int> ExecuteAsync(CommandContext context)
   {
+    if (!AnsiConsole.Profile.Capabilities.Interactive)
+    {
+      AnsiConsole.MarkupLine("[red]Error:[/] Login requires an interactive terminal. Use --api-key or set the appropriate environment variable instead.");
+      return (int)ExitCode.ConfigurationError;
+    }
+
     var oauthConfig = OAuthProviderRegistry.GetConfig(Provider);
     if (oauthConfig is null)
     {
       AnsiConsole.MarkupLine($"[red]Provider '{Provider}' does not support OAuth login.[/]");
-      return 1;
+      return (int)ExitCode.ConfigurationError;
     }
 
     AnsiConsole.MarkupLine($"[bold]Logging in to {Provider}...[/]");
@@ -44,7 +50,7 @@ public sealed class LoginCommand : AsyncCommand
     if (clientConfig is null || string.IsNullOrEmpty(clientConfig.ClientId))
     {
       AnsiConsole.MarkupLine("[red]OAuth client ID is required. Please try again.[/]");
-      return 1;
+      return (int)ExitCode.ConfigurationError;
     }
 
     // Generate PKCE code verifier and challenge
@@ -79,12 +85,12 @@ public sealed class LoginCommand : AsyncCommand
     catch (OperationCanceledException)
     {
       AnsiConsole.MarkupLine("[red]Login timed out. Please try again.[/]");
-      return 1;
+      return (int)ExitCode.AuthenticationError;
     }
     catch (InvalidOperationException ex)
     {
       AnsiConsole.MarkupLine($"[red]{ex.Message}[/]");
-      return 1;
+      return (int)ExitCode.AuthenticationError;
     }
 
     // Exchange code for tokens
@@ -93,7 +99,7 @@ public sealed class LoginCommand : AsyncCommand
     if (tokenResult is null)
     {
       AnsiConsole.MarkupLine("[red]Failed to exchange authorization code for tokens.[/]");
-      return 1;
+      return (int)ExitCode.AuthenticationError;
     }
 
     // Save credentials
@@ -106,7 +112,7 @@ public sealed class LoginCommand : AsyncCommand
         tokenResult.Scope ?? oauthConfig.Scope);
 
     AnsiConsole.MarkupLine("[green]Successfully logged in![/]");
-    return 0;
+    return (int)ExitCode.Success;
   }
 
   private async Task<OAuthClientConfig?> ResolveClientCredentialsAsync(OAuthProviderConfig oauthConfig)

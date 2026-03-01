@@ -6,12 +6,24 @@ namespace BoydCode.Presentation.Console;
 
 public sealed class SpectreUserInterface : IUserInterface
 {
+  private readonly IAnsiConsole _stderr = AnsiConsole.Create(
+      new AnsiConsoleSettings { Out = new AnsiConsoleOutput(System.Console.Error) });
+
   private bool _streamingStarted;
+  private bool _isThinking;
+
+  public bool IsInteractive => AnsiConsole.Profile.Capabilities.Interactive;
 
   public string? StatusLine { get; set; }
 
   public Task<string> GetUserInputAsync(CancellationToken ct = default)
   {
+    if (!IsInteractive)
+    {
+      var line = System.Console.ReadLine();
+      return Task.FromResult(line ?? "/quit");
+    }
+
     if (StatusLine is not null)
     {
       AnsiConsole.MarkupLine($"[dim]{Markup.Escape(StatusLine)}[/]");
@@ -64,6 +76,19 @@ public sealed class SpectreUserInterface : IUserInterface
     System.Console.WriteLine();
   }
 
+  public void RenderThinkingStart()
+  {
+    _isThinking = true;
+    AnsiConsole.Markup("[dim italic]  Thinking...[/]");
+  }
+
+  public void RenderThinkingStop()
+  {
+    if (!_isThinking) return;
+    _isThinking = false;
+    System.Console.Write("\r                    \r");
+  }
+
   public void RenderToolExecution(string toolName, string argumentsSummary)
   {
     AnsiConsole.MarkupLine($"  [dim][[{Markup.Escape(toolName)}]][/] [dim]{Markup.Escape(argumentsSummary)}[/]");
@@ -85,7 +110,26 @@ public sealed class SpectreUserInterface : IUserInterface
 
   public void RenderError(string message)
   {
-    AnsiConsole.MarkupLine($"[red bold]Error:[/] [red]{Markup.Escape(message)}[/]");
+    var suggestionMarker = "\n  Suggestion: ";
+    var markerIndex = message.IndexOf(suggestionMarker, StringComparison.Ordinal);
+
+    if (markerIndex >= 0)
+    {
+      var errorPart = message[..markerIndex];
+      var suggestion = message[(markerIndex + suggestionMarker.Length)..];
+      _stderr.MarkupLine($"[red bold]Error:[/] [red]{Markup.Escape(errorPart)}[/]");
+      _stderr.MarkupLine($"  [yellow]Suggestion:[/] [dim]{Markup.Escape(suggestion)}[/]");
+    }
+    else
+    {
+      _stderr.MarkupLine($"[red bold]Error:[/] [red]{Markup.Escape(message)}[/]");
+    }
+  }
+
+  public void RenderHint(string hint)
+  {
+    AnsiConsole.MarkupLine($"  [dim italic]{Markup.Escape(hint)}[/]");
+    AnsiConsole.WriteLine();
   }
 
   public void RenderTokenUsage(int inputTokens, int outputTokens)

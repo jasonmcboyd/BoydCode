@@ -86,6 +86,18 @@ public sealed partial class AgentOrchestrator
           _ui.RenderError($"Command error: {ex.Message}");
           continue;
         }
+
+        // Unrecognized slash command — never send to LLM
+        var suggestion = _slashCommandRegistry.SuggestCommand(input);
+        if (suggestion is not null)
+        {
+          _ui.RenderError($"Unknown command. Did you mean '{suggestion}'?");
+        }
+        else
+        {
+          _ui.RenderError("Unknown command. Type /help for available commands.");
+        }
+        continue;
       }
 
       session.Conversation.AddUserMessage(input);
@@ -141,6 +153,8 @@ public sealed partial class AgentOrchestrator
         Stream = _activeProvider.Provider!.Capabilities.SupportsStreaming,
       };
 
+      _ui.RenderThinkingStart();
+
       LlmResponse response;
       if (request.Stream)
       {
@@ -149,6 +163,7 @@ public sealed partial class AgentOrchestrator
       else
       {
         response = await _activeProvider.Provider!.SendAsync(request, ct);
+        _ui.RenderThinkingStop();
         var textContent = response.TextContent;
         if (!string.IsNullOrEmpty(textContent))
         {
@@ -251,11 +266,18 @@ public sealed partial class AgentOrchestrator
   {
     var accumulator = new StreamAccumulator();
     var textStarted = false;
+    var thinkingStopped = false;
 
     try
     {
       await foreach (var chunk in _activeProvider.Provider!.StreamAsync(request, ct))
       {
+        if (!thinkingStopped)
+        {
+          _ui.RenderThinkingStop();
+          thinkingStopped = true;
+        }
+
         accumulator.Process(chunk);
 
         if (chunk is TextChunk textChunk)
@@ -267,6 +289,11 @@ public sealed partial class AgentOrchestrator
     }
     finally
     {
+      if (!thinkingStopped)
+      {
+        _ui.RenderThinkingStop();
+      }
+
       if (textStarted)
       {
         _ui.RenderStreamingComplete();
@@ -326,10 +353,51 @@ public sealed partial class AgentOrchestrator
     // If the exception wraps another with a cleaner message, prefer it
     if (ex.InnerException is not null && ex.InnerException.Message != message)
     {
-      return ex.InnerException.Message;
+      message = ex.InnerException.Message;
     }
 
-    return message;
+    var suggestion = ClassifyAndSuggest(message, ex);
+    return suggestion is not null
+        ? $"{message}\n  Suggestion: {suggestion}"
+        : message;
+  }
+
+  private static string? ClassifyAndSuggest(string message, Exception ex)
+  {
+    var lower = message.ToUpperInvariant();
+
+    if (lower.Contains("API KEY") || lower.Contains("UNAUTHORIZED") ||
+        lower.Contains("AUTHENTICATION") || lower.Contains("PERMISSION_DENIED") ||
+        lower.Contains("FORBIDDEN"))
+    {
+      return "Check your API key with /provider setup or pass --api-key.";
+    }
+
+    if (lower.Contains("RATE LIMIT") || lower.Contains("TOO MANY REQUESTS") ||
+        lower.Contains("429") || lower.Contains("QUOTA"))
+    {
+      return "Wait a moment and retry, or switch providers with /provider setup.";
+    }
+
+    if (lower.Contains("CONTEXT") || lower.Contains("TOKEN LIMIT") ||
+        lower.Contains("TOO LONG") || lower.Contains("MAX.*TOKEN"))
+    {
+      return "Start a new session or switch to a model with a larger context window.";
+    }
+
+    if (ex is HttpRequestException || lower.Contains("CONNECTION") ||
+        lower.Contains("TIMEOUT") || lower.Contains("NETWORK"))
+    {
+      return "Check your internet connection and try again.";
+    }
+
+    if (lower.Contains("500") || lower.Contains("SERVER ERROR") ||
+        lower.Contains("OVERLOADED") || lower.Contains("503"))
+    {
+      return "The provider may be experiencing issues. Try again in a few moments.";
+    }
+
+    return null;
   }
 
   [LoggerMessage(Level = LogLevel.Information, Message = "Context compaction triggered: {Estimated} tokens exceeds {Threshold} threshold")]

@@ -88,6 +88,48 @@ public sealed class SlashCommandRegistryTests
     descriptors[1].Prefix.Should().Be("/project");
   }
 
+  [Fact]
+  public void SuggestCommand_CloseMatch_ReturnsSuggestion()
+  {
+    // Arrange
+    var command = CreateMockCommand("/project", handlesInput: false);
+    _sut.Register(command);
+
+    // Act
+    var suggestion = _sut.SuggestCommand("/projct");
+
+    // Assert
+    suggestion.Should().Be("/project");
+  }
+
+  [Fact]
+  public void SuggestCommand_NoCloseMatch_ReturnsNull()
+  {
+    // Arrange
+    var command = CreateMockCommand("/project", handlesInput: false);
+    _sut.Register(command);
+
+    // Act
+    var suggestion = _sut.SuggestCommand("/zzzzzzz");
+
+    // Assert
+    suggestion.Should().BeNull();
+  }
+
+  [Fact]
+  public void SuggestCommand_ExactMatch_ReturnsThatPrefix()
+  {
+    // Arrange
+    var command = CreateMockCommand("/help", handlesInput: false);
+    _sut.Register(command);
+
+    // Act
+    var suggestion = _sut.SuggestCommand("/help");
+
+    // Assert
+    suggestion.Should().Be("/help");
+  }
+
   private static ISlashCommand CreateMockCommand(string prefix, bool handlesInput)
   {
     var command = Substitute.For<ISlashCommand>();

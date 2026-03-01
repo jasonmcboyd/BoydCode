@@ -14,12 +14,14 @@ public sealed class ProjectSlashCommand : ISlashCommand
   private readonly IProjectRepository _projectRepository;
   private readonly DirectoryResolver _directoryResolver;
   private readonly ActiveProject _activeProject;
+  private readonly IUserInterface _ui;
 
-  public ProjectSlashCommand(IProjectRepository projectRepository, DirectoryResolver directoryResolver, ActiveProject activeProject)
+  public ProjectSlashCommand(IProjectRepository projectRepository, DirectoryResolver directoryResolver, ActiveProject activeProject, IUserInterface ui)
   {
     _projectRepository = projectRepository;
     _directoryResolver = directoryResolver;
     _activeProject = activeProject;
+    _ui = ui;
   }
 
   public SlashCommandDescriptor Descriptor { get; } = new(
@@ -74,6 +76,12 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
   private async Task HandleCreateAsync(string[] tokens, CancellationToken ct)
   {
+    if (tokens.Length <= 2 && !_ui.IsInteractive)
+    {
+      AnsiConsole.MarkupLine("[red]Usage:[/] /project create <name>");
+      return;
+    }
+
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
         : AnsiConsole.Prompt(
@@ -93,6 +101,11 @@ public sealed class ProjectSlashCommand : ISlashCommand
     await _projectRepository.SaveAsync(project, ct);
     AnsiConsole.MarkupLine($"[green]v[/] Project [bold]{Markup.Escape(name)}[/] created.");
     AnsiConsole.WriteLine();
+
+    if (!_ui.IsInteractive)
+    {
+      return;
+    }
 
     var wantConfigure = AnsiConsole.Confirm("Configure project settings now?", defaultValue: false);
     if (!wantConfigure)
@@ -214,6 +227,12 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
   private async Task HandleShowAsync(string[] tokens, CancellationToken ct)
   {
+    if (tokens.Length <= 2 && _activeProject.Name is null && !_ui.IsInteractive)
+    {
+      AnsiConsole.MarkupLine("[red]Usage:[/] /project show <name>");
+      return;
+    }
+
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
         : _activeProject.Name ?? AnsiConsole.Ask<string>("Project name:");
@@ -322,6 +341,12 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
   private async Task HandleEditAsync(string[] tokens, CancellationToken ct)
   {
+    if (!_ui.IsInteractive)
+    {
+      AnsiConsole.MarkupLine("[red]Error:[/] /project edit requires an interactive terminal.");
+      return;
+    }
+
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
         : _activeProject.Name ?? AnsiConsole.Ask<string>("Project name:");
@@ -383,16 +408,16 @@ public sealed class ProjectSlashCommand : ISlashCommand
         case "Directories":
           EditDirectories(project);
           break;
-        case "System":
+        case "System prompt":
           EditSystemPrompt(project);
           break;
-        case "Permission":
+        case "Permission mode":
           EditPermissionMode(project);
           break;
-        case "Docker":
+        case "Docker image":
           EditDockerImage(project);
           break;
-        case "Require":
+        case "Require container":
           EditRequireContainer(project);
           break;
       }
@@ -409,6 +434,12 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
   private async Task HandleDeleteAsync(string[] tokens, CancellationToken ct)
   {
+    if (tokens.Length <= 2 && !_ui.IsInteractive)
+    {
+      AnsiConsole.MarkupLine("[red]Usage:[/] /project delete <name>");
+      return;
+    }
+
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
         : AnsiConsole.Ask<string>("Project name:");
@@ -470,7 +501,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     AnsiConsole.WriteLine();
 
-    if (!AnsiConsole.Confirm($"Delete project [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
+    if (!_ui.IsInteractive || !AnsiConsole.Confirm($"Delete project [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
     {
       AnsiConsole.MarkupLine("[dim]Cancelled.[/]");
       return;

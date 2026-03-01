@@ -114,6 +114,12 @@ public sealed class ProviderSlashCommand : ISlashCommand
 
   private async Task HandleSetupAsync(string[] tokens, CancellationToken ct)
   {
+    if (!_ui.IsInteractive && tokens.Length <= 2)
+    {
+      AnsiConsole.MarkupLine("[red]Usage:[/] /provider setup <name>");
+      return;
+    }
+
     LlmProviderType providerType;
 
     if (tokens.Length > 2
@@ -133,6 +139,12 @@ public sealed class ProviderSlashCommand : ISlashCommand
               .AddChoices(providerNames));
 
       providerType = Enum.Parse<LlmProviderType>(selected);
+    }
+
+    if (!_ui.IsInteractive)
+    {
+      AnsiConsole.MarkupLine("[red]Error:[/] /provider setup requires an interactive terminal. Use --api-key instead.");
+      return;
     }
 
     var isOllama = providerType == LlmProviderType.Ollama;
@@ -200,6 +212,12 @@ public sealed class ProviderSlashCommand : ISlashCommand
 
   private async Task HandleRemoveAsync(string[] tokens, CancellationToken ct)
   {
+    if (!_ui.IsInteractive && tokens.Length <= 2)
+    {
+      AnsiConsole.MarkupLine("[red]Usage:[/] /provider remove <name>");
+      return;
+    }
+
     LlmProviderType providerType;
 
     if (tokens.Length > 2

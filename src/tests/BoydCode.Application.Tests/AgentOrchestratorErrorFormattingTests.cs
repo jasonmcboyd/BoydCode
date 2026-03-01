@@ -47,22 +47,24 @@ public sealed class AgentOrchestratorErrorFormattingTests
   }
 
   [Fact]
-  public void FormatProviderError_NoJson_ReturnsOriginalMessage()
+  public void FormatProviderError_NoJson_ReturnsOriginalMessageWithConnectionSuggestion()
   {
-    // Arrange
+    // Arrange -- "Connection" triggers the network connectivity suggestion
     var ex = new InvalidOperationException("Connection refused");
 
     // Act
     var result = InvokeFormatProviderError(ex);
 
     // Assert
-    result.Should().Be("Connection refused");
+    result.Should().StartWith("Connection refused");
+    result.Should().Contain("Suggestion:");
+    result.Should().Contain("internet connection");
   }
 
   [Fact]
-  public void FormatProviderError_InnerException_ReturnsInnerMessage()
+  public void FormatProviderError_InnerException_ReturnsInnerMessageWithNetworkSuggestion()
   {
-    // Arrange
+    // Arrange -- HttpRequestException triggers the network connectivity suggestion
     var inner = new InvalidOperationException("The actual problem");
     var outer = new HttpRequestException("See inner exception", inner);
 
@@ -70,7 +72,9 @@ public sealed class AgentOrchestratorErrorFormattingTests
     var result = InvokeFormatProviderError(outer);
 
     // Assert
-    result.Should().Be("The actual problem");
+    result.Should().StartWith("The actual problem");
+    result.Should().Contain("Suggestion:");
+    result.Should().Contain("internet connection");
   }
 
   [Fact]
@@ -102,10 +106,11 @@ public sealed class AgentOrchestratorErrorFormattingTests
   }
 
   [Fact]
-  public void FormatProviderError_InnerExceptionSameMessage_ReturnsOriginalMessage()
+  public void FormatProviderError_InnerExceptionSameMessage_ReturnsOriginalMessageWithSuggestion()
   {
     // Arrange -- When inner exception has the same message, the method should
-    // fall through and return the original message (not recurse pointlessly).
+    // fall through and keep the original message. HttpRequestException + "Connection"
+    // both trigger the network connectivity suggestion.
     var inner = new InvalidOperationException("Connection refused");
     var outer = new HttpRequestException("Connection refused", inner);
 
@@ -113,7 +118,9 @@ public sealed class AgentOrchestratorErrorFormattingTests
     var result = InvokeFormatProviderError(outer);
 
     // Assert
-    result.Should().Be("Connection refused");
+    result.Should().StartWith("Connection refused");
+    result.Should().Contain("Suggestion:");
+    result.Should().Contain("internet connection");
   }
 
   [Fact]
@@ -129,5 +136,44 @@ public sealed class AgentOrchestratorErrorFormattingTests
     // Assert
     result.Should().Be(
         "Error: {\"error\":{\"type\":\"server_error\",\"message\":null}}");
+  }
+
+  [Fact]
+  public void FormatProviderError_AuthError_IncludesProviderSuggestion()
+  {
+    // Arrange
+    var ex = new InvalidOperationException("Unauthorized: invalid API key");
+
+    // Act
+    var result = InvokeFormatProviderError(ex);
+
+    // Assert
+    result.Should().Contain("/provider");
+  }
+
+  [Fact]
+  public void FormatProviderError_RateLimitError_IncludesWaitSuggestion()
+  {
+    // Arrange
+    var ex = new InvalidOperationException("Rate limit exceeded, please try again later");
+
+    // Act
+    var result = InvokeFormatProviderError(ex);
+
+    // Assert
+    result.Should().Contain("Wait");
+  }
+
+  [Fact]
+  public void FormatProviderError_UnknownError_HasNoSuggestion()
+  {
+    // Arrange
+    var ex = new InvalidOperationException("Something completely unknown happened");
+
+    // Act
+    var result = InvokeFormatProviderError(ex);
+
+    // Assert
+    result.Should().NotContain("Suggestion:");
   }
 }

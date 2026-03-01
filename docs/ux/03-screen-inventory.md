@@ -135,7 +135,7 @@ Each entry represents a distinct visual state -- something the user sees on scre
 | PROJ-22 | Project | Edit -- Docker Image | "Docker image" selected in edit menu | `ProjectSlashCommand.EditDockerImage` | No | Shows current image or "(not set)", prompt to enter new or Enter to clear |
 | PROJ-23 | Project | Edit -- Require Container | "Require container" selected in edit menu | `ProjectSlashCommand.EditRequireContainer` | No | Shows current value (Yes/No), warning if no Docker image configured, confirm prompt |
 | PROJ-24 | Project | Edit -- Saved | After each edit action | `ProjectSlashCommand.HandleEditAsync` | No | Green "v" + "Project saved." |
-| PROJ-25 | Project | Edit -- Stale Warning | Container/engine settings changed on active project | `ProjectSlashCommand.HandleEditAsync` | No | Sets `StaleSettingsWarning`: "Project settings changed. Run /refresh to apply." |
+| PROJ-25 | Project | Edit -- Stale Warning | Container/engine settings changed on active project | `ProjectSlashCommand.HandleEditAsync` | No | Sets `StaleSettingsWarning`: "Project settings changed. Run /context refresh to apply." |
 | PROJ-26 | Project | Edit -- Not Found Error | Project name doesn't exist | `ProjectSlashCommand.HandleEditAsync` | No | Red error: "Project {name} not found." |
 | PROJ-27 | Project | Edit -- Non-Interactive Error | `/project edit` in non-interactive mode | `ProjectSlashCommand.HandleEditAsync` | No | Red error: "/project edit requires an interactive terminal." |
 | PROJ-28 | Project | Delete -- Confirmation | `/project delete [name]` | `ProjectSlashCommand.HandleDeleteAsync` | No | Shows what will be deleted (directory mappings, custom prompt, Docker image, container requirement) + confirm prompt (default: No) |
@@ -219,48 +219,48 @@ Each entry represents a distinct visual state -- something the user sees on scre
 | CTX-01 | Context | Usage Hint | `/context` with no or invalid subcommand | `ContextSlashCommand.TryHandleAsync` | No | Yellow "Usage:" + valid subcommands |
 | CTX-02 | Context | Show -- Dashboard | `/context show` | `ContextSlashCommand.HandleShow` | No | Header line (provider, model, token usage with color-coded percentage), stacked bar chart (72 chars wide: blue system, purple tools, green messages, grey free, orange buffer), legend with per-category token counts and percentages, system prompt breakdown tree (meta prompt + session prompt), message breakdown tree (user text, assistant text, tool calls, tool results), tool inventory tree |
 | CTX-03 | Context | Show -- No Session Error | No active session | `ContextSlashCommand.HandleShow` | No | Red "Error: No active session." |
-| CTX-04 | Context | Compact -- Success | `/context compact` | `ContextSlashCommand.HandleCompactAsync` | No | Green "v" + "Compacted: N message(s) removed. Estimated tokens: {count}" |
-| CTX-05 | Context | Compact -- Nothing to Compact | Empty conversation | `ContextSlashCommand.HandleCompactAsync` | No | "Nothing to compact." |
-| CTX-06 | Context | Compact -- No Session Error | No active session | `ContextSlashCommand.HandleCompactAsync` | No | Red "Error: No active session." |
-| CTX-07 | Context | Summarize -- Success | `/context summarize [topic]` | `ContextSlashCommand.HandleSummarizeAsync` | No | Green "v" + "Summarized N messages into M. Estimated tokens: {count}" |
-| CTX-08 | Context | Summarize -- Too Few Messages | < 4 messages in conversation | `ContextSlashCommand.HandleSummarizeAsync` | No | "Not enough conversation to summarize (need at least 4 messages)." |
-| CTX-09 | Context | Summarize -- No Session Error | No active session | `ContextSlashCommand.HandleSummarizeAsync` | No | Red "Error: No active session." |
-| CTX-10 | Context | Summarize -- No Provider Error | No LLM configured | `ContextSlashCommand.HandleSummarizeAsync` | No | Red "Error: No LLM provider configured." |
-| CTX-11 | Context | Summarize -- Failure | LLM returns empty or throws | `ContextSlashCommand.HandleSummarizeAsync` | No | Red error: "Summarization produced no output." or "Summarization failed: {message}" |
+| CTX-04 | Context | Summarize -- Success | `/context summarize [topic]` | `ContextSlashCommand.HandleSummarizeAsync` | No | Green "v" + "Summarized N messages into M. Estimated tokens: {count}" |
+| CTX-05 | Context | Summarize -- Too Few Messages | < 4 messages in conversation | `ContextSlashCommand.HandleSummarizeAsync` | No | "Not enough conversation to summarize (need at least 4 messages)." |
+| CTX-06 | Context | Summarize -- No Session Error | No active session | `ContextSlashCommand.HandleSummarizeAsync` | No | Red "Error: No active session." |
+| CTX-07 | Context | Summarize -- No Provider Error | No LLM configured | `ContextSlashCommand.HandleSummarizeAsync` | No | Red "Error: No LLM provider configured." |
+| CTX-08 | Context | Summarize -- Failure | LLM returns empty or throws | `ContextSlashCommand.HandleSummarizeAsync` | No | Red error: "Summarization produced no output." or "Summarization failed: {message}" |
 
-### Session Management
+### Conversation Management
 
 | ID | Area | Screen Name | Trigger | Implementation | Has Spec | Notes |
 |---|---|---|---|---|---|---|
-| SESS-01 | Sessions | Usage Hint | `/sessions` with invalid subcommand | `SessionsSlashCommand.TryHandleAsync` | No | Yellow "Usage:" + valid subcommands |
-| SESS-02 | Sessions | List Table | `/sessions list` | `SessionsSlashCommand.HandleListAsync` | No | SimpleTable: ID (green + "*" for current), Project, Messages (right-aligned), Last accessed, Preview (first user message, dim, truncated); sorted by last accessed, max 20; footer: "* = current session" |
-| SESS-03 | Sessions | List -- Empty | No saved sessions | `SessionsSlashCommand.HandleListAsync` | No | "No saved sessions found." |
-| SESS-04 | Sessions | Show -- Detail View | `/sessions show [id]` | `SessionsSlashCommand.HandleShowAsync` | No | InfoGrid (Session ID, Created, Last used, Project, Messages, Directory) + "Recent messages" section showing first 5 messages (role-colored: blue user, green assistant) with truncation + "...N more message(s)" if > 5 + dim "Resume with: boydcode --resume {id}" |
-| SESS-05 | Sessions | Show -- Not Found Error | Invalid session ID | `SessionsSlashCommand.HandleShowAsync` | No | Red error: "Session {id} not found." |
-| SESS-06 | Sessions | Show -- Usage | No ID provided | `SessionsSlashCommand.HandleShowAsync` | No | Yellow "Usage:" + "/sessions show <id>" |
-| SESS-07 | Sessions | Delete -- Confirmation | `/sessions delete [id]` (interactive) | `SessionsSlashCommand.HandleDeleteAsync` | No | Shows session ID, message count, project name + confirm prompt "Delete?" (default: No) |
-| SESS-08 | Sessions | Delete -- Success | Confirmed deletion | `SessionsSlashCommand.HandleDeleteAsync` | No | Green "v" + "Session {id} deleted." |
-| SESS-09 | Sessions | Delete -- Cancelled | User declines | `SessionsSlashCommand.HandleDeleteAsync` | No | Dim "Cancelled." |
-| SESS-10 | Sessions | Delete -- Active Session Error | Trying to delete current session | `SessionsSlashCommand.HandleDeleteAsync` | No | Red error: "Cannot delete the current active session." |
-| SESS-11 | Sessions | Delete -- Not Found Error | Invalid session ID | `SessionsSlashCommand.HandleDeleteAsync` | No | Red error: "Session {id} not found." |
-| SESS-12 | Sessions | Delete -- Usage | No ID provided | `SessionsSlashCommand.HandleDeleteAsync` | No | Yellow "Usage:" + "/sessions delete <id>" |
+| SESS-01 | Conversations | Usage Hint | `/conversations` with invalid subcommand | `ConversationsSlashCommand.TryHandleAsync` | No | Yellow "Usage:" + valid subcommands |
+| SESS-02 | Conversations | List Table | `/conversations list` | `ConversationsSlashCommand.HandleListAsync` | No | SimpleTable: ID (green + "*" for current), Project, Messages (right-aligned), Last accessed, Preview (first user message, dim, truncated); sorted by last accessed, max 20; footer: "* = current session" |
+| SESS-03 | Conversations | List -- Empty | No saved sessions | `ConversationsSlashCommand.HandleListAsync` | No | "No saved sessions found." |
+| SESS-04 | Conversations | Show -- Detail View | `/conversations show [id]` | `ConversationsSlashCommand.HandleShowAsync` | No | InfoGrid (Session ID, Created, Last used, Project, Messages, Directory) + "Recent messages" section showing first 5 messages (role-colored: blue user, green assistant) with truncation + "...N more message(s)" if > 5 + dim "Resume with: boydcode --resume {id}" |
+| SESS-05 | Conversations | Show -- Not Found Error | Invalid session ID | `ConversationsSlashCommand.HandleShowAsync` | No | Red error: "Session {id} not found." |
+| SESS-06 | Conversations | Show -- Usage | No ID provided | `ConversationsSlashCommand.HandleShowAsync` | No | Yellow "Usage:" + "/conversations show <id>" |
+| SESS-07 | Conversations | Delete -- Confirmation | `/conversations delete [id]` (interactive) | `ConversationsSlashCommand.HandleDeleteAsync` | No | Shows session ID, message count, project name + confirm prompt "Delete?" (default: No) |
+| SESS-08 | Conversations | Delete -- Success | Confirmed deletion | `ConversationsSlashCommand.HandleDeleteAsync` | No | Green "v" + "Session {id} deleted." |
+| SESS-09 | Conversations | Delete -- Cancelled | User declines | `ConversationsSlashCommand.HandleDeleteAsync` | No | Dim "Cancelled." |
+| SESS-10 | Conversations | Delete -- Active Session Error | Trying to delete current session | `ConversationsSlashCommand.HandleDeleteAsync` | No | Red error: "Cannot delete the current active session." |
+| SESS-11 | Conversations | Delete -- Not Found Error | Invalid session ID | `ConversationsSlashCommand.HandleDeleteAsync` | No | Red error: "Session {id} not found." |
+| SESS-12 | Conversations | Delete -- Usage | No ID provided | `ConversationsSlashCommand.HandleDeleteAsync` | No | Yellow "Usage:" + "/conversations delete <id>" |
+| SESS-13 | Conversations | Rename -- Name Prompt | `/conversations rename [id]` | `ConversationsSlashCommand.HandleRenameAsync` | No | TextPrompt: "New name:" with non-empty validation; updates session display name |
+| SESS-14 | Conversations | Rename -- Success | Name provided | `ConversationsSlashCommand.HandleRenameAsync` | No | Green "v" + "Conversation renamed." |
+| SESS-15 | Conversations | Rename -- Not Found Error | Invalid session ID | `ConversationsSlashCommand.HandleRenameAsync` | No | Red error: "Session {id} not found." |
 
-### Refresh
-
-| ID | Area | Screen Name | Trigger | Implementation | Has Spec | Notes |
-|---|---|---|---|---|---|---|
-| REFRESH-01 | Refresh | Success Summary | `/refresh` | `RefreshSlashCommand.RefreshAsync` | No | Green "v" + "Session context refreshed." + summary table with Directories (count + git count), Git branch (with "was:" if changed), Engine (refreshed/kept previous), System prompt (updated with char count diff or unchanged) -- changed items in bold, unchanged in dim |
-| REFRESH-02 | Refresh | No Session Error | No active session | `RefreshSlashCommand.RefreshAsync` | No | Red error: "No active session. Nothing to refresh." |
-| REFRESH-03 | Refresh | Project Not Found Error | Active project deleted | `RefreshSlashCommand.RefreshAsync` | No | Red error: "Project '{name}' not found. It may have been deleted." |
-| REFRESH-04 | Refresh | Missing Directory Warning | Project directory doesn't exist on disk | `RefreshSlashCommand.RefreshAsync` | No | Yellow warning per missing directory |
-| REFRESH-05 | Refresh | Engine Refresh Failure | Engine factory throws | `RefreshSlashCommand.RefreshAsync` | No | Yellow warning: "Engine refresh failed (keeping previous): {message}" |
-
-### Clear
+### Context Refresh
 
 | ID | Area | Screen Name | Trigger | Implementation | Has Spec | Notes |
 |---|---|---|---|---|---|---|
-| CLEAR-01 | Clear | Success | `/clear` | `ClearSlashCommand.TryHandleAsync` | No | Green "v" + "Cleared N message(s) from conversation history." |
-| CLEAR-02 | Clear | No Session Error | No active session | `ClearSlashCommand.TryHandleAsync` | No | Red error: "No active session." |
+| REFRESH-01 | Context | Success Summary | `/context refresh` | `ContextSlashCommand.HandleRefreshAsync` | No | Green "v" + "Session context refreshed." + summary table with Directories (count + git count), Git branch (with "was:" if changed), Engine (refreshed/kept previous), System prompt (updated with char count diff or unchanged) -- changed items in bold, unchanged in dim |
+| REFRESH-02 | Context | No Session Error | No active session | `ContextSlashCommand.HandleRefreshAsync` | No | Red error: "No active session. Nothing to refresh." |
+| REFRESH-03 | Context | Project Not Found Error | Active project deleted | `ContextSlashCommand.HandleRefreshAsync` | No | Red error: "Project '{name}' not found. It may have been deleted." |
+| REFRESH-04 | Context | Missing Directory Warning | Project directory doesn't exist on disk | `ContextSlashCommand.HandleRefreshAsync` | No | Yellow warning per missing directory |
+| REFRESH-05 | Context | Engine Refresh Failure | Engine factory throws | `ContextSlashCommand.HandleRefreshAsync` | No | Yellow warning: "Engine refresh failed (keeping previous): {message}" |
+
+### Conversations Clear
+
+| ID | Area | Screen Name | Trigger | Implementation | Has Spec | Notes |
+|---|---|---|---|---|---|---|
+| CLEAR-01 | Conversations | Success | `/conversations clear` | `ConversationsSlashCommand.HandleClearAsync` | No | Green "v" + "Cleared N message(s) from conversation history." |
+| CLEAR-02 | Conversations | No Session Error | No active session | `ConversationsSlashCommand.HandleClearAsync` | No | Red error: "No active session." |
 
 ### Expand
 
@@ -317,10 +317,8 @@ Each entry represents a distinct visual state -- something the user sees on scre
 | Project Management | 33 |
 | Provider Management | 14 |
 | JEA Profile Management | 43 |
-| Context Management | 11 |
-| Session Management | 12 |
-| Refresh | 5 |
-| Clear | 2 |
+| Context Management | 13 |
+| Conversation Management | 17 |
 | Expand | 3 |
 | Authentication | 13 |
 | System / Error | 9 |
@@ -381,9 +379,9 @@ CHAT LOOP (repeating)
     |       +-- [/provider ...] --> PROVIDER screens (PROV-*)
     |       +-- [/jea ...] --> JEA screens (JEA-*)
     |       +-- [/context ...] --> CONTEXT screens (CTX-*)
-    |       +-- [/sessions ...] --> SESSION screens (SESS-*)
-    |       +-- [/refresh] --> REFRESH-01 (Summary)
-    |       +-- [/clear] --> CLEAR-01 (Success)
+    |       +-- [/conversations ...] --> CONVERSATION screens (SESS-*)
+    |       +-- [/context refresh] --> REFRESH-01 (Summary)
+    |       +-- [/conversations clear] --> CLEAR-01 (Success)
     |       +-- [/expand] --> EXPAND-01/02/03
     |       +-- [unknown /cmd] --> CHAT-15/16 (Unknown Command)
     |       |
@@ -438,12 +436,15 @@ SLASH COMMAND FLOWS
     +-- /jea unassign --> JEA-38 (Selection) --> JEA-39 (Success)
     |
     +-- /context show --> CTX-02 (Dashboard)
-    +-- /context compact --> CTX-04 (Success)
-    +-- /context summarize --> CTX-07 (Success)
+    +-- /context summarize --> CTX-04 (Success)
     |
-    +-- /sessions list --> SESS-02 (Table)
-    +-- /sessions show --> SESS-04 (Detail View)
-    +-- /sessions delete --> SESS-07 (Confirmation) --> SESS-08 (Success)
+    +-- /conversations list --> SESS-02 (Table)
+    +-- /conversations show --> SESS-04 (Detail View)
+    +-- /conversations rename --> SESS-13 (Rename Prompt) --> SESS-14 (Success)
+    +-- /conversations delete --> SESS-07 (Confirmation) --> SESS-08 (Success)
+    +-- /conversations clear --> CLEAR-01 (Success)
+    |
+    +-- /context refresh --> REFRESH-01 (Summary)
 
 
 AUTHENTICATION (separate command: boydcode login)

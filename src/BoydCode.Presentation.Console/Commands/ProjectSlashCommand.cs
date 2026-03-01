@@ -445,7 +445,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
       if (section is "Docker image" or "Require container"
           && string.Equals(project.Name, _activeProject.Name, StringComparison.OrdinalIgnoreCase))
       {
-        _ui.StaleSettingsWarning = "Project settings changed. Run /refresh to apply.";
+        _ui.StaleSettingsWarning = "Project settings changed. Run /context refresh to apply.";
       }
 
       SpectreHelpers.Success("Project saved.");

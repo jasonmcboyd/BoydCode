@@ -1,20 +1,20 @@
-# Screen: /refresh
+# Screen: /context refresh
 
 ## Overview
 
-The refresh screen reloads the active project's configuration from disk,
-re-resolves directories, reconfigures the directory guard, rebuilds the session
-system prompt, and optionally recreates the execution engine. It then displays
-a before/after summary highlighting what changed. This is the mechanism for
-applying project edits (e.g., `/project edit`) to the running session without
-restarting.
+The context refresh screen reloads the active project's configuration from disk,
+re-resolves directories, reconfigures the directory guard, recreates the execution
+engine, and rebuilds the session system prompt (in that order, so path mappings
+from the new engine are available to the prompt builder). It then displays a
+before/after summary highlighting what changed. This is the mechanism for applying
+project edits (e.g., `/project edit`) to the running session without restarting.
 
 **Screen IDs**: REFRESH-01, REFRESH-02, REFRESH-03, REFRESH-04, REFRESH-05
 
 ## Trigger
 
-- User types `/refresh` during an active session.
-- Handled by `RefreshSlashCommand.RefreshAsync()`.
+- User types `/context refresh` during an active session.
+- Handled by `ContextSlashCommand.HandleRefreshAsync()`.
 
 ## Layout (80 columns)
 
@@ -143,13 +143,15 @@ None. This is a non-interactive operational command.
 - **Directory guard update**: `DirectoryGuard.ConfigureResolved()` is called
   with the newly resolved directories.
 
-- **System prompt rebuild**: `ChatCommand.BuildSystemPrompt()` reconstructs
-  the prompt from the project and resolved directories.
-
 - **Engine recreation**: A new `ExecutionConfig` is built from the project.
   `IExecutionEngineFactory.CreateAsync()` creates a new engine, which is set
   on `ActiveExecutionEngine`. If creation fails, a warning is shown and the
   previous engine is kept.
+
+- **System prompt rebuild**: `ChatCommand.BuildSystemPrompt()` reconstructs
+  the prompt from the project and resolved directories. This happens AFTER
+  engine recreation so that `_activeEngine.Engine?.PathMappings` (container
+  volume mounts) are available to the prompt builder.
 
 - **Status line update**: `_ui.StatusLine` is rebuilt with the updated
   provider, model, project, branch, and mode.
@@ -170,8 +172,8 @@ None. This is a non-interactive operational command.
   only appears if the factory itself throws.
 
 - **Concurrent project edits**: If another user/process edits the project
-  file between the refresh and the next `/refresh`, the changes are picked
-  up on the next refresh.
+  file between the refresh and the next `/context refresh`, the changes are
+  picked up on the next refresh.
 
 - **Non-interactive/piped terminal**: Renders normally. No prompts involved.
 
@@ -185,16 +187,16 @@ None. This is a non-interactive operational command.
 
 | Element | File | Method/Region | Lines |
 |---|---|---|---|
-| RefreshAsync | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 71-191 |
-| Before snapshot | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 83-88 |
-| Project reload | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 91-96 |
-| Directory resolution + warnings | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 99-103 |
-| Directory guard update | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 106 |
-| System prompt rebuild | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 109 |
-| Engine recreation | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 117-127 |
-| Status line update | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 130-136 |
-| Success message + logging | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 145-155 |
-| Summary rendering | `Commands/RefreshSlashCommand.cs` | `RefreshAsync` | 159-190 |
-| RenderSummaryLine helper | `Commands/RefreshSlashCommand.cs` | `RenderSummaryLine` | 193-197 |
+| HandleRefreshAsync | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 416-530 |
+| Before snapshot | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 429-433 |
+| Project reload | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 436-441 |
+| Directory resolution + warnings | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 444-448 |
+| Directory guard update | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 451 |
+| Engine recreation | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 462-472 |
+| System prompt rebuild (after engine) | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 475 |
+| Status line update | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 478-484 |
+| Success message + logging | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 494-505 |
+| Summary rendering | `Commands/ContextSlashCommand.cs` | `HandleRefreshAsync` | 508-530 |
+| RenderRefreshSummaryLine helper | `Commands/ContextSlashCommand.cs` | `RenderRefreshSummaryLine` | 532-539 |
 
 All file paths are relative to `src/BoydCode.Presentation.Console/`.

@@ -31,12 +31,16 @@ public sealed class HelpSlashCommand : ISlashCommand
     var sb = new StringBuilder();
 
     // Built-in commands (not in registry -- they live in the AgentOrchestrator loop)
-    AppendCommand(sb, "/quit", "Exit the session");
-    AppendCommand(sb, "/exit", "Exit the session");
+    AppendCommand(sb, "/quit", "Exit the session (also: /exit)");
 
-    // Registered commands
+    // Registered commands (skip /help -- rendered last)
     foreach (var descriptor in _registry.GetAllDescriptors())
     {
+      if (descriptor.Prefix.Equals("/help", StringComparison.OrdinalIgnoreCase))
+      {
+        continue;
+      }
+
       AppendCommand(sb, descriptor.Prefix, descriptor.Description);
 
       foreach (var sub in descriptor.Subcommands)
@@ -44,6 +48,9 @@ public sealed class HelpSlashCommand : ISlashCommand
         AppendSubcommand(sb, sub.Usage, sub.Description);
       }
     }
+
+    // /help always last
+    AppendCommand(sb, "/help", "Show available commands");
 
     _ui.ShowModal("Help", sb.ToString().TrimEnd());
     return Task.FromResult(true);

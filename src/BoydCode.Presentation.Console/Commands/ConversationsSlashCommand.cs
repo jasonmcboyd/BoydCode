@@ -8,35 +8,40 @@ using Spectre.Console;
 
 namespace BoydCode.Presentation.Console.Commands;
 
-public sealed class SessionsSlashCommand : ISlashCommand
+public sealed class ConversationsSlashCommand : ISlashCommand
 {
   private readonly ISessionRepository _sessionRepository;
   private readonly ActiveSession _activeSession;
   private readonly IUserInterface _ui;
+  private readonly IConversationLogger _conversationLogger;
 
-  public SessionsSlashCommand(
+  public ConversationsSlashCommand(
       ISessionRepository sessionRepository,
       ActiveSession activeSession,
-      IUserInterface ui)
+      IUserInterface ui,
+      IConversationLogger conversationLogger)
   {
     _sessionRepository = sessionRepository;
     _activeSession = activeSession;
     _ui = ui;
+    _conversationLogger = conversationLogger;
   }
 
   public SlashCommandDescriptor Descriptor { get; } = new(
-      "/sessions",
-      "Manage saved sessions",
+      "/conversations",
+      "Manage conversations and sessions",
       [
-          new("list", "List recent sessions"),
-          new("show [id]", "Show session details"),
-          new("delete [id]", "Delete a saved session"),
+          new("list", "List recent conversations"),
+          new("show [id]", "Show conversation details"),
+          new("rename [id] [name]", "Rename a conversation"),
+          new("delete [id]", "Delete a saved conversation"),
+          new("clear", "Clear conversation history"),
       ]);
 
   public async Task<bool> TryHandleAsync(string input, CancellationToken ct = default)
   {
     var tokens = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-    if (tokens.Length == 0 || !tokens[0].Equals("/sessions", StringComparison.OrdinalIgnoreCase))
+    if (tokens.Length == 0 || !tokens[0].Equals("/conversations", StringComparison.OrdinalIgnoreCase))
     {
       return false;
     }
@@ -51,11 +56,17 @@ public sealed class SessionsSlashCommand : ISlashCommand
       case "show":
         await HandleShowAsync(tokens, ct);
         break;
+      case "rename":
+        await HandleRenameAsync(tokens, ct);
+        break;
       case "delete":
         await HandleDeleteAsync(tokens, ct);
         break;
+      case "clear":
+        await HandleClearAsync(ct);
+        break;
       default:
-        SpectreHelpers.Usage("/sessions list|show|delete");
+        SpectreHelpers.Usage("/conversations list|show|rename|delete|clear");
         break;
     }
 
@@ -68,7 +79,7 @@ public sealed class SessionsSlashCommand : ISlashCommand
 
     if (sessions.Count == 0)
     {
-      SpectreHelpers.OutputMarkup("No saved sessions found.");
+      SpectreHelpers.OutputMarkup("No saved conversations found.");
       return;
     }
 
@@ -77,8 +88,8 @@ public sealed class SessionsSlashCommand : ISlashCommand
         .Take(20)
         .ToList();
 
-    var table = SpectreHelpers.SimpleTable("ID", "Project", "Messages", "Last accessed", "Preview");
-    table.Columns[2].RightAligned();
+    var table = SpectreHelpers.SimpleTable("ID", "Name", "Project", "Messages", "Last accessed", "Preview");
+    table.Columns[3].RightAligned();
 
     foreach (var session in sorted)
     {
@@ -86,6 +97,10 @@ public sealed class SessionsSlashCommand : ISlashCommand
       var idDisplay = isCurrent
           ? $"[green]{Markup.Escape(session.Id)}[/] [dim]*[/]"
           : Markup.Escape(session.Id);
+
+      var nameDisplay = session.Name is not null
+          ? Markup.Escape(session.Name)
+          : "[dim]--[/]";
 
       var projectDisplay = session.ProjectName is not null
           ? Markup.Escape(session.ProjectName)
@@ -97,9 +112,11 @@ public sealed class SessionsSlashCommand : ISlashCommand
       var lastAccessed = session.LastAccessedAt.LocalDateTime
           .ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
-      var preview = GetFirstMessagePreview(session, 60);
+      var preview = session.Name is not null
+          ? "[dim]--[/]"
+          : GetFirstMessagePreview(session, 60);
 
-      table.AddRow(idDisplay, projectDisplay, messageCount, lastAccessed, preview);
+      table.AddRow(idDisplay, nameDisplay, projectDisplay, messageCount, lastAccessed, preview);
     }
 
     SpectreHelpers.OutputRenderable(table);
@@ -115,7 +132,7 @@ public sealed class SessionsSlashCommand : ISlashCommand
   {
     if (tokens.Length <= 2)
     {
-      SpectreHelpers.Usage("/sessions show <id>");
+      SpectreHelpers.Usage("/conversations show <id>");
       return;
     }
 
@@ -132,6 +149,10 @@ public sealed class SessionsSlashCommand : ISlashCommand
 
     var grid = SpectreHelpers.InfoGrid();
     SpectreHelpers.AddInfoRow(grid, "Session", session.Id);
+    if (session.Name is not null)
+    {
+      SpectreHelpers.AddInfoRow(grid, "Name", session.Name);
+    }
     SpectreHelpers.AddInfoRow(grid,
         "Created", session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
         "Last used", session.LastAccessedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
@@ -175,11 +196,48 @@ public sealed class SessionsSlashCommand : ISlashCommand
     SpectreHelpers.OutputLine();
   }
 
+  private async Task HandleRenameAsync(string[] tokens, CancellationToken ct)
+  {
+    if (tokens.Length <= 2)
+    {
+      SpectreHelpers.Usage("/conversations rename <id> [name]");
+      return;
+    }
+
+    var sessionId = tokens[2];
+    var session = await _sessionRepository.LoadAsync(sessionId, ct);
+
+    if (session is null)
+    {
+      SpectreHelpers.Error($"Session '{sessionId}' not found.");
+      return;
+    }
+
+    string name;
+    if (tokens.Length > 3)
+    {
+      name = string.Join(' ', tokens.Skip(3));
+    }
+    else if (_ui.IsInteractive)
+    {
+      name = SpectreHelpers.PromptNonEmpty("  Name: ");
+    }
+    else
+    {
+      SpectreHelpers.Usage("/conversations rename <id> <name>");
+      return;
+    }
+
+    session.Name = name;
+    await _sessionRepository.SaveAsync(session, ct);
+    SpectreHelpers.Success($"Session '{Markup.Escape(sessionId)}' renamed to '{Markup.Escape(name)}'.");
+  }
+
   private async Task HandleDeleteAsync(string[] tokens, CancellationToken ct)
   {
     if (tokens.Length <= 2)
     {
-      SpectreHelpers.Usage("/sessions delete <id>");
+      SpectreHelpers.Usage("/conversations delete <id>");
       return;
     }
 
@@ -214,7 +272,23 @@ public sealed class SessionsSlashCommand : ISlashCommand
     }
 
     await _sessionRepository.DeleteAsync(sessionId, ct);
-    SpectreHelpers.Success($"Session '{sessionId}' deleted.");
+    SpectreHelpers.Success($"Session '{Markup.Escape(sessionId)}' deleted.");
+  }
+
+  private async Task HandleClearAsync(CancellationToken ct)
+  {
+    var session = _activeSession.Session;
+    if (session is null)
+    {
+      SpectreHelpers.Error("No active session.");
+      return;
+    }
+
+    var count = session.Conversation.Clear();
+    await _conversationLogger.LogContextClearAsync(count, ct);
+    await _sessionRepository.SaveAsync(session, ct);
+
+    SpectreHelpers.Success($"Cleared {count} message(s) from conversation history.");
   }
 
   private static string GetFirstMessagePreview(Domain.Entities.Session session, int maxLength)

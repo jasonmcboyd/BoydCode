@@ -51,7 +51,7 @@ most of the workday.
 - Types 5-30 messages per session. Most sessions involve at least one tool
   execution round (shell commands).
 - Uses 3-4 slash commands regularly: `/help` (early on, less now), `/context
-  show` (to check token usage), `/clear` (to reset when switching tasks), and
+  show` (to check token usage), `/conversations clear` (to reset when switching tasks), and
   `/project show` (to verify project config).
 - Rarely uses `/jea` commands -- set up his profiles once and has not touched
   them since.

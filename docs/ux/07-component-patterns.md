@@ -451,7 +451,7 @@ Standard data table for listing items. Simple border, bold headers, clean cells.
 
 ### When to Use
 
-`/project list`, `/jea list`, `/sessions list`, `/provider list`.
+`/project list`, `/jea list`, `/conversations list`, `/provider list`.
 
 ### Spectre.Console Implementation
 
@@ -489,12 +489,10 @@ to configuration and information while the AI continues working.
 |  /help            Show this help                           |
 |  /project <sub>   Manage projects                          |
 |  /provider <sub>  Manage LLM providers                     |
-|  /jea <sub>       Manage JEA security profiles             |
-|  /sessions <sub>  Manage sessions                          |
-|  /context <sub>   View/manage context window               |
-|  /expand          Show last tool output                    |
-|  /refresh         Refresh session context                  |
-|  /clear           Clear conversation                       |
+|  /jea <sub>           Manage JEA security profiles         |
+|  /conversations <sub> Manage sessions                      |
+|  /context <sub>       View/manage context window           |
+|  /expand              Show last tool output                |
 |  /quit            Exit BoydCode                            |
 |                                                            |
 |  [dim]Esc to dismiss[/]                                    |
@@ -550,7 +548,7 @@ Read-only slash commands that do not need interactive prompts:
 - `/help`
 - `/project show`, `/project list`
 - `/provider show`, `/provider list`
-- `/sessions list`, `/sessions show <id>`
+- `/conversations list`, `/conversations show <id>`
 - `/jea list`, `/jea show <name>`, `/jea effective`
 - `/context show`
 - `/expand`
@@ -747,7 +745,7 @@ then asks for confirmation.
 
 ### When to Use
 
-`/project delete`, `/sessions delete`, `/jea delete`, `/provider remove`.
+`/project delete`, `/conversations delete`, `/jea delete`, `/provider remove`.
 
 ### Spectre.Console Implementation
 

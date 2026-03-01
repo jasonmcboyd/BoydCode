@@ -58,6 +58,7 @@ internal static class SessionSerializer
       CreatedAt = session.CreatedAt,
       LastAccessedAt = session.LastAccessedAt,
       ProjectName = session.ProjectName,
+      Name = session.Name,
       SystemPrompt = session.SystemPrompt,
       Messages = messages,
     };
@@ -79,6 +80,7 @@ internal static class SessionSerializer
     {
       LastAccessedAt = doc.LastAccessedAt,
       ProjectName = doc.ProjectName,
+      Name = doc.Name,
       SystemPrompt = doc.SystemPrompt,
     };
 

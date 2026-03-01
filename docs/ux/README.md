@@ -51,10 +51,8 @@ Individual specs for every screen in the application. Each includes ASCII mockup
 | `/project` | [create](04-screens/slash-project-create.md), [list](04-screens/slash-project-list.md), [show](04-screens/slash-project-show.md), [edit](04-screens/slash-project-edit.md), [delete](04-screens/slash-project-delete.md) |
 | `/provider` | [list](04-screens/slash-provider-list.md), [setup](04-screens/slash-provider-setup.md), [show](04-screens/slash-provider-show.md), [remove](04-screens/slash-provider-remove.md) |
 | `/jea` | [list](04-screens/slash-jea-list.md), [create](04-screens/slash-jea-create.md), [edit](04-screens/slash-jea-edit.md), [show](04-screens/slash-jea-show.md), [effective](04-screens/slash-jea-effective.md), [assign/unassign](04-screens/slash-jea-assign.md) |
-| `/context` | [show](04-screens/slash-context-show.md), [compact](04-screens/slash-context-compact.md), [summarize](04-screens/slash-context-summarize.md) |
-| `/sessions` | [list](04-screens/slash-sessions-list.md), [show](04-screens/slash-sessions-show.md), [delete](04-screens/slash-sessions-delete.md) |
-| `/refresh` | [slash-refresh.md](04-screens/slash-refresh.md) |
-| `/clear` | [slash-clear.md](04-screens/slash-clear.md) |
+| `/conversations` | [list](04-screens/slash-conversations-list.md), [show](04-screens/slash-conversations-show.md), [rename](04-screens/slash-conversations-rename.md), [delete](04-screens/slash-conversations-delete.md), [clear](04-screens/slash-conversations-clear.md) |
+| `/context` | [show](04-screens/slash-context-show.md), [summarize](04-screens/slash-context-summarize.md), [refresh](04-screens/slash-context-refresh.md) |
 | `/expand` | [slash-expand.md](04-screens/slash-expand.md) |
 
 ### User Flows

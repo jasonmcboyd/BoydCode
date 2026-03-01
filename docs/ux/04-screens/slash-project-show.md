@@ -70,7 +70,7 @@ inspection command for understanding a project's setup.
     (blank line)
       ...
     (blank line)
-      * Project settings changed. Run /refresh to apply.
+      * Project settings changed. Run /context refresh to apply.
     (blank line)
 
 ### Not Found

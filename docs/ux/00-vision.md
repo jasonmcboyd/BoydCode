@@ -43,7 +43,7 @@ manifests in three ways:
 1. **Async input**: The user can type while the AI is thinking, streaming, or
    executing. Messages queue and process in order.
 2. **Modal overlays**: Read-only slash commands (/help, /project show, /context
-   show, /sessions list, /jea list) render as overlays that do not block the
+   show, /conversations list, /jea list) render as overlays that do not block the
    conversation. The AI continues working underneath.
 3. **Streaming everything**: LLM responses stream token by token. Tool output
    streams line by line. Nothing buffers to completion before showing output.
@@ -56,7 +56,7 @@ Show what matters now. Hide what might matter later. Reveal on demand.
 - **Level 1 -- Visible during activity**: Thinking indicator, execution badge,
   streaming text
 - **Level 2 -- On demand**: Token usage (/context), full tool output (/expand),
-  session history (/sessions show)
+  session history (/conversations show)
 - **Level 3 -- Diagnostic**: Debug logs (--debug), conversation JSON (/context
   show --raw), JSONL log files
 
@@ -169,8 +169,8 @@ commands that render over the conversation without interrupting it.
 - `/project list` -- List all projects
 - `/provider show` -- Display current provider config
 - `/provider list` -- List all providers
-- `/sessions list` -- List all sessions
-- `/sessions show <id>` -- Display session details
+- `/conversations list` -- List all sessions
+- `/conversations show <id>` -- Display session details
 - `/jea list` -- List JEA profiles
 - `/jea show <name>` -- Display profile details
 - `/jea effective` -- Show composed profile
@@ -187,12 +187,11 @@ commands that render over the conversation without interrupting it.
 - `/jea edit` -- Edit menu with SelectionPrompt
 - `/jea delete` -- Confirmation prompt
 - `/jea assign` / `/jea unassign` -- SelectionPrompt
-- `/sessions delete` -- Confirmation prompt
+- `/conversations delete` -- Confirmation prompt
 
 **Which commands are inline (render in the conversation flow):**
-- `/clear` -- Clears conversation, shows confirmation in content area
-- `/refresh` -- Refreshes context, shows confirmation in content area
-- `/context compact` -- Runs compaction, shows result in content area
+- `/conversations clear` -- Clears conversation, shows confirmation in content area
+- `/context refresh` -- Refreshes context, shows confirmation in content area
 - `/context summarize` -- Runs summarization, shows result in content area
 
 ### Rendering Pipeline
@@ -310,7 +309,7 @@ Remaining words are subcommands and arguments.
 /project show               -> Modal: show project details
 /project create             -> Suspend: wizard prompts
 /context show               -> Modal: context usage
-/clear                      -> Inline: clear conversation
+/conversations clear        -> Inline: clear conversation
 /quit                       -> Exit session
 ```
 

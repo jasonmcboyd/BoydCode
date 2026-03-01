@@ -18,6 +18,7 @@ public static class ServiceCollectionExtensions
     services.AddSingleton<ActiveExecutionEngine>();
     services.AddTransient<ProjectResolver>();
     services.AddSingleton<IExecutionEngineFactory, ExecutionEngineFactory>();
+    services.AddSingleton<IContextCompactor, SmartPruneCompactor>();
     services.AddTransient<AgentOrchestrator>();
     services.AddTransient<JeaProfileComposer>();
     return services;

@@ -1,26 +1,29 @@
-# Screen: /sessions show
+# Screen: /conversations show
 
 ## Overview
 
-The sessions show screen displays detailed metadata about a specific saved
-session, including an info grid with key properties and a preview of the first
-5 messages with role-colored labels. It also provides a resumption hint showing
-the CLI command to resume the session.
+The conversations show screen displays detailed metadata about a specific saved
+conversation, including an info grid with key properties and a preview of the
+first 5 messages with role-colored labels. When the session carries a name, an
+additional Name row appears in the info grid between the Session and Created
+rows. A resumption hint showing the CLI command to resume the session is shown
+at the bottom.
 
 **Screen IDs**: SESS-04, SESS-05, SESS-06
 
 ## Trigger
 
-- User types `/sessions show <id>` during an active session.
-- Handled by `SessionsSlashCommand.HandleShowAsync()`.
+- User types `/conversations show <id>` during an active session.
+- Handled by `ConversationsSlashCommand.HandleShowAsync()`.
 
 ## Layout (80 columns)
 
-### Detail View
+### Detail View (with name)
 
 ```
 (blank line)
   Session   abc12345
+  Name      Auth implementation work
   Created   2026-02-27 14:30     Last used   2026-02-27 16:45
   Project   my-project           Messages    24
   Directory C:\Users\jason\source\repos\my-project
@@ -39,6 +42,19 @@ the CLI command to resume the session.
 (blank line)
 ```
 
+### Detail View (no name)
+
+```
+(blank line)
+  Session   abc12345
+  Created   2026-02-27 14:30     Last used   2026-02-27 16:45
+  Project   my-project           Messages    24
+  Directory C:\Users\jason\source\repos\my-project
+(blank line)
+  Recent messages
+...
+```
+
 ### Not Found
 
 ```
@@ -48,7 +64,7 @@ Error: Session abc12345 not found.
 ### Usage (no ID)
 
 ```
-Usage: /sessions show <id>
+Usage: /conversations show <id>
 ```
 
 ### Anatomy
@@ -56,6 +72,8 @@ Usage: /sessions show <id>
 1. **Blank line**.
 2. **Info grid** -- `SpectreHelpers.InfoGrid()` with 4 columns.
    - Row 1: `Session` / ID (single value row).
+   - Row 1a (conditional): `Name` / `session.Name` -- only present when
+     `session.Name is not null`.
    - Row 2: `Created` / datetime, `Last used` / datetime (paired row).
    - Row 3: `Project` / name or "(none)", `Messages` / count (paired row).
    - Row 4: `Directory` / working directory path (single value row).
@@ -76,6 +94,8 @@ Usage: /sessions show <id>
 
 | State | Condition | Visual Difference |
 |---|---|---|
+| Detail view (with name) | Session found, has a name | Info grid includes Name row between Session and Created |
+| Detail view (no name) | Session found, no name set | Info grid omits Name row |
 | Detail view (with messages) | Session found, has messages | Full info grid + message preview + resume hint |
 | Detail view (no messages) | Session found, 0 messages | Info grid only, no "Recent messages" section |
 | Detail view (many messages) | Session found, > 5 messages | Message preview shows first 5 + dim "...N more" overflow |
@@ -103,6 +123,10 @@ None. This is a read-only detail view.
 
 - **Session loading**: The session is loaded from `ISessionRepository.LoadAsync()`.
   If the repository returns null, the not-found error is displayed.
+
+- **Name row**: The Name row is conditionally added to the info grid only when
+  `session.Name is not null`. Sessions without a name omit the row entirely
+  rather than showing a placeholder.
 
 - **Date formatting**: Both `CreatedAt` and `LastAccessedAt` are converted
   to local time and formatted as `yyyy-MM-dd HH:mm` using
@@ -145,13 +169,14 @@ None. This is a read-only detail view.
 
 | Element | File | Method/Region | Lines |
 |---|---|---|---|
-| HandleShowAsync | `Commands/SessionsSlashCommand.cs` | `HandleShowAsync` | 114-176 |
-| Usage guard | `Commands/SessionsSlashCommand.cs` | `HandleShowAsync` | 116-120 |
-| Not found guard | `Commands/SessionsSlashCommand.cs` | `HandleShowAsync` | 125-129 |
-| Info grid construction | `Commands/SessionsSlashCommand.cs` | `HandleShowAsync` | 133-142 |
-| Message preview loop | `Commands/SessionsSlashCommand.cs` | `HandleShowAsync` | 145-170 |
-| Overflow indicator | `Commands/SessionsSlashCommand.cs` | `HandleShowAsync` | 166-169 |
-| Resume hint | `Commands/SessionsSlashCommand.cs` | `HandleShowAsync` | 173-174 |
-| GetMessageText utility | `Commands/SessionsSlashCommand.cs` | `GetMessageText` | 234-261 |
+| HandleShowAsync | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 131-197 |
+| Usage guard | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 133-137 |
+| Not found guard | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 142-146 |
+| Info grid construction | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 150-163 |
+| Name row (conditional) | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 152-155 |
+| Message preview loop | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 166-191 |
+| Overflow indicator | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 187-191 |
+| Resume hint | `Commands/ConversationsSlashCommand.cs` | `HandleShowAsync` | 194-196 |
+| GetMessageText utility | `Commands/ConversationsSlashCommand.cs` | `GetMessageText` | 308-335 |
 
 All file paths are relative to `src/BoydCode.Presentation.Console/`.

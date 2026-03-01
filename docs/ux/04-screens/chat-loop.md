@@ -205,11 +205,9 @@ with the modal panel.
 |  /project <sub>     Manage projects (create, list, show, edit, delete)                                   |
 |  /provider <sub>    Manage LLM providers (setup, list, show, remove)                                     |
 |  /jea <sub>         Manage JEA security profiles                                                         |
-|  /sessions <sub>    Manage sessions (list, show, delete)                                                 |
-|  /context <sub>     View/manage context window (show, compact, summarize)                                |
+|  /conversations <sub>  Manage conversations (list, show, rename, delete, clear)                         |
+|  /context <sub>     View/manage context window (show, summarize, refresh)                               |
 |  /expand            Show last tool output                                                                |
-|  /refresh           Refresh session context                                                              |
-|  /clear             Clear conversation                                                                   |
 |  /quit              Exit BoydCode                                                                        |
 |                                                                                                          |
 |  Esc to dismiss                                                                                          |
@@ -361,9 +359,9 @@ Lines starting with `/` are dispatched to the slash command registry:
 
 | Category | Commands | Behavior |
 |----------|----------|----------|
-| Modal | `/help`, `/project show`, `/project list`, `/provider show`, `/provider list`, `/sessions list`, `/sessions show`, `/jea list`, `/jea show`, `/jea effective`, `/context show`, `/expand` | Open modal overlay in Content region |
-| Interactive | `/project create`, `/project edit`, `/project delete`, `/provider setup`, `/provider remove`, `/jea create`, `/jea edit`, `/jea delete`, `/jea assign`, `/jea unassign`, `/sessions delete` | Suspend Live, run prompts, resume Live |
-| Inline | `/clear`, `/refresh`, `/context compact`, `/context summarize` | Execute and show result in Content region |
+| Modal | `/help`, `/project show`, `/project list`, `/provider show`, `/provider list`, `/conversations list`, `/conversations show`, `/jea list`, `/jea show`, `/jea effective`, `/context show`, `/expand` | Open modal overlay in Content region |
+| Interactive | `/project create`, `/project edit`, `/project delete`, `/provider setup`, `/provider remove`, `/jea create`, `/jea edit`, `/jea delete`, `/jea assign`, `/jea unassign`, `/conversations rename`, `/conversations delete`, `/context summarize` | Suspend Live, run prompts, resume Live |
+| Inline | `/context refresh`, `/conversations clear` | Execute and show result in Content region |
 | Exit | `/quit`, `/exit` | End session loop |
 
 ---

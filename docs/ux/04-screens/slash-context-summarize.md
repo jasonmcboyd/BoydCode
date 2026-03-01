@@ -2,30 +2,70 @@
 
 ## Overview
 
-The context summarize screen triggers LLM-powered conversation summarization.
-It sends earlier conversation messages to the active LLM provider with a
-specialized summarization system prompt, then replaces those messages with the
-summary while preserving the most recent user-assistant exchange. An optional
-focus topic narrows the summary's emphasis.
+The context summarize screen is an interactive command that generates an
+LLM-powered conversation summary, displays a preview panel, and asks the user
+whether to Apply, Revise, or Cancel before committing. Optional free-form
+instructions after the command narrow the summary's focus. If the terminal is
+non-interactive (piped), the first generated summary is applied automatically.
 
-This is the only slash command that makes an LLM API call, so it may take
-several seconds to complete and does not provide a progress indicator.
+Earlier conversation messages are sent to the active LLM provider with a
+specialized summarization system prompt. On Apply, those messages are replaced
+with the summary while preserving the most recent user-assistant exchange. The
+Revise path re-runs the LLM with additional feedback appended to the system
+prompt; each revision replaces the previous feedback rather than accumulating it.
 
 **Screen IDs**: CTX-07, CTX-08, CTX-09, CTX-10, CTX-11
 
 ## Trigger
 
-- User types `/context summarize` or `/context summarize <topic>` during an
-  active session.
+- User types `/context summarize` or `/context summarize <instructions>` during
+  an active session.
 - Handled by `ContextSlashCommand.HandleSummarizeAsync()`.
 
 ## Layout (80 columns)
 
-### Success
+### Preview State
+
+```
+  +-- Summary Preview -----------------------------------------------+
+  |                                                                    |
+  |  Key decisions:                                                    |
+  |  - Adopted Clean Architecture with strict layer separation         |
+  |  - Chose Spectre.Console for terminal UI                           |
+  |                                                                    |
+  |  File paths:                                                       |
+  |  - src/BoydCode.Presentation.Console/SpectreHelpers.cs             |
+  |                                                                    |
+  +--------------------------------------------------------------------+
+
+  22 messages -> 1 summary message (estimated 8,400 -> 950 tokens)
+
+  What would you like to do?
+  > Apply
+    Revise
+    Cancel
+```
+
+### After Apply
 
 ```
   v Summarized 24 messages into 3. Estimated tokens: 1,200
 ```
+
+### After Cancel
+
+```
+  Cancelled.
+```
+
+### After Revise
+
+```
+Revision instructions: _
+```
+
+The revision instructions prompt accepts free-form text, then re-runs the LLM
+and re-renders the preview panel. The loop repeats until Apply or Cancel.
 
 ### Too Few Messages
 
@@ -57,101 +97,161 @@ Error: Summarization failed: Connection timed out.
 Error: Summarization produced no output.
 ```
 
+### Anatomy
+
+1. **Guards** -- No session, no provider, and too-few-messages checks run
+   before any LLM call. Errors are rendered and the command returns.
+2. **Indicator bar** -- `TuiLayout.Current?.SetIndicator(IndicatorState.Thinking)`
+   is set before the LLM call. `IndicatorState.Idle` is restored in a `finally`
+   block after each LLM call completes or fails.
+3. **Preview panel** -- `Panel(new Text(summaryText))` with:
+   - `.Header("[bold]Summary Preview[/]")`
+   - `.Border(BoxBorder.Rounded)`
+   - `.BorderColor(Color.Grey)`
+   - `.Padding(2, 1)`
+   - `.Expand()`
+   Uses `Text` (not `Markup`) because LLM output may contain markup-like chars.
+4. **Token savings line** -- `[dim]{count} messages -> 1 summary message
+   (estimated {before:N0} -> {after:N0} tokens)[/]` at 2-space indent,
+   rendered below the panel.
+5. **Selection prompt** -- `SpectreHelpers.Select("What would you like to do?",
+   ["Apply", "Revise", "Cancel"])`.
+6. **Revision prompt** -- `SpectreHelpers.PromptNonEmpty("Revision
+   [green]instructions[/]:")`. Only shown when "Revise" is selected.
+
 ## States
 
-| State | Condition | Visual Difference |
+| State | Condition | Visual |
 |---|---|---|
-| Success | Summarization returns non-empty text | Green "v" + summary with original and new message counts, estimated tokens |
+| Preview | Summary generated | Panel + token savings line + selection prompt |
+| Apply | User selects Apply | Messages replaced; success message rendered |
+| Revise | User selects Revise | Revision instructions prompt; LLM re-runs; loop to Preview |
+| Cancel | User selects Cancel | Dim "Cancelled." message |
+| Non-interactive | `_ui.IsInteractive` is false | First summary auto-applied without prompting |
 | Too few messages | < 4 messages in conversation | Plain text explaining minimum requirement |
 | No session | Session is null | Red "Error:" + "No active session." |
 | No provider | `ActiveProvider.IsConfigured` is false | Red "Error:" + "No LLM provider configured." |
 | Empty summary | LLM returns empty/whitespace | Red "Error:" + "Summarization produced no output." |
-| LLM error | API call throws (non-cancellation) | Red "Error:" + "Summarization failed: {message}"; conversation restored to original |
+| LLM error | API call throws (non-cancellation) | Red "Error:" + "Summarization failed: {message}"; conversation restored |
 
 ## Markup Tokens Used
 
 | Token | Style Token (06-style-tokens.md) | Usage on This Screen |
 |---|---|---|
-| `[green]v[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
+| `[bold]` | bold (2.2) | Panel header "Summary Preview" |
+| `BoxBorder.Rounded` | (border style) | Panel border shape |
+| `Color.Grey` | (color) | Panel border color (signals provisional content) |
+| `[dim]` | dim (2.2) | Token savings line |
+| `[green]` | success-green (1.1) | Selection prompt highlight; revision instructions label |
+| `[green]v[/]` | success-green + success indicator (1.1, 3.1) | Success message prefix |
 | `[red]Error:[/]` | error-red (1.1) | Error prefix for all error states |
+| `[dim]Cancelled.[/]` | dim (2.2) | Cancel confirmation message |
 
 ## Interactive Elements
 
-None. This is a non-interactive command. The LLM call blocks until complete
-or cancelled.
+| Element | Type | Condition |
+|---|---|---|
+| Action selection | `SpectreHelpers.Select` | Rendered after preview; interactive terminals only |
+| Revision instructions | `SpectreHelpers.PromptNonEmpty` | Rendered after "Revise" is selected |
 
 ## Behavior
 
 - **Recent exchange preservation**: Before summarization, the method extracts
   the most recent user-assistant exchange (the last 2 messages, if the
   second-to-last is a user text message without tool results). These messages
-  are preserved verbatim and appended after the summary.
+  are preserved verbatim and appended after the summary on Apply.
 
 - **Summarization request**: An `LlmRequest` is constructed with:
   - A dedicated summarization system prompt that instructs the LLM to capture
     key decisions, file paths, pending tasks, and technical context.
-  - If a focus topic is provided, it is appended to the system prompt.
   - `Tools` is empty, `ToolChoice` is `None`, `Stream` is `false`.
   - `Messages` contains only the messages to summarize (everything except the
     preserved recent exchange).
 
-- **Message replacement**: On success, the conversation's messages are
-  replaced with: a single user message containing the summary text (prefixed
-  with "[The following is a summary of the earlier conversation.]"), followed
-  by the preserved recent exchange.
+- **Preview loop**: The command runs a `while (true)` loop. On each iteration:
+  the system prompt is built, the Thinking indicator is set, the LLM is called,
+  the indicator is set to Idle, the preview panel and token savings line are
+  rendered, and the selection prompt is shown. The loop exits on Apply or Cancel.
+
+- **Revision feedback**: When the user selects Revise, a free-form instructions
+  prompt is shown. The feedback is appended to the summarization system prompt
+  as `\n\nRevision feedback: {feedback}`. Each revision replaces the previous
+  feedback string -- feedback does not accumulate across multiple Revise cycles.
+
+- **Token estimation**: `EstimateContentBlockTokens` computes a character-based
+  approximation: `TextBlock` chars / 4, `ToolUseBlock` (name + args) / 4,
+  `ToolResultBlock` content / 4, `ImageBlock` fixed at 250 tokens.
+
+- **Non-interactive fallback**: When `_ui.IsInteractive` is false, the first
+  generated summary is applied immediately without showing the selection prompt.
+
+- **Indicator bar**: `TuiLayout.Current?.SetIndicator(IndicatorState.Thinking)`
+  is set before each LLM call. `IndicatorState.Idle` is always restored in
+  the `finally` block, including on error or cancellation.
+
+- **Message replacement on Apply**: The conversation's messages are replaced
+  with a single user message containing the summary text (prefixed with
+  "[The following is a summary of the earlier conversation.]"), followed by
+  the preserved recent exchange. Handled by `ApplySummary`.
 
 - **Rollback on failure**: If the LLM call throws (any exception other than
   `OperationCanceledException`), the conversation's messages are restored to
-  the original list captured before the attempt.
+  the original list captured before the attempt. The preview loop exits.
 
-- **Logging**: After successful summarization, the event is logged via
+- **Logging**: After successful Apply, the event is logged via
   `IConversationLogger.LogContextSummarizeAsync()` with original and new
   message counts.
 
-- **Token display**: The success message shows estimated tokens from
-  `conversation.EstimateTokenCount()` formatted with `N0`.
-
 ## Edge Cases
 
-- **Focus topic with special characters**: The focus topic is interpolated
-  into the system prompt as plain text. Markup-special characters in the
-  topic do not affect rendering because the topic is never rendered to the
-  console -- only sent to the LLM.
+- **Focus instructions with markup characters**: The instructions are
+  interpolated into the system prompt as plain text and never rendered to the
+  console, so Spectre markup injection is not a concern.
 
 - **Exactly 4 messages**: The minimum 4-message check allows summarization.
-  If the last 2 messages qualify as a recent exchange, only 2 messages are
-  sent to the LLM for summarization, which may produce a trivial summary.
+  If the last 2 qualify as a recent exchange, only 2 messages are sent for
+  summarization, which may produce a trivial summary. The user can Cancel.
 
-- **Cancellation**: `OperationCanceledException` propagates without being
-  caught by the error handler, allowing the outer cancellation flow to
-  handle it. The conversation is not modified (the catch block only runs
-  for non-cancellation exceptions).
+- **Multiple Revise cycles**: Each Revise cycle replaces the previous feedback.
+  The panel re-renders on each iteration, showing the updated summary.
 
-- **Non-interactive/piped terminal**: Renders normally. No prompts involved.
+- **Cancellation**: `OperationCanceledException` propagates without being caught
+  by the error handler, allowing the outer cancellation flow to handle it. The
+  conversation is not modified.
 
-- **Long-running call**: There is no spinner or progress indicator during
-  the LLM call. The user sees no output until the call completes. This is
-  a known UX gap -- the command blocks silently.
+- **Non-interactive/piped terminal**: Auto-applies the first generated summary.
+  No prompts are shown.
 
 ## Component Patterns Used
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
 | Status Message | Section 1 | Success and error messages |
+| Modal Panel | Section (Panel) | Preview panel wrapping LLM summary text |
 
 ## Implementation
 
 | Element | File | Method/Region | Lines |
 |---|---|---|---|
-| HandleSummarizeAsync | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 432-514 |
-| Guard: no session | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 434-439 |
-| Guard: no provider | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 441-445 |
-| Guard: too few messages | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 448-452 |
-| Recent exchange extraction | `Commands/ContextSlashCommand.cs` | `ExtractRecentExchange` | 520-537 |
-| Summarization system prompt | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 459-468 |
-| LlmRequest construction | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 475-483 |
-| Message replacement | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 498-504 |
-| Rollback on error | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 509-513 |
-| Logging | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 507 |
+| HandleSummarizeAsync | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 542-668 |
+| Guard: no session | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 544-549 |
+| Guard: no provider | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 551-555 |
+| Guard: too few messages | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 564-568 |
+| Recent exchange extraction | `Commands/ContextSlashCommand.cs` | `ExtractRecentExchange` | 740-757 |
+| Token estimation | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 575 |
+| EstimateContentBlockTokens helper | `Commands/ContextSlashCommand.cs` | `EstimateContentBlockTokens` | 713-737 |
+| System prompt construction | `Commands/ContextSlashCommand.cs` | `BuildSummarizeSystemPrompt` | 670-694 |
+| LlmRequest construction | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 584-592 |
+| LLM call with indicator | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 596-606 |
+| Error handler | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 608-614 |
+| Empty summary guard | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 616-620 |
+| Preview panel construction | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 624-629 |
+| Token savings display | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 632-637 |
+| Non-interactive auto-apply | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 640-645 |
+| Selection prompt | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 648-650 |
+| Apply path | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 654-657 |
+| Revise path | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 659-661 |
+| Cancel path | `Commands/ContextSlashCommand.cs` | `HandleSummarizeAsync` | 663-665 |
+| ApplySummary helper | `Commands/ContextSlashCommand.cs` | `ApplySummary` | 696-711 |
 
 All file paths are relative to `src/BoydCode.Presentation.Console/`.

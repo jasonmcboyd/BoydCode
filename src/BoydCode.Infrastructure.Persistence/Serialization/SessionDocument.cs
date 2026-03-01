@@ -24,6 +24,9 @@ internal sealed class SessionDocument
   [JsonPropertyName("project_name")]
   public string? ProjectName { get; set; }
 
+  [JsonPropertyName("name")]
+  public string? Name { get; set; }
+
   [JsonPropertyName("system_prompt")]
   public string? SystemPrompt { get; set; }
 

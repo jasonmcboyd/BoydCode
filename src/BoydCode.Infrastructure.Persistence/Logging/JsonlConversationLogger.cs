@@ -38,12 +38,28 @@ public sealed partial class JsonlConversationLogger : IConversationLogger, IAsyn
     _logger = logger;
   }
 
-  public Task InitializeAsync(string sessionId, CancellationToken ct = default)
+  public async Task InitializeAsync(string sessionId, CancellationToken ct = default)
   {
-    _sessionId = sessionId;
-
+    await _writeLock.WaitAsync(ct).ConfigureAwait(false);
     try
     {
+      if (_writer is not null)
+      {
+        try
+        {
+          await _writer.FlushAsync(ct).ConfigureAwait(false);
+          await _writer.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          LogDisposeFailed(ex);
+        }
+
+        _writer = null;
+      }
+
+      _sessionId = sessionId;
+
       Directory.CreateDirectory(LogDirectory);
       var filePath = GetLogFilePath(sessionId);
       var stream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.Read);
@@ -54,8 +70,10 @@ public sealed partial class JsonlConversationLogger : IConversationLogger, IAsyn
     {
       LogInitializationFailed(sessionId, ex);
     }
-
-    return Task.CompletedTask;
+    finally
+    {
+      _writeLock.Release();
+    }
   }
 
   public Task LogSessionStartAsync(
@@ -188,13 +206,33 @@ public sealed partial class JsonlConversationLogger : IConversationLogger, IAsyn
   }
 
   public Task LogContextSummarizeAsync(
+    string summaryText, string? instructions,
     int messagesBefore, int messagesAfter,
+    int tokensBefore, int tokensAfter,
     CancellationToken ct = default)
   {
     return WriteEventAsync("context_summarize", new
     {
+      summary_text = Truncate(summaryText, MaxTextContentChars),
+      instructions = instructions is not null ? Truncate(instructions, MaxTextContentChars) : null,
       messages_before = messagesBefore,
       messages_after = messagesAfter,
+      tokens_before = tokensBefore,
+      tokens_after = tokensAfter,
+    }, ct);
+  }
+
+  public Task LogContextForkAsync(
+    string oldSessionId, string newSessionId,
+    string summaryText, string? autoName,
+    CancellationToken ct = default)
+  {
+    return WriteEventAsync("context_fork", new
+    {
+      old_session_id = oldSessionId,
+      new_session_id = newSessionId,
+      summary_text = Truncate(summaryText, MaxTextContentChars),
+      auto_name = autoName,
     }, ct);
   }
 

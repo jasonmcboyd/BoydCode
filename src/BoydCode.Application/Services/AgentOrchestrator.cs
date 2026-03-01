@@ -31,6 +31,7 @@ public sealed partial class AgentOrchestrator
   private readonly ILogger<AgentOrchestrator> _logger;
   private int _totalInputTokens;
   private int _totalOutputTokens;
+  private bool _contextWarningIssued;
 
   public AgentOrchestrator(
       ActiveProvider activeProvider,
@@ -212,6 +213,8 @@ public sealed partial class AgentOrchestrator
         // Process tool calls or stop
         if (!response.HasToolUse)
         {
+          var (contextLimit, systemPromptTokens) = GetContextBudgetInfo(session);
+          CheckContextPressure(session, systemPromptTokens, contextLimit);
           _ui.SetAgentBusy(false);
           await AutoSaveSessionAsync(session, ct);
           return;
@@ -325,16 +328,41 @@ public sealed partial class AgentOrchestrator
     }
   }
 
-  private async Task CompactIfNeededAsync(Session session, CancellationToken ct)
+  private (int ContextLimit, int SystemPromptTokens) GetContextBudgetInfo(Session session)
   {
-    var messageTokens = session.Conversation.EstimateTokenCount();
     var metaPromptText = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
     var systemPromptTokens = (metaPromptText.Length + (session.SystemPrompt?.Length ?? 0)) / 4;
-    var estimated = messageTokens + systemPromptTokens;
-
     var contextLimit = _activeProvider.Provider!.Capabilities.MaxContextWindowTokens > 0
         ? _activeProvider.Provider!.Capabilities.MaxContextWindowTokens
         : _settings.ContextWindowTokenLimit;
+    return (contextLimit, systemPromptTokens);
+  }
+
+  private void CheckContextPressure(Session session, int systemPromptTokens, int contextLimit)
+  {
+    var postTurnTokens = session.Conversation.EstimateTokenCount() + systemPromptTokens;
+    var warningThreshold = contextLimit * _settings.ContextWarningThresholdPercent / 100;
+
+    if (postTurnTokens > warningThreshold && !_contextWarningIssued)
+    {
+      var usagePercent = (int)((double)postTurnTokens / contextLimit * 100);
+      _ui.RenderWarning(
+          $"Context usage at {usagePercent}% ({postTurnTokens:N0}/{contextLimit:N0} tokens). " +
+          $"Consider /context summarize or /context prune to free space before auto-prune at {_settings.CompactionThresholdPercent}%.");
+      _contextWarningIssued = true;
+    }
+    else if (postTurnTokens <= warningThreshold)
+    {
+      _contextWarningIssued = false;
+    }
+  }
+
+  private async Task CompactIfNeededAsync(Session session, CancellationToken ct)
+  {
+    var messageTokens = session.Conversation.EstimateTokenCount();
+    var (contextLimit, systemPromptTokens) = GetContextBudgetInfo(session);
+    var estimated = messageTokens + systemPromptTokens;
+
     var threshold = contextLimit * _settings.CompactionThresholdPercent / 100;
     if (estimated > threshold)
     {
@@ -350,15 +378,15 @@ public sealed partial class AgentOrchestrator
           && newCount != previousCount
           && session.Conversation.Messages[0].Content
               .OfType<TextBlock>()
-              .Any(t => t.Text.Contains("compacted to manage context window size"));
+              .Any(t => t.Text.Contains("to manage context window size"));
       var keptCount = hasNotice ? newCount - 1 : newCount;
       var droppedCount = previousCount - keptCount;
       if (droppedCount > 0)
       {
         var newEstimate = session.Conversation.EstimateTokenCount() + systemPromptTokens;
+        var tokensSaved = estimated - newEstimate;
         _ui.RenderWarning(
-          $"Context compacted: {droppedCount} message(s) removed to fit context window. " +
-          $"Estimated tokens: {newEstimate:N0} (target: {targetTokens:N0}).");
+          $"Pruned {droppedCount} older messages (freed ~{tokensSaved:N0} tokens).");
         await _conversationLogger.LogContextCompactionAsync(previousCount, newCount, estimated, newEstimate, ct);
       }
     }

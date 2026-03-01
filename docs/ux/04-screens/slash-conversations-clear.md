@@ -1,18 +1,18 @@
-# Screen: /clear
+# Screen: /conversations clear
 
 ## Overview
 
-The clear screen removes all messages from the active session's conversation
-history. It is an immediate, non-confirmable operation -- messages are cleared,
-the session is auto-saved, and a success message is displayed. This is the
-simplest slash command in the application.
+The conversations clear screen removes all messages from the active session's
+conversation history. It is an immediate, non-confirmable operation -- messages
+are cleared, the session is auto-saved, and a success message is displayed.
+This is the simplest subcommand of `/conversations`.
 
 **Screen IDs**: CLEAR-01, CLEAR-02
 
 ## Trigger
 
-- User types `/clear` during an active session.
-- Handled by `ClearSlashCommand.TryHandleAsync()`.
+- User types `/conversations clear` during an active session.
+- Handled by `ConversationsSlashCommand.HandleClearAsync()`.
 
 ## Layout (80 columns)
 
@@ -58,7 +58,7 @@ None. No confirmation prompt. The operation is immediate.
 - **Auto-save**: The session is immediately saved via `ISessionRepository
   .SaveAsync()`. This persists the now-empty conversation to disk.
 
-- **No confirmation**: Unlike `/sessions delete`, this command does not
+- **No confirmation**: Unlike `/conversations delete`, this command does not
   prompt for confirmation. This is intentional -- clearing conversation
   history is recoverable (the user can continue the conversation, and old
   messages are in the JSONL log file), while session deletion is permanent.
@@ -84,11 +84,11 @@ None. No confirmation prompt. The operation is immediate.
 
 | Element | File | Method/Region | Lines |
 |---|---|---|---|
-| TryHandleAsync | `Commands/ClearSlashCommand.cs` | `TryHandleAsync` | 28-49 |
-| No session guard | `Commands/ClearSlashCommand.cs` | `TryHandleAsync` | 36-41 |
-| Clear + count | `Commands/ClearSlashCommand.cs` | `TryHandleAsync` | 43 |
-| Logging | `Commands/ClearSlashCommand.cs` | `TryHandleAsync` | 44 |
-| Auto-save | `Commands/ClearSlashCommand.cs` | `TryHandleAsync` | 45 |
-| Success message | `Commands/ClearSlashCommand.cs` | `TryHandleAsync` | 47 |
+| HandleClearAsync | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 278-292 |
+| No session guard | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 281-285 |
+| Clear + count | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 287 |
+| Logging | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 288 |
+| Auto-save | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 289 |
+| Success message | `Commands/ConversationsSlashCommand.cs` | `HandleClearAsync` | 291 |
 
 All file paths are relative to `src/BoydCode.Presentation.Console/`.

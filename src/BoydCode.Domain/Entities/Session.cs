@@ -8,6 +8,7 @@ public sealed class Session
   public DateTimeOffset CreatedAt { get; }
   public DateTimeOffset LastAccessedAt { get; set; }
   public string? ProjectName { get; set; }
+  public string? Name { get; set; }
   public string? SystemPrompt { get; set; }
 
   public Session(string workingDirectory)

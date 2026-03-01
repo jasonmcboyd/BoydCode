@@ -93,7 +93,7 @@ stdin is not a terminal (e.g., piped input, CI environment).
 | `/project delete` | Requires `<name>` argument; skips confirmation (proceeds to delete) | `ProjectSlashCommand.cs:477-479,539` |
 | `/provider setup` | Requires `<name>` argument; blocked: `"/provider setup requires an interactive terminal."` | `ProviderSlashCommand.cs:117-121,141-144` |
 | `/provider remove` | Requires `<name>` argument; shows usage if missing | `ProviderSlashCommand.cs:201-205` |
-| `/sessions delete` | Requires `<id>` argument; skips confirmation | `SessionsSlashCommand.cs:180-184,201-213` |
+| `/conversations delete` | Requires `<id>` argument; skips confirmation | `ConversationsSlashCommand.cs:180-184,201-213` |
 | `LoginCommand` | Blocked entirely: `"Login requires an interactive terminal."` | `LoginCommand.cs:33-37` |
 
 ### 2.3 Features Skipped
@@ -109,7 +109,7 @@ stdin is not a terminal (e.g., piped input, CI environment).
 ### 2.4 Behavioral Differences
 
 - **Confirmation prompts are skipped** in non-interactive mode for destructive
-  operations (`/project delete`, `/sessions delete`). The operation proceeds
+  operations (`/project delete`, `/conversations delete`). The operation proceeds
   without asking. This is by design for CI/scripting but could be dangerous.
 - **Multi-step wizards do not run.** After `/project create`, the "Configure
   project settings now?" prompt is skipped; the project is created with

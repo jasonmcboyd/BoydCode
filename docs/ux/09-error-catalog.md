@@ -80,7 +80,7 @@ message if different from the outer.
 
 | ID | Message | Trigger | Severity | Recovery | Stream | Implementation |
 |---|---|---|---|---|---|---|
-| ERR-CFG-06 | `Session '{id}' not found.` | `--resume` flag with non-existent session ID | Fatal | Check ID with `/sessions list`; start new session | stderr | `ChatCommand.cs:182` |
+| ERR-CFG-06 | `Session '{id}' not found.` | `--resume` flag with non-existent session ID | Fatal | Check ID with `/conversations list`; start new session | stderr | `ChatCommand.cs:182` |
 | ERR-CFG-07 | `Fatal error: {ex.Message}` + `Suggestion: The session has ended. Please restart boydcode.` | Unhandled exception in the session loop | Fatal | Restart application | stderr | `ChatCommand.cs:237` |
 
 ---
@@ -108,9 +108,9 @@ the `[yellow]Usage:[/]` pattern via `SpectreHelpers.Usage()`.
 | USG-03 | `Usage: /project create <name>` | `/project create` without name in non-interactive mode | `ProjectSlashCommand.cs:97` |
 | USG-04 | `Usage: /project show <name>` | `/project show` without name, no active project, non-interactive | `ProjectSlashCommand.cs:219` |
 | USG-05 | `Usage: /project delete <name>` | `/project delete` without name in non-interactive mode | `ProjectSlashCommand.cs:479` |
-| USG-06 | `Usage: /sessions list\|show\|delete` | `/sessions` with unknown subcommand | `SessionsSlashCommand.cs:58` |
-| USG-07 | `Usage: /sessions show <id>` | `/sessions show` without session ID | `SessionsSlashCommand.cs:118` |
-| USG-08 | `Usage: /sessions delete <id>` | `/sessions delete` without session ID | `SessionsSlashCommand.cs:182` |
+| USG-06 | `Usage: /conversations list\|show\|delete` | `/conversations` with unknown subcommand | `ConversationsSlashCommand.cs:58` |
+| USG-07 | `Usage: /conversations show <id>` | `/conversations show` without session ID | `ConversationsSlashCommand.cs:118` |
+| USG-08 | `Usage: /conversations delete <id>` | `/conversations delete` without session ID | `ConversationsSlashCommand.cs:182` |
 | USG-09 | `Usage: /jea list\|show\|create\|edit\|delete\|effective\|assign\|unassign` | `/jea` with unknown subcommand | `JeaSlashCommand.cs:96` |
 | USG-10 | `Usage: /provider list\|setup\|show\|remove` | `/provider` with unknown subcommand | `ProviderSlashCommand.cs:67` |
 | USG-11 | `Usage: /provider setup <name>` | `/provider setup` without name in non-interactive mode | `ProviderSlashCommand.cs:119` |
@@ -142,11 +142,11 @@ the `[yellow]Usage:[/]` pattern via `SpectreHelpers.Usage()`.
 
 | ID | Message | Trigger | Severity | Recovery | Stream | Implementation |
 |---|---|---|---|---|---|---|
-| ERR-SES-01 | `No active session.` | `/clear`, `/context show`, `/context compact`, `/context summarize`, `/refresh` when no session exists | Recoverable | Start a chat session first | stdout | `ClearSlashCommand.cs:39`, `ContextSlashCommand.cs:93,403,445`, `RefreshSlashCommand.cs:79` |
-| ERR-SES-02 | `No active session. Nothing to refresh.` | `/refresh` when session or project is null | Recoverable | Start a chat session first | stdout | `RefreshSlashCommand.cs:79` |
-| ERR-SES-03 | `Project '{name}' not found. It may have been deleted.` | `/refresh` when project was deleted during session | Recoverable | Create the project again or start new session | stdout | `RefreshSlashCommand.cs:94` |
-| ERR-SES-04 | `Session {id} not found.` | `/sessions show` or `/sessions delete` with non-existent ID | Recoverable | Use `/sessions list` to find valid IDs | stdout | `SessionsSlashCommand.cs:127,197` |
-| ERR-SES-05 | `Cannot delete the current active session.` | `/sessions delete` with the currently active session ID | Recoverable | End the session first, then delete | stdout | `SessionsSlashCommand.cs:190` |
+| ERR-SES-01 | `No active session.` | `/conversations clear`, `/context show`, `/context summarize`, `/context refresh` when no session exists | Recoverable | Start a chat session first | stdout | `ConversationsSlashCommand.cs:39`, `ContextSlashCommand.cs:93,403,445`, `ContextSlashCommand.cs:79` |
+| ERR-SES-02 | `No active session. Nothing to refresh.` | `/context refresh` when session or project is null | Recoverable | Start a chat session first | stdout | `ContextSlashCommand.cs:79` |
+| ERR-SES-03 | `Project '{name}' not found. It may have been deleted.` | `/context refresh` when project was deleted during session | Recoverable | Create the project again or start new session | stdout | `ContextSlashCommand.cs:94` |
+| ERR-SES-04 | `Session {id} not found.` | `/conversations show` or `/conversations delete` with non-existent ID | Recoverable | Use `/conversations list` to find valid IDs | stdout | `ConversationsSlashCommand.cs:127,197` |
+| ERR-SES-05 | `Cannot delete the current active session.` | `/conversations delete` with the currently active session ID | Recoverable | End the session first, then delete | stdout | `ConversationsSlashCommand.cs:190` |
 
 ---
 
@@ -159,7 +159,7 @@ the `[yellow]Usage:[/]` pattern via `SpectreHelpers.Usage()`.
 | ERR-PRJ-03 | `Cannot delete the ambient project _default.` | `/project delete _default` | Recoverable | The ambient project cannot be deleted | stdout | `ProjectSlashCommand.cs:489` |
 | ERR-PRJ-04 | `/project edit requires an interactive terminal.` | `/project edit` in non-interactive mode | Recoverable | Edit project files directly or use an interactive terminal | stdout | `ProjectSlashCommand.cs:372` |
 | ERR-PRJ-05 | `Warning: Directory does not exist: {path}` | Project directory path does not exist on filesystem (at startup) | Warning | Create the directory or update the project | stderr | `ChatCommand.cs:100` |
-| ERR-PRJ-06 | `Directory does not exist: {path}` | Project directory path does not exist (during `/refresh`) | Warning | Create the directory or update the project | stdout | `RefreshSlashCommand.cs:102` |
+| ERR-PRJ-06 | `Directory does not exist: {path}` | Project directory path does not exist (during `/context refresh`) | Warning | Create the directory or update the project | stdout | `ContextSlashCommand.cs:102` |
 
 ---
 
@@ -205,7 +205,7 @@ the `[yellow]Usage:[/]` pattern via `SpectreHelpers.Usage()`.
 
 | ID | Message | Trigger | Severity | Recovery | Stream | Implementation |
 |---|---|---|---|---|---|---|
-| ERR-REF-01 | `Engine refresh failed (keeping previous): {ex.Message}` | Exception creating new execution engine during `/refresh` | Warning | Previous engine continues working; investigate root cause | stdout | `RefreshSlashCommand.cs:126` |
+| ERR-REF-01 | `Engine refresh failed (keeping previous): {ex.Message}` | Exception creating new execution engine during `/context refresh` | Warning | Previous engine continues working; investigate root cause | stdout | `ContextSlashCommand.cs:126` |
 
 ---
 
@@ -217,7 +217,7 @@ These are not errors but could be confused for them. Included for completeness.
 |---|---|---|---|---|
 | INFO-01 | `Nothing to compact.` | `/context compact` with empty conversation | Plain text | `ContextSlashCommand.cs:409` |
 | INFO-02 | `Not enough conversation to summarize (need at least 4 messages).` | `/context summarize` with < 4 messages | Plain text | `ContextSlashCommand.cs:450` |
-| INFO-03 | `No saved sessions found.` | `/sessions list` with no saved sessions | Plain text | `SessionsSlashCommand.cs:71` |
+| INFO-03 | `No saved sessions found.` | `/conversations list` with no saved sessions | Plain text | `ConversationsSlashCommand.cs:71` |
 | INFO-04 | `No projects found.` | `/project list` with no projects | Plain text | `ProjectSlashCommand.cs:166` |
 | INFO-05 | `No JEA profiles found.` | `/jea list`, `/jea show`, `/jea assign` with no profiles | Plain text | `JeaSlashCommand.cs:136,643` |
 | INFO-06 | `No profiles available to delete.` | `/jea delete` when only `_global` exists | Plain text | `JeaSlashCommand.cs:441` |
@@ -242,14 +242,14 @@ Only `SpectreUserInterface.RenderError()` writes to stderr.
 
 **Affected locations:**
 
-- All `SpectreHelpers.Error()` calls: `ClearSlashCommand.cs:39`,
-  `ContextSlashCommand.cs:93,403,445,494,512`, `RefreshSlashCommand.cs:79,94`,
+- All `SpectreHelpers.Error()` calls: `ConversationsSlashCommand.cs:39`,
+  `ContextSlashCommand.cs:93,403,445,494,512`, `ContextSlashCommand.cs:79,94`,
   `LoginCommand.cs:35`, `ProviderSlashCommand.cs:143`,
   `ProjectSlashCommand.cs:372`
 - All raw `AnsiConsole.MarkupLine("[red]Error:[/] ...")` calls in slash
   commands: `ProjectSlashCommand.cs:108,230,383,489,496`,
   `JeaSlashCommand.cs:186,220,296,450,457,534,563,570,596,603,626,655,662,668`,
-  `SessionsSlashCommand.cs:127,190,197`, `ProviderSlashCommand.cs:177,231`
+  `ConversationsSlashCommand.cs:127,190,197`, `ProviderSlashCommand.cs:177,231`
 - All `AnsiConsole.MarkupLine("[red]...[/]")` calls in `LoginCommand.cs`:
   lines 42, 52, 87, 92, 101, 245, 246
 
@@ -296,7 +296,7 @@ output.
 Some error messages bold the entity name, others do not:
 
 - **Bolded:** `Project [bold]{name}[/] not found.` (ProjectSlashCommand)
-- **Not bolded:** `No active session.` (ClearSlashCommand, ContextSlashCommand)
+- **Not bolded:** `No active session.` (ConversationsSlashCommand, ContextSlashCommand)
 - **Not bolded:** `No LLM provider configured.` (AgentOrchestrator)
 
 The pattern is consistent within each file but inconsistent across files.

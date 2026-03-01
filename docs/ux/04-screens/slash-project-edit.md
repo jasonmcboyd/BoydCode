@@ -232,7 +232,7 @@ With warning (no Docker image):
 
 5. **Stale settings warning**: If Docker image or require-container settings
    are changed on the active project, `_ui.StaleSettingsWarning` is set to
-   prompt the user to run `/refresh`.
+   prompt the user to run `/context refresh`.
 
 6. **Sub-screen exit**: Each sub-screen returns to the main menu after its
    action completes. The "Back" option in sub-screens exits without changes.

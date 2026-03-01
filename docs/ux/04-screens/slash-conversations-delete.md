@@ -1,18 +1,18 @@
-# Screen: /sessions delete
+# Screen: /conversations delete
 
 ## Overview
 
-The sessions delete screen provides a confirmation-gated deletion flow for
-saved sessions. It shows the session's key metadata (ID, message count,
-project) and asks for explicit confirmation before deleting. The active
-session cannot be deleted.
+The conversations delete screen provides a confirmation-gated deletion flow for
+saved conversations. It shows the session's key metadata (ID, message count,
+project) and asks for explicit confirmation before deleting. The active session
+cannot be deleted.
 
 **Screen IDs**: SESS-07, SESS-08, SESS-09, SESS-10, SESS-11, SESS-12
 
 ## Trigger
 
-- User types `/sessions delete <id>` during an active session.
-- Handled by `SessionsSlashCommand.HandleDeleteAsync()`.
+- User types `/conversations delete <id>` during an active session.
+- Handled by `ConversationsSlashCommand.HandleDeleteAsync()`.
 
 ## Layout (80 columns)
 
@@ -50,7 +50,7 @@ Error: Session abc12345 not found.
 ### Usage (no ID)
 
 ```
-Usage: /sessions delete <id>
+Usage: /conversations delete <id>
 ```
 
 ## States
@@ -58,7 +58,7 @@ Usage: /sessions delete <id>
 | State | Condition | Visual Difference |
 |---|---|---|
 | Confirmation | Session found, not active, interactive | Detail summary + confirm prompt (default: No) |
-| Success | User confirms deletion | Green "v" + "Session {id} deleted." with bold ID |
+| Success | User confirms deletion | Green "v" + "Session {id} deleted." |
 | Cancelled | User declines confirmation | Dim "Cancelled." |
 | Active session error | Attempting to delete the current session | Red error: "Cannot delete the current active session." |
 | Not found | Session ID doesn't match any saved session | Red error with bold session ID |
@@ -69,7 +69,7 @@ Usage: /sessions delete <id>
 
 | Token | Style Token (06-style-tokens.md) | Usage on This Screen |
 |---|---|---|
-| `[bold]` | bold (2.2) | Session ID in confirmation message and success/error messages |
+| `[bold]` | bold (2.2) | Session ID in confirmation message and error messages |
 | `[green]v[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
 | `[red]Error:[/]` | error-red (1.1) | Error prefix for active session and not-found |
 | `[dim]Cancelled.[/]` | dim (2.2) | Cancellation message |
@@ -101,9 +101,8 @@ Usage: /sessions delete <id>
 - **Deletion**: Delegates to `ISessionRepository.DeleteAsync()`. The
   repository handles file removal.
 
-- **Success message**: Uses raw `AnsiConsole.MarkupLine` (not
-  `SpectreHelpers.Success`) to allow bold markup on the session ID within
-  the message.
+- **Success message**: Uses `SpectreHelpers.Success()`. The session ID is
+  escaped with `Markup.Escape()` before being embedded in the message.
 
 ## Edge Cases
 
@@ -128,12 +127,12 @@ Usage: /sessions delete <id>
 
 | Element | File | Method/Region | Lines |
 |---|---|---|---|
-| HandleDeleteAsync | `Commands/SessionsSlashCommand.cs` | `HandleDeleteAsync` | 178-218 |
-| Usage guard | `Commands/SessionsSlashCommand.cs` | `HandleDeleteAsync` | 180-184 |
-| Active session guard | `Commands/SessionsSlashCommand.cs` | `HandleDeleteAsync` | 188-192 |
-| Not found guard | `Commands/SessionsSlashCommand.cs` | `HandleDeleteAsync` | 194-199 |
-| Confirmation prompt | `Commands/SessionsSlashCommand.cs` | `HandleDeleteAsync` | 201-213 |
-| Deletion | `Commands/SessionsSlashCommand.cs` | `HandleDeleteAsync` | 216 |
-| Success message | `Commands/SessionsSlashCommand.cs` | `HandleDeleteAsync` | 217 |
+| HandleDeleteAsync | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 236-276 |
+| Usage guard | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 238-242 |
+| Active session guard | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 246-250 |
+| Not found guard | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 253-257 |
+| Confirmation prompt | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 259-272 |
+| Deletion | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 274 |
+| Success message | `Commands/ConversationsSlashCommand.cs` | `HandleDeleteAsync` | 275 |
 
 All file paths are relative to `src/BoydCode.Presentation.Console/`.

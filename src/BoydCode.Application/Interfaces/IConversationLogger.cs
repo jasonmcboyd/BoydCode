@@ -49,7 +49,14 @@ public interface IConversationLogger : IAsyncDisposable
       CancellationToken ct = default);
 
   Task LogContextSummarizeAsync(
+      string summaryText, string? instructions,
       int messagesBefore, int messagesAfter,
+      int tokensBefore, int tokensAfter,
+      CancellationToken ct = default);
+
+  Task LogContextForkAsync(
+      string oldSessionId, string newSessionId,
+      string summaryText, string? autoName,
       CancellationToken ct = default);
 
   Task LogContextClearAsync(int messagesCleared, CancellationToken ct = default);

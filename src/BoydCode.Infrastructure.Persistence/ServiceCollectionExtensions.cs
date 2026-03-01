@@ -1,4 +1,5 @@
 using BoydCode.Application.Interfaces;
+using BoydCode.Infrastructure.Persistence.Agents;
 using BoydCode.Infrastructure.Persistence.Auth;
 using BoydCode.Infrastructure.Persistence.Jea;
 using BoydCode.Infrastructure.Persistence.Logging;
@@ -21,6 +22,7 @@ public static class ServiceCollectionExtensions
     services.AddSingleton<IProviderConfigStore, JsonProviderConfigStore>();
     services.AddSingleton<IJeaProfileStore, FileJeaProfileStore>();
     services.AddSingleton<IConversationLogger, JsonlConversationLogger>();
+    services.AddSingleton<IAgentDefinitionStore, FileAgentDefinitionStore>();
     return services;
   }
 }

@@ -20,6 +20,14 @@ public sealed partial class AgentOrchestrator
           new ToolParameter("command", "string", "The command to execute", Required: true),
       ]);
 
+  public static readonly ToolDefinition AgentToolDefinition = new(
+      "Agent",
+      "Delegate a task to a specialized sub-agent. The agent runs in its own conversation with Shell access.",
+      [
+          new ToolParameter("agent", "string", "Name of the agent to delegate to", Required: true),
+          new ToolParameter("task", "string", "Description of the task for the agent to perform", Required: true),
+      ]);
+
   private readonly ActiveProvider _activeProvider;
   private readonly ActiveExecutionEngine _activeEngine;
   private readonly IUserInterface _ui;
@@ -28,6 +36,8 @@ public sealed partial class AgentOrchestrator
   private readonly IConversationLogger _conversationLogger;
   private readonly AppSettings _settings;
   private readonly ISlashCommandRegistry _slashCommandRegistry;
+  private readonly IAgentRegistry _agentRegistry;
+  private readonly SubAgentExecutor _subAgentExecutor;
   private readonly ILogger<AgentOrchestrator> _logger;
   private int _totalInputTokens;
   private int _totalOutputTokens;
@@ -42,6 +52,8 @@ public sealed partial class AgentOrchestrator
       IConversationLogger conversationLogger,
       IOptions<AppSettings> settings,
       ISlashCommandRegistry slashCommandRegistry,
+      IAgentRegistry agentRegistry,
+      SubAgentExecutor subAgentExecutor,
       ILogger<AgentOrchestrator> logger)
   {
     _activeProvider = activeProvider;
@@ -52,6 +64,8 @@ public sealed partial class AgentOrchestrator
     _conversationLogger = conversationLogger;
     _settings = settings.Value;
     _slashCommandRegistry = slashCommandRegistry;
+    _agentRegistry = agentRegistry;
+    _subAgentExecutor = subAgentExecutor;
     _logger = logger;
   }
 
@@ -151,16 +165,24 @@ public sealed partial class AgentOrchestrator
     const int maxToolRounds = 50;
 
     // Build the base request from session state — tier-1/2 fields are stable across rounds
-    var metaPrompt = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
+    var agentNames = _agentRegistry.GetAll().Select(a => a.Name).ToList();
+    var metaPrompt = MetaPrompt.Build(
+        _activeEngine.Mode,
+        _activeEngine.Engine?.GetAvailableCommands() ?? [],
+        agentNames.Count > 0 ? agentNames : null);
     var systemPrompt = session.SystemPrompt is not null
         ? $"{metaPrompt}\n\n---\n\n{session.SystemPrompt}"
         : metaPrompt;
+
+    var tools = agentNames.Count > 0
+        ? new List<ToolDefinition> { ShellToolDefinition, AgentToolDefinition }
+        : new List<ToolDefinition> { ShellToolDefinition };
 
     var baseRequest = new LlmRequest
     {
       Model = _activeProvider.Config!.Model,
       SystemPrompt = systemPrompt,
-      Tools = [ShellToolDefinition],
+      Tools = tools,
       ToolChoice = ToolChoiceStrategy.Auto,
     };
 
@@ -245,6 +267,12 @@ public sealed partial class AgentOrchestrator
   {
     foreach (var toolCall in toolCalls)
     {
+      if (toolCall.Name.Equals("Agent", StringComparison.OrdinalIgnoreCase))
+      {
+        await ProcessAgentToolCallAsync(session, toolCall, ct);
+        continue;
+      }
+
       if (!toolCall.Name.Equals("Shell", StringComparison.OrdinalIgnoreCase))
       {
         session.Conversation.AddToolResult(toolCall.Id, $"Error: Unknown tool '{toolCall.Name}'. Use the Shell tool.", isError: true);
@@ -328,9 +356,67 @@ public sealed partial class AgentOrchestrator
     }
   }
 
+  private async Task ProcessAgentToolCallAsync(Session session, ToolUseBlock toolCall, CancellationToken ct)
+  {
+    try
+    {
+      using var doc = JsonDocument.Parse(toolCall.ArgumentsJson);
+      var root = doc.RootElement;
+      var agentName = root.GetProperty("agent").GetString()
+          ?? throw new ArgumentException("agent is required");
+      var task = root.GetProperty("task").GetString()
+          ?? throw new ArgumentException("task is required");
+
+      var agentDef = _agentRegistry.GetByName(agentName);
+      if (agentDef is null)
+      {
+        var available = string.Join(", ", _agentRegistry.GetAll().Select(a => a.Name));
+        var errorMsg = string.IsNullOrEmpty(available)
+            ? $"Error: Unknown agent '{agentName}'. No agents are available."
+            : $"Error: Unknown agent '{agentName}'. Available agents: {available}";
+        session.Conversation.AddToolResult(toolCall.Id, errorMsg, isError: true);
+        return;
+      }
+
+      await _conversationLogger.LogAgentDelegationAsync(agentName, task, agentDef.ModelOverride, ct);
+      _ui.RenderToolExecution("Agent", $"Delegating to '{agentName}': {task}");
+      _ui.RenderExecutingStart();
+
+      var result = await _subAgentExecutor.ExecuteAsync(
+          agentDef, task, session.WorkingDirectory, session.PromptExtensions, ct);
+
+      if (result.Length > 30_000)
+      {
+        result = string.Concat(result.AsSpan(0, 29_997), "...");
+      }
+
+      _ui.RenderExecutingStop();
+      _ui.RenderToolResult("Agent", $"Agent '{agentName}' completed.", isError: false);
+      await _conversationLogger.LogAgentResultAsync(agentName, result, 0, false, ct);
+      session.Conversation.AddToolResult(toolCall.Id, result);
+    }
+    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+    {
+      _ui.RenderExecutingStop();
+      _ui.RenderToolResult("Agent", "Agent delegation cancelled.", isError: false);
+      session.Conversation.AddToolResult(toolCall.Id, "Agent delegation was cancelled by the user.", isError: false);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+      _ui.RenderExecutingStop();
+      var errorMsg = $"Error during agent delegation: {ex.Message}";
+      _ui.RenderToolResult("Agent", errorMsg, isError: true);
+      session.Conversation.AddToolResult(toolCall.Id, errorMsg, isError: true);
+    }
+  }
+
   private (int ContextLimit, int SystemPromptTokens) GetContextBudgetInfo(Session session)
   {
-    var metaPromptText = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
+    var agentNames = _agentRegistry.GetAll().Select(a => a.Name).ToList();
+    var metaPromptText = MetaPrompt.Build(
+        _activeEngine.Mode,
+        _activeEngine.Engine?.GetAvailableCommands() ?? [],
+        agentNames.Count > 0 ? agentNames : null);
     var systemPromptTokens = (metaPromptText.Length + (session.SystemPrompt?.Length ?? 0)) / 4;
     var contextLimit = _activeProvider.Provider!.Capabilities.MaxContextWindowTokens > 0
         ? _activeProvider.Provider!.Capabilities.MaxContextWindowTokens

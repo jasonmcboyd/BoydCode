@@ -244,6 +244,31 @@ public sealed partial class JsonlConversationLogger : IConversationLogger, IAsyn
     }, ct);
   }
 
+  public Task LogAgentDelegationAsync(
+    string agentName, string task, string? modelOverride,
+    CancellationToken ct = default)
+  {
+    return WriteEventAsync("agent_delegation", new
+    {
+      agent_name = agentName,
+      task = Truncate(task, MaxTextContentChars),
+      model_override = modelOverride,
+    }, ct);
+  }
+
+  public Task LogAgentResultAsync(
+    string agentName, string result, int turnsTaken, bool isError,
+    CancellationToken ct = default)
+  {
+    return WriteEventAsync("agent_result", new
+    {
+      agent_name = agentName,
+      result = Truncate(result, MaxToolOutputChars),
+      turns_taken = turnsTaken,
+      is_error = isError,
+    }, ct);
+  }
+
   public Task LogProviderErrorAsync(
     string errorMessage, string? suggestion,
     CancellationToken ct = default)

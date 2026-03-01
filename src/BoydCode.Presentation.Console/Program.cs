@@ -103,6 +103,7 @@ try
   hostBuilder.Services.AddTransient<ISlashCommand, ContextSlashCommand>();
   hostBuilder.Services.AddTransient<ISlashCommand, ConversationsSlashCommand>();
   hostBuilder.Services.AddTransient<ISlashCommand, ExpandSlashCommand>();
+  hostBuilder.Services.AddTransient<ISlashCommand, AgentSlashCommand>();
 
   host = hostBuilder.Build();
 

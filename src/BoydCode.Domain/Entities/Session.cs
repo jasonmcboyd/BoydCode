@@ -11,6 +11,12 @@ public sealed class Session
   public string? Name { get; set; }
   public string? SystemPrompt { get; set; }
 
+  /// <summary>
+  /// BOYDCODE.md content loaded from global and project directories.
+  /// Not persisted — loaded fresh each session from disk.
+  /// </summary>
+  public string? PromptExtensions { get; set; }
+
   public Session(string workingDirectory)
   {
     Id = Guid.NewGuid().ToString("N")[..12];

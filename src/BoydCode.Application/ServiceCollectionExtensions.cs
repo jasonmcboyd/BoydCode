@@ -21,6 +21,8 @@ public static class ServiceCollectionExtensions
     services.AddSingleton<IContextCompactor, SmartPruneCompactor>();
     services.AddTransient<AgentOrchestrator>();
     services.AddTransient<JeaProfileComposer>();
+    services.AddSingleton<IAgentRegistry, AgentRegistry>();
+    services.AddTransient<SubAgentExecutor>();
     return services;
   }
 }

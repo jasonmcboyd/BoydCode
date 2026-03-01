@@ -61,6 +61,14 @@ public interface IConversationLogger : IAsyncDisposable
 
   Task LogContextClearAsync(int messagesCleared, CancellationToken ct = default);
 
+  Task LogAgentDelegationAsync(
+      string agentName, string task, string? modelOverride,
+      CancellationToken ct = default);
+
+  Task LogAgentResultAsync(
+      string agentName, string result, int turnsTaken, bool isError,
+      CancellationToken ct = default);
+
   Task LogProviderErrorAsync(
       string errorMessage, string? suggestion,
       CancellationToken ct = default);

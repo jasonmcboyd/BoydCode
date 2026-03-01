@@ -30,6 +30,8 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
   private readonly IUserInterface _ui;
   private readonly ISessionRepository _sessionRepository;
   private readonly IConversationLogger _conversationLogger;
+  private readonly IAgentRegistry _agentRegistry;
+  private readonly ISettingsProvider _settingsProvider;
 
   public sealed class Settings : CommandSettings
   {
@@ -72,7 +74,9 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       DirectoryGuard directoryGuard,
       IUserInterface ui,
       ISessionRepository sessionRepository,
-      IConversationLogger conversationLogger)
+      IConversationLogger conversationLogger,
+      IAgentRegistry agentRegistry,
+      ISettingsProvider settingsProvider)
   {
     _appSettings = appSettings;
     _engineFactory = engineFactory;
@@ -88,6 +92,8 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     _ui = ui;
     _sessionRepository = sessionRepository;
     _conversationLogger = conversationLogger;
+    _agentRegistry = agentRegistry;
+    _settingsProvider = settingsProvider;
   }
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -175,6 +181,12 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     var engine = await _engineFactory.CreateAsync(executionConfig, resolvedDirs, project.Name);
     await _activeEngine.SetAsync(engine, executionConfig.Mode);
 
+    // Initialize agent registry (discovers user + project agent definitions)
+    await _agentRegistry.InitializeAsync(workingDirectory);
+
+    // Load BOYDCODE.md extensions from global + project directories
+    var promptExtensions = _settingsProvider.GetSystemPromptExtensions(workingDirectory);
+
     // Create or resume session
     Session session;
     if (!string.IsNullOrEmpty(settings.ResumeSessionId))
@@ -189,7 +201,8 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       session = loaded;
       session.WorkingDirectory = workingDirectory;
       session.ProjectName = project.Name;
-      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs, _activeEngine.Engine?.PathMappings);
+      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs, _activeEngine.Engine?.PathMappings, promptExtensions);
+      session.PromptExtensions = promptExtensions;
       _activeSession.Set(session);
 
       await _conversationLogger.InitializeAsync(session.Id);
@@ -204,7 +217,8 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     {
       session = new Session(workingDirectory);
       session.ProjectName = project.Name;
-      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs, _activeEngine.Engine?.PathMappings);
+      session.SystemPrompt = BuildSystemPrompt(project, resolvedDirs, _activeEngine.Engine?.PathMappings, promptExtensions);
+      session.PromptExtensions = promptExtensions;
       _activeSession.Set(session);
 
       await _conversationLogger.InitializeAsync(session.Id);
@@ -317,7 +331,8 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
   internal static string BuildSystemPrompt(
       Project project,
       IReadOnlyList<ResolvedDirectory> resolvedDirs,
-      IReadOnlyDictionary<string, string>? pathMappings = null)
+      IReadOnlyDictionary<string, string>? pathMappings = null,
+      string? promptExtensions = null)
   {
     var customPrompt = project.SystemPrompt ?? Project.DefaultSystemPrompt;
     var userPrompt = $"You are working on project '{project.Name}'.\n\n{customPrompt}";
@@ -326,6 +341,11 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     if (dirContext is not null)
     {
       userPrompt += $"\n\n{dirContext}";
+    }
+
+    if (promptExtensions is not null)
+    {
+      userPrompt += $"\n\n---\n\n{promptExtensions}";
     }
 
     return userPrompt;

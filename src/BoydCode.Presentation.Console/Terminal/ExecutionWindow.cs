@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace BoydCode.Presentation.Console.Terminal;
 
@@ -12,6 +13,7 @@ internal sealed class ExecutionWindow : IDisposable
     ['⠿', '⠻', '⠽', '⠾', '⠷', '⠯', '⠟', '⠾'];
 
   private readonly object _consoleLock;
+  private readonly TerminalLayout? _layout;
   private readonly Stopwatch _stopwatch = new();
   private readonly Queue<string> _outputBuffer = new();
 
@@ -33,9 +35,44 @@ internal sealed class ExecutionWindow : IDisposable
   // State tracking
   private ExecutionState _state = ExecutionState.Inactive;
 
-  public ExecutionWindow(object consoleLock)
+  public ExecutionWindow(object consoleLock, TerminalLayout? layout = null)
   {
     _consoleLock = consoleLock;
+    _layout = layout;
+  }
+
+  private bool IsLayoutActive => _layout is not null && _layout.IsActive;
+
+  private void WriteOutput(string text)
+  {
+    if (IsLayoutActive)
+      _layout!.WriteToOutput(text);
+    else
+      System.Console.Write(text);
+  }
+
+  private void WriteOutputLine(string text)
+  {
+    if (IsLayoutActive)
+      _layout!.WriteLineToOutput(text);
+    else
+      System.Console.WriteLine(text);
+  }
+
+  private void WriteMarkup(string markup)
+  {
+    if (IsLayoutActive)
+      _layout!.WriteMarkupLine(markup);
+    else
+      AnsiConsole.MarkupLine(markup);
+  }
+
+  private void WriteRenderable(IRenderable renderable)
+  {
+    if (IsLayoutActive)
+      _layout!.WriteRenderable(renderable);
+    else
+      AnsiConsole.Write(renderable);
   }
 
   public int OutputLineCount => _outputBuffer.Count;
@@ -76,12 +113,24 @@ internal sealed class ExecutionWindow : IDisposable
           _outputBuffer.Dequeue();
         }
         _outputBuffer.Enqueue(line);
-        RedrawWindow(bypassThrottle: false);
+
+        if (IsLayoutActive)
+        {
+          // In layout mode, show a progress indicator instead of dumping lines.
+          // Lines are buffered for /expand and the tool result summary.
+          var elapsed = FormatDuration(_stopwatch.Elapsed);
+          _layout!.WriteToOutput($"\x1b[2K  Executing... [{_outputBuffer.Count} lines | {elapsed}]");
+          System.Console.Out.Flush();
+        }
+        else
+        {
+          RedrawWindow(bypassThrottle: false);
+        }
       }
       else
       {
-        System.Console.Write("  ");
-        System.Console.WriteLine(line);
+        WriteOutput("  ");
+        WriteOutputLine(line);
       }
     }
   }
@@ -99,7 +148,10 @@ internal sealed class ExecutionWindow : IDisposable
       }
 
       // Clear any residual spinner or "Executing..." text
-      System.Console.Write("\r                                                  \r");
+      if (!IsLayoutActive)
+      {
+        System.Console.Write("\r                                                  \r");
+      }
 
       var elapsed = _stopwatch.Elapsed;
       _state = ExecutionState.Inactive;
@@ -123,18 +175,21 @@ internal sealed class ExecutionWindow : IDisposable
         if (lineCount > WindowSize)
         {
           // Collapse the window: move cursor up and erase the visible lines
-          System.Console.Write($"\x1b[{_windowDisplayLines}A");
-          System.Console.Write("\x1b[0J");
+          if (!IsLayoutActive)
+          {
+            System.Console.Write($"\x1b[{_windowDisplayLines}A");
+            System.Console.Write("\x1b[0J");
+          }
 
           if (isError)
           {
-            AnsiConsole.MarkupLine(
+            WriteMarkup(
               $"  [red][[{Markup.Escape(toolName)} error]][/] [dim]{lineCount} lines | {duration}[/]" +
               $"  [dim italic](/expand to show full output)[/]");
           }
           else
           {
-            AnsiConsole.MarkupLine(
+            WriteMarkup(
               $"  [green][[{Markup.Escape(toolName)}]][/] [dim]{lineCount} lines | {duration}[/]" +
               $"  [dim italic](/expand to show full output)[/]");
           }
@@ -144,12 +199,12 @@ internal sealed class ExecutionWindow : IDisposable
           // Lines are already visible, just render the summary below
           if (isError)
           {
-            AnsiConsole.MarkupLine(
+            WriteMarkup(
               $"  [red][[{Markup.Escape(toolName)} error]][/] [dim]{lineCount} lines | {duration}[/]");
           }
           else
           {
-            AnsiConsole.MarkupLine(
+            WriteMarkup(
               $"  [green][[{Markup.Escape(toolName)}]][/] [dim]{lineCount} lines | {duration}[/]");
           }
         }
@@ -158,13 +213,13 @@ internal sealed class ExecutionWindow : IDisposable
           // No output at all
           if (isError)
           {
-            AnsiConsole.MarkupLine(
+            WriteMarkup(
               $"  [red][[{Markup.Escape(toolName)} error]][/] {Markup.Escape(Truncate(result, 500))}");
           }
           else
           {
             var summary = Truncate(result, 200);
-            AnsiConsole.MarkupLine(
+            WriteMarkup(
               $"  [green][[{Markup.Escape(toolName)}]][/] [dim]{Markup.Escape(summary)}[/]");
           }
         }
@@ -179,13 +234,13 @@ internal sealed class ExecutionWindow : IDisposable
         _lastOutputBuffer = null;
         if (isError)
         {
-          AnsiConsole.MarkupLine(
+          WriteMarkup(
             $"  [red][[{Markup.Escape(toolName)} error]][/] {Markup.Escape(Truncate(result, 500))}");
         }
         else
         {
           var summary = Truncate(result, 200);
-          AnsiConsole.MarkupLine(
+          WriteMarkup(
             $"  [green][[{Markup.Escape(toolName)}]][/] [dim]{Markup.Escape(summary)}[/]");
         }
       }
@@ -196,21 +251,21 @@ internal sealed class ExecutionWindow : IDisposable
   {
     if (_lastOutputBuffer is null || _lastOutputBuffer.Count == 0)
     {
-      AnsiConsole.MarkupLine("[dim]No tool output to expand.[/]");
+      WriteMarkup("[dim]No tool output to expand.[/]");
       return;
     }
 
     if (_lastOutputExpanded)
     {
-      AnsiConsole.MarkupLine("[dim]Output already expanded.[/]");
+      WriteMarkup("[dim]Output already expanded.[/]");
       return;
     }
 
     _lastOutputExpanded = true;
     foreach (var line in _lastOutputBuffer)
     {
-      System.Console.Write("  ");
-      System.Console.WriteLine(line);
+      WriteOutput("  ");
+      WriteOutputLine(line);
     }
   }
 
@@ -230,7 +285,10 @@ internal sealed class ExecutionWindow : IDisposable
     {
       // The spinner is writing "Executing..." — stop it and clear the line
       StopSpinner();
-      System.Console.Write("\r                                                  \r");
+      if (!IsLayoutActive)
+      {
+        System.Console.Write("\r                                                  \r");
+      }
       return true;
     }
     return false;
@@ -263,7 +321,17 @@ internal sealed class ExecutionWindow : IDisposable
         lock (_consoleLock)
         {
           if (ct.IsCancellationRequested) break;
-          System.Console.Write($"\r  {frame} Executing... ({elapsed})");
+
+          if (IsLayoutActive)
+          {
+            // Clear line + write spinner text in the output scroll region
+            _layout!.WriteToOutput($"\x1b[2K  {frame} Executing... ({elapsed})");
+            System.Console.Out.Flush();
+          }
+          else
+          {
+            System.Console.Write($"\r  {frame} Executing... ({elapsed})");
+          }
         }
 
         frameIndex++;
@@ -313,6 +381,24 @@ internal sealed class ExecutionWindow : IDisposable
 
     _redrawPending = false;
 
+    if (IsLayoutActive)
+    {
+      // In layout mode, write each new line to the output scroll region.
+      // The scroll region handles windowing naturally — no cursor-up/rewrite needed.
+      if (_windowDisplayLines < _outputBuffer.Count)
+      {
+        int termWidth;
+        try { termWidth = System.Console.WindowWidth; }
+        catch { termWidth = 120; }
+        var maxWidth = Math.Max(termWidth - 6, 10);
+
+        var newest = _outputBuffer.Last();
+        _layout!.WriteLineToOutput($"  {TruncateForDisplay(newest, maxWidth)}");
+        _windowDisplayLines = _outputBuffer.Count;
+      }
+      return;
+    }
+
     if (!_windowActive)
     {
       // First output line: clear any residual text
@@ -320,10 +406,10 @@ internal sealed class ExecutionWindow : IDisposable
       _windowActive = true;
     }
 
-    int termWidth;
-    try { termWidth = System.Console.WindowWidth; }
-    catch { termWidth = 120; }
-    var maxWidth = Math.Max(termWidth - 6, 10);
+    int termW;
+    try { termW = System.Console.WindowWidth; }
+    catch { termW = 120; }
+    var maxW = Math.Max(termW - 6, 10);
 
     var elapsed = FormatDuration(_stopwatch.Elapsed);
 
@@ -334,7 +420,7 @@ internal sealed class ExecutionWindow : IDisposable
       {
         var newest = _outputBuffer.Last();
         System.Console.Write("  ");
-        System.Console.WriteLine(TruncateForDisplay(newest, maxWidth));
+        System.Console.WriteLine(TruncateForDisplay(newest, maxW));
         _windowDisplayLines = _outputBuffer.Count;
       }
     }
@@ -350,19 +436,19 @@ internal sealed class ExecutionWindow : IDisposable
       for (var i = 0; i < WindowSize; i++)
       {
         System.Console.Write("\x1b[2K");
-        var displayLine = TruncateForDisplay(tail[i], maxWidth);
+        var displayLine = TruncateForDisplay(tail[i], maxW);
         if (i == 0)
         {
           // Show line counter with elapsed time right-aligned on the first visible line
           var counter = $" [{_outputBuffer.Count} lines | {elapsed}]";
-          var contentWidth = maxWidth - counter.Length;
+          var contentWidth = maxW - counter.Length;
           if (contentWidth > 0 && displayLine.Length > contentWidth)
           {
             displayLine = displayLine[..contentWidth];
           }
           System.Console.Write("  ");
           System.Console.Write(displayLine);
-          System.Console.Write($"\x1b[{maxWidth + 4}G");
+          System.Console.Write($"\x1b[{maxW + 4}G");
           System.Console.Write($"\x1b[2m{counter}\x1b[22m");
           System.Console.WriteLine();
         }

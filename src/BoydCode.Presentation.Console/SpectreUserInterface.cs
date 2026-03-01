@@ -21,7 +21,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public SpectreUserInterface()
   {
-    _executionWindow = new ExecutionWindow(_layout.ConsoleLock);
+    _executionWindow = new ExecutionWindow(_layout.ConsoleLock, _layout);
   }
 
   public bool IsInteractive => AnsiConsole.Profile.Capabilities.Interactive;
@@ -196,49 +196,104 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderAssistantText(string text)
   {
-    AnsiConsole.Write(new Panel(Markup.Escape(text))
+    var panel = new Panel(Markup.Escape(text))
         .Border(BoxBorder.None)
-        .PadLeft(1));
-    AnsiConsole.WriteLine();
+        .PadLeft(1);
+
+    if (_layoutActive)
+    {
+      _layout.WriteRenderable(panel);
+      _layout.WriteToOutput(Environment.NewLine);
+    }
+    else
+    {
+      AnsiConsole.Write(panel);
+      AnsiConsole.WriteLine();
+    }
   }
 
   public void RenderStreamingToken(string token)
   {
-    if (!_streamingStarted)
+    if (_layoutActive)
     {
-      System.Console.Write("  ");
-      _streamingStarted = true;
+      if (!_streamingStarted)
+      {
+        _layout.AppendToOutput("  ");
+        _streamingStarted = true;
+      }
+      _layout.AppendToOutput(token);
     }
-
-    System.Console.Write(token);
+    else
+    {
+      if (!_streamingStarted)
+      {
+        System.Console.Write("  ");
+        _streamingStarted = true;
+      }
+      System.Console.Write(token);
+    }
   }
 
   public void RenderStreamingComplete()
   {
     _streamingStarted = false;
-    System.Console.WriteLine();
-    System.Console.WriteLine();
+    if (_layoutActive)
+    {
+      _layout.ResetOutputCursor();
+      _layout.WriteLineToOutput("");
+      _layout.WriteLineToOutput("");
+    }
+    else
+    {
+      System.Console.WriteLine();
+      System.Console.WriteLine();
+    }
   }
 
   public void RenderThinkingStart()
   {
     _isThinking = true;
-    AnsiConsole.Markup("[dim italic]  Thinking...[/]");
+    if (_layoutActive)
+    {
+      // Write without newline so it stays at outputBottom and can be overwritten
+      _layout.WriteToOutput("\x1b[2K  Thinking...");
+    }
+    else
+    {
+      AnsiConsole.Markup("[dim italic]  Thinking...[/]");
+    }
   }
 
   public void RenderThinkingStop()
   {
     if (!_isThinking) return;
     _isThinking = false;
-    System.Console.Write("\r                    \r");
+    if (_layoutActive)
+    {
+      // Clear the line where "Thinking..." was written
+      _layout.WriteToOutput("\x1b[2K");
+    }
+    else
+    {
+      System.Console.Write("\r                    \r");
+    }
   }
 
   public void RenderToolExecution(string toolName, string argumentsJson)
   {
     var preview = FormatToolPreview(toolName, argumentsJson);
-    AnsiConsole.Write(new Panel(Markup.Escape(preview))
+    var panel = new Panel(Markup.Escape(preview))
         .Header($"[dim]{Markup.Escape(toolName)}[/]")
-        .BorderColor(Color.Grey));
+        .BorderColor(Color.Grey);
+
+    if (_layoutActive)
+    {
+      _layout.WriteRenderable(panel);
+    }
+    else
+    {
+      AnsiConsole.Write(panel);
+    }
   }
 
   public void RenderExecutingStart()
@@ -269,7 +324,10 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     {
       if (_cancelHintShowing)
       {
-        System.Console.Write("\r                                                  \r");
+        if (!_layoutActive)
+        {
+          System.Console.Write("\r                                                  \r");
+        }
         _cancelHintShowing = false;
       }
       _executionWindow.AddOutputLine(line);
@@ -306,22 +364,69 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderHint(string hint)
   {
-    AnsiConsole.MarkupLine($"  [dim italic]{Markup.Escape(hint)}[/]");
-    AnsiConsole.WriteLine();
+    if (_layoutActive)
+    {
+      _layout.WriteMarkupLine($"  [dim italic]{Markup.Escape(hint)}[/]");
+      _layout.WriteLineToOutput("");
+    }
+    else
+    {
+      AnsiConsole.MarkupLine($"  [dim italic]{Markup.Escape(hint)}[/]");
+      AnsiConsole.WriteLine();
+    }
   }
 
-  public void RenderSuccess(string message) => SpectreHelpers.Success(message);
+  public void RenderSuccess(string message)
+  {
+    if (_layoutActive)
+    {
+      _layout.WriteMarkupLine($"  [green]v[/] {Markup.Escape(message)}");
+    }
+    else
+    {
+      SpectreHelpers.Success(message);
+    }
+  }
 
-  public void RenderWarning(string message) => SpectreHelpers.Warning(message);
+  public void RenderWarning(string message)
+  {
+    if (_layoutActive)
+    {
+      _layout.WriteMarkupLine($"[yellow]Warning:[/] {Markup.Escape(message)}");
+    }
+    else
+    {
+      SpectreHelpers.Warning(message);
+    }
+  }
 
-  public void RenderSection(string title) => SpectreHelpers.Section(title);
+  public void RenderSection(string title)
+  {
+    if (_layoutActive)
+    {
+      _layout.WriteLineToOutput("");
+      _layout.WriteRenderable(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
+    }
+    else
+    {
+      SpectreHelpers.Section(title);
+    }
+  }
 
   public void RenderTokenUsage(int inputTokens, int outputTokens)
   {
-    AnsiConsole.MarkupLine(
-        $"[dim]Tokens: {inputTokens.ToString("N0", System.Globalization.CultureInfo.CurrentCulture)} in / " +
+    var markup = $"[dim]Tokens: {inputTokens.ToString("N0", System.Globalization.CultureInfo.CurrentCulture)} in / " +
         $"{outputTokens.ToString("N0", System.Globalization.CultureInfo.CurrentCulture)} out / " +
-        $"{(inputTokens + outputTokens).ToString("N0", System.Globalization.CultureInfo.CurrentCulture)} total[/]");
+        $"{(inputTokens + outputTokens).ToString("N0", System.Globalization.CultureInfo.CurrentCulture)} total[/]";
+
+    if (_layoutActive)
+    {
+      _layout.WriteMarkupLine(markup);
+    }
+    else
+    {
+      AnsiConsole.MarkupLine(markup);
+    }
   }
 
   public void RenderWelcome(string model, string workingDirectory)
@@ -336,7 +441,15 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderMarkdown(string markdown)
   {
-    AnsiConsole.Write(new Panel(Markup.Escape(markdown)).Border(BoxBorder.Rounded));
+    var panel = new Panel(Markup.Escape(markdown)).Border(BoxBorder.Rounded);
+    if (_layoutActive)
+    {
+      _layout.WriteRenderable(panel);
+    }
+    else
+    {
+      AnsiConsole.Write(panel);
+    }
   }
 
   public void RenderCancelHint()
@@ -347,7 +460,14 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
       {
         _executionWindow.ClearForCancelHint();
       }
-      AnsiConsole.Markup("[dim italic yellow]  Press Esc or Ctrl+C again to cancel[/]");
+      if (_layoutActive)
+      {
+        _layout.WriteMarkupLine("[dim italic yellow]  Press Esc or Ctrl+C again to cancel[/]");
+      }
+      else
+      {
+        AnsiConsole.Markup("[dim italic yellow]  Press Esc or Ctrl+C again to cancel[/]");
+      }
       _cancelHintShowing = true;
     }
   }
@@ -357,8 +477,13 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     lock (_layout.ConsoleLock)
     {
       if (!_cancelHintShowing) return;
-      System.Console.Write("\r                                                  \r");
       _cancelHintShowing = false;
+      if (!_layoutActive)
+      {
+        // In non-layout mode, clear the hint text at the cursor position
+        System.Console.Write("\r                                                  \r");
+      }
+      // In layout mode, the hint was written as output which scrolls naturally — no clearing needed
       if (_isExecuting)
       {
         _executionWindow.RestoreAfterCancelHint();

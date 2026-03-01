@@ -1,3 +1,6 @@
+using Spectre.Console;
+using Spectre.Console.Rendering;
+
 namespace BoydCode.Presentation.Console.Terminal;
 
 internal sealed class TerminalLayout : IDisposable
@@ -25,6 +28,7 @@ internal sealed class TerminalLayout : IDisposable
   private bool _agentBusy;
   private int _queueCount;
   private int _inputCursorCol = 3; // After "> "
+  private bool _outputCursorSaved;
   private bool _disposed;
 
   public static TerminalLayout? Current { get; private set; }
@@ -56,7 +60,7 @@ internal sealed class TerminalLayout : IDisposable
       // Enable VT processing on Windows (best effort; Windows Terminal has it on by default)
       EnableVirtualTerminalProcessing();
 
-      EstablishLayout();
+      EstablishLayout(clearScreen: false);
     }
   }
 
@@ -128,6 +132,7 @@ internal sealed class TerminalLayout : IDisposable
         return;
       }
 
+      _outputCursorSaved = false;
       CheckForResize();
 
       var h = _lastHeight;
@@ -160,6 +165,7 @@ internal sealed class TerminalLayout : IDisposable
         return;
       }
 
+      _outputCursorSaved = false;
       CheckForResize();
 
       var h = _lastHeight;
@@ -172,6 +178,126 @@ internal sealed class TerminalLayout : IDisposable
       System.Console.WriteLine(text);
 
       // Move cursor back to the input line
+      PositionCursorAtInput();
+    }
+  }
+
+  /// <summary>
+  /// Appends text to the output area without repositioning at the start of the line.
+  /// Uses SaveCursor/RestoreCursor to continue from where the last append left off.
+  /// Used for streaming tokens that must accumulate on the same line.
+  /// </summary>
+  public void AppendToOutput(string text)
+  {
+    if (!_useLayout)
+    {
+      System.Console.Write(text);
+      return;
+    }
+
+    lock (_consoleLock)
+    {
+      if (!_isActive || _isSuspended)
+      {
+        System.Console.Write(text);
+        return;
+      }
+
+      if (_outputCursorSaved)
+      {
+        // Restore cursor to where last append ended
+        System.Console.Write(RestoreCursor);
+      }
+      else
+      {
+        // First append — position at bottom of scroll region
+        CheckForResize();
+        System.Console.Write($"{Esc}[{_lastHeight - 3};1H");
+      }
+
+      // Write text (cursor advances naturally)
+      System.Console.Write(text);
+
+      // Save cursor position for next append
+      System.Console.Write(SaveCursor);
+      _outputCursorSaved = true;
+
+      // Move cursor back to input line
+      PositionCursorAtInput();
+    }
+  }
+
+  /// <summary>
+  /// Resets the saved output cursor, so the next AppendToOutput starts fresh.
+  /// Call after streaming completes.
+  /// </summary>
+  public void ResetOutputCursor()
+  {
+    _outputCursorSaved = false;
+  }
+
+  public void WriteRenderable(IRenderable renderable)
+  {
+    if (!_useLayout)
+    {
+      AnsiConsole.Write(renderable);
+      return;
+    }
+
+    lock (_consoleLock)
+    {
+      if (!_isActive || _isSuspended)
+      {
+        AnsiConsole.Write(renderable);
+        return;
+      }
+
+      _outputCursorSaved = false;
+      CheckForResize();
+
+      var h = _lastHeight;
+      var outputBottom = h - 3;
+
+      // Move cursor to the bottom of the output scroll region
+      System.Console.Write($"{Esc}[{outputBottom};1H");
+
+      // Render the Spectre content (scroll region handles scrolling)
+      AnsiConsole.Write(renderable);
+
+      // Move cursor back to input
+      PositionCursorAtInput();
+    }
+  }
+
+  public void WriteMarkupLine(string markup)
+  {
+    if (!_useLayout)
+    {
+      AnsiConsole.MarkupLine(markup);
+      return;
+    }
+
+    lock (_consoleLock)
+    {
+      if (!_isActive || _isSuspended)
+      {
+        AnsiConsole.MarkupLine(markup);
+        return;
+      }
+
+      _outputCursorSaved = false;
+      CheckForResize();
+
+      var h = _lastHeight;
+      var outputBottom = h - 3;
+
+      // Move cursor to the bottom of the output scroll region
+      System.Console.Write($"{Esc}[{outputBottom};1H");
+
+      // Write the markup line (scroll region handles scrolling)
+      AnsiConsole.MarkupLine(markup);
+
+      // Move cursor back to input
       PositionCursorAtInput();
     }
   }
@@ -336,7 +462,7 @@ internal sealed class TerminalLayout : IDisposable
     EstablishLayout();
   }
 
-  private void EstablishLayout()
+  private void EstablishLayout(bool clearScreen = true)
   {
     var h = _lastHeight;
     var w = _lastWidth;
@@ -352,8 +478,11 @@ internal sealed class TerminalLayout : IDisposable
     var inputRow = h - 1;
     var statusRow = h;
 
-    // Clear screen and set cursor to home
-    System.Console.Write($"{ClearScreen}{CursorHome}");
+    if (clearScreen)
+    {
+      // Clear screen and set cursor to home (used on resume/resize)
+      System.Console.Write($"{ClearScreen}{CursorHome}");
+    }
 
     // Set scroll region to rows 1 through H-3
     System.Console.Write($"{Esc}[1;{scrollBottom}r");
@@ -376,8 +505,17 @@ internal sealed class TerminalLayout : IDisposable
       System.Console.Write($"{DimOn}{truncatedStatus}{DimOff}");
     }
 
-    // Move cursor to the top of the output area so initial output starts there
-    System.Console.Write($"{Esc}[1;1H");
+    if (clearScreen)
+    {
+      // After clear, position at top of output area
+      System.Console.Write($"{Esc}[1;1H");
+    }
+    else
+    {
+      // Initial activation: position at bottom of scroll region
+      // so new output appears after existing content (e.g. banner)
+      System.Console.Write($"{Esc}[{scrollBottom};1H");
+    }
 
     System.Console.Out.Flush();
   }

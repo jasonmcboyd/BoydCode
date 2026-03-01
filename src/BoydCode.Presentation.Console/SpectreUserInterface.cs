@@ -1,4 +1,5 @@
 using BoydCode.Application.Interfaces;
+using BoydCode.Presentation.Console.Renderables;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 
@@ -9,19 +10,20 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   private readonly IAnsiConsole _stderr = AnsiConsole.Create(
       new AnsiConsoleSettings { Out = new AnsiConsoleOutput(System.Console.Error) });
 
-  private readonly TerminalLayout _layout = new();
+  private readonly TuiLayout _layout = new();
   private readonly ExecutionWindow _executionWindow;
   private AsyncInputReader? _inputReader;
 
   private bool _streamingStarted;
-  private bool _isThinking;
   private bool _isExecuting;
-  private bool _cancelHintShowing;
   private bool _layoutActive;
+
+  // Track previous indicator state for restoring after cancel hint
+  private IndicatorState _preHintIndicatorState = IndicatorState.Idle;
 
   public SpectreUserInterface()
   {
-    _executionWindow = new ExecutionWindow(_layout.ConsoleLock, _layout);
+    _executionWindow = new ExecutionWindow(_layout);
   }
 
   public bool IsInteractive => AnsiConsole.Profile.Capabilities.Interactive;
@@ -71,14 +73,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
       return toolName switch
       {
-        "PowerShell" => FormatPowerShell(root),
-        "Read" => FormatRead(root),
-        "Write" => FormatWrite(root),
-        "Edit" => FormatEdit(root),
-        "Glob" => FormatGlob(root),
-        "Grep" => FormatGrep(root),
-        "WebFetch" => GetStringProperty(root, "url") ?? argumentsJson,
-        "WebSearch" => GetStringProperty(root, "query") ?? argumentsJson,
+        "Shell" => FormatShellCommand(root),
         _ => FormatGeneric(root),
       };
     }
@@ -88,89 +83,13 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     }
   }
 
-  private static string FormatPowerShell(System.Text.Json.JsonElement root)
+  private static string FormatShellCommand(System.Text.Json.JsonElement root)
   {
     var command = GetStringProperty(root, "command");
     if (command is null) return FormatGeneric(root);
 
     var segments = command.Split("; ");
     return string.Join(Environment.NewLine, segments);
-  }
-
-  private static string FormatRead(System.Text.Json.JsonElement root)
-  {
-    var path = GetStringProperty(root, "file_path") ?? GetStringProperty(root, "path");
-    if (path is null) return FormatGeneric(root);
-
-    var suffix = "";
-    var hasOffset = root.TryGetProperty("offset", out var offsetEl);
-    var hasLimit = root.TryGetProperty("limit", out var limitEl);
-
-    if (hasOffset || hasLimit)
-    {
-      var offset = hasOffset ? offsetEl.ToString() : "0";
-      if (hasLimit)
-      {
-        suffix = $" (lines {offset}-{limitEl})";
-      }
-      else
-      {
-        suffix = $" (lines {offset}-)";
-      }
-    }
-
-    return $"{path}{suffix}";
-  }
-
-  private static string FormatWrite(System.Text.Json.JsonElement root)
-  {
-    var path = GetStringProperty(root, "file_path") ?? GetStringProperty(root, "path");
-    if (path is null) return FormatGeneric(root);
-
-    var content = GetStringProperty(root, "content");
-    var charCount = content?.Length ?? 0;
-    return $"{path} ({charCount} chars)";
-  }
-
-  private static string FormatEdit(System.Text.Json.JsonElement root)
-  {
-    var path = GetStringProperty(root, "file_path") ?? GetStringProperty(root, "path");
-    if (path is null) return FormatGeneric(root);
-
-    var oldStr = GetStringProperty(root, "old_string") ?? "";
-    var newStr = GetStringProperty(root, "new_string") ?? "";
-
-    if (oldStr.Length > 60) oldStr = oldStr[..57] + "...";
-    if (newStr.Length > 60) newStr = newStr[..57] + "...";
-
-    return $"{path}{Environment.NewLine}{Environment.NewLine}- {oldStr}{Environment.NewLine}+ {newStr}";
-  }
-
-  private static string FormatGlob(System.Text.Json.JsonElement root)
-  {
-    var pattern = GetStringProperty(root, "pattern");
-    if (pattern is null) return FormatGeneric(root);
-
-    var path = GetStringProperty(root, "path");
-    return path is not null
-        ? $"{pattern}{Environment.NewLine}Path: {path}"
-        : pattern;
-  }
-
-  private static string FormatGrep(System.Text.Json.JsonElement root)
-  {
-    var pattern = GetStringProperty(root, "pattern");
-    if (pattern is null) return FormatGeneric(root);
-
-    var lines = new List<string> { $"Pattern: {pattern}" };
-
-    var path = GetStringProperty(root, "path");
-    if (path is not null) lines.Add($"Path: {path}");
-
-    var glob = GetStringProperty(root, "glob");
-    if (glob is not null) lines.Add($"Glob: {glob}");
-
-    return string.Join(Environment.NewLine, lines);
   }
 
   private static string FormatGeneric(System.Text.Json.JsonElement root)
@@ -196,18 +115,15 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderAssistantText(string text)
   {
-    var panel = new Panel(Markup.Escape(text))
-        .Border(BoxBorder.None)
-        .PadLeft(1);
-
     if (_layoutActive)
     {
-      _layout.WriteRenderable(panel);
-      _layout.WriteToOutput(Environment.NewLine);
+      _layout.AddContent(ConversationRenderables.AssistantText(text));
+      _layout.AddContent(ConversationRenderables.TurnSeparator());
     }
     else
     {
-      AnsiConsole.Write(panel);
+      AnsiConsole.Write(ConversationRenderables.AssistantText(text));
+      AnsiConsole.WriteLine();
       AnsiConsole.WriteLine();
     }
   }
@@ -218,10 +134,15 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     {
       if (!_streamingStarted)
       {
-        _layout.AppendToOutput("  ");
+        _layout.BeginStream();
+        _layout.AppendStreamText("  " + token);
+        _layout.SetIndicator(IndicatorState.Streaming);
         _streamingStarted = true;
       }
-      _layout.AppendToOutput(token);
+      else
+      {
+        _layout.AppendStreamText(token);
+      }
     }
     else
     {
@@ -239,9 +160,9 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     _streamingStarted = false;
     if (_layoutActive)
     {
-      _layout.ResetOutputCursor();
-      _layout.WriteLineToOutput("");
-      _layout.WriteLineToOutput("");
+      _layout.EndStream();
+      _layout.SetIndicator(IndicatorState.Idle);
+      _layout.AddContentLine("");
     }
     else
     {
@@ -252,11 +173,9 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderThinkingStart()
   {
-    _isThinking = true;
     if (_layoutActive)
     {
-      // Write without newline so it stays at outputBottom and can be overwritten
-      _layout.WriteToOutput("\x1b[2K  Thinking...");
+      _layout.SetIndicator(IndicatorState.Thinking);
     }
     else
     {
@@ -266,12 +185,9 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderThinkingStop()
   {
-    if (!_isThinking) return;
-    _isThinking = false;
     if (_layoutActive)
     {
-      // Clear the line where "Thinking..." was written
-      _layout.WriteToOutput("\x1b[2K");
+      _layout.SetIndicator(IndicatorState.Idle);
     }
     else
     {
@@ -282,67 +198,67 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   public void RenderToolExecution(string toolName, string argumentsJson)
   {
     var preview = FormatToolPreview(toolName, argumentsJson);
-    var panel = new Panel(Markup.Escape(preview))
-        .Header($"[dim]{Markup.Escape(toolName)}[/]")
-        .BorderColor(Color.Grey);
+    var badge = ConversationRenderables.ToolCallBadge(toolName, preview);
 
     if (_layoutActive)
     {
-      _layout.WriteRenderable(panel);
+      _layout.AddContent(badge);
     }
     else
     {
-      AnsiConsole.Write(panel);
+      AnsiConsole.Write(badge);
     }
   }
 
   public void RenderExecutingStart()
   {
-    lock (_layout.ConsoleLock)
-    {
-      _isExecuting = true;
-      _cancelHintShowing = false;
-      var useContainedOutput = IsInteractive && AnsiConsole.Profile.Capabilities.Ansi;
-      _executionWindow.Start(useContainedOutput);
-    }
+    _isExecuting = true;
+    _executionWindow.Start();
   }
 
   public void RenderExecutingStop()
   {
-    lock (_layout.ConsoleLock)
-    {
-      if (!_isExecuting) return;
-      _isExecuting = false;
-      _cancelHintShowing = false;
-      _executionWindow.Stop();
-    }
+    if (!_isExecuting) return;
+    _isExecuting = false;
+    _executionWindow.Stop();
   }
 
   public void RenderOutputLine(string line)
   {
-    lock (_layout.ConsoleLock)
-    {
-      if (_cancelHintShowing)
-      {
-        if (!_layoutActive)
-        {
-          System.Console.Write("\r                                                  \r");
-        }
-        _cancelHintShowing = false;
-      }
-      _executionWindow.AddOutputLine(line);
-    }
+    _executionWindow.AddOutputLine(line);
   }
 
   public void RenderToolResult(string toolName, string result, bool isError)
   {
-    lock (_layout.ConsoleLock)
-    {
-      _executionWindow.RenderToolResult(toolName, result, isError, outputStreamed: _executionWindow.OutputLineCount > 0 || _isExecuting);
-    }
+    _executionWindow.RenderToolResult(toolName, result, isError);
   }
 
-  public void ExpandLastToolOutput() => _executionWindow.ExpandLastToolOutput();
+  public void ExpandLastToolOutput()
+  {
+    if (_layoutActive)
+    {
+      var output = _executionWindow.GetLastOutput();
+      if (output is null)
+      {
+        _layout.AddContentMarkup("[dim]No tool output to expand.[/]");
+        return;
+      }
+
+      if (_executionWindow.IsLastOutputExpanded)
+      {
+        _layout.AddContentMarkup("[dim]Output already expanded.[/]");
+        return;
+      }
+
+      _executionWindow.MarkLastOutputExpanded();
+      var content = string.Join(Environment.NewLine, output);
+      ShowModal($"Shell Output ({output.Count} lines)", content);
+    }
+    else
+    {
+      _executionWindow.ExpandLastToolOutput();
+    }
+  }
 
   public void RenderError(string message)
   {
@@ -366,8 +282,8 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   {
     if (_layoutActive)
     {
-      _layout.WriteMarkupLine($"  [dim italic]{Markup.Escape(hint)}[/]");
-      _layout.WriteLineToOutput("");
+      _layout.AddContentMarkup($"  [dim italic]{Markup.Escape(hint)}[/]");
+      _layout.AddContentLine("");
     }
     else
     {
@@ -380,7 +296,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   {
     if (_layoutActive)
     {
-      _layout.WriteMarkupLine($"  [green]v[/] {Markup.Escape(message)}");
+      _layout.AddContentMarkup($"  [green]\u2713[/] {Markup.Escape(message)}");
     }
     else
     {
@@ -392,7 +308,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   {
     if (_layoutActive)
     {
-      _layout.WriteMarkupLine($"[yellow]Warning:[/] {Markup.Escape(message)}");
+      _layout.AddContentMarkup($"[yellow]Warning:[/] {Markup.Escape(message)}");
     }
     else
     {
@@ -404,8 +320,8 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   {
     if (_layoutActive)
     {
-      _layout.WriteLineToOutput("");
-      _layout.WriteRenderable(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
+      _layout.AddContentLine("");
+      _layout.AddContent(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
     }
     else
     {
@@ -415,17 +331,16 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderTokenUsage(int inputTokens, int outputTokens)
   {
-    var markup = $"[dim]Tokens: {inputTokens.ToString("N0", System.Globalization.CultureInfo.CurrentCulture)} in / " +
-        $"{outputTokens.ToString("N0", System.Globalization.CultureInfo.CurrentCulture)} out / " +
-        $"{(inputTokens + outputTokens).ToString("N0", System.Globalization.CultureInfo.CurrentCulture)} total[/]";
+    var renderable = ConversationRenderables.TokenUsage(inputTokens, outputTokens);
 
     if (_layoutActive)
     {
-      _layout.WriteMarkupLine(markup);
+      _layout.AddContent(renderable);
     }
     else
     {
-      AnsiConsole.MarkupLine(markup);
+      AnsiConsole.Write(renderable);
+      AnsiConsole.WriteLine();
     }
   }
 
@@ -444,7 +359,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     var panel = new Panel(Markup.Escape(markdown)).Border(BoxBorder.Rounded);
     if (_layoutActive)
     {
-      _layout.WriteRenderable(panel);
+      _layout.AddContent(panel);
     }
     else
     {
@@ -454,42 +369,63 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
 
   public void RenderCancelHint()
   {
-    lock (_layout.ConsoleLock)
+    // Track what the indicator was before the hint so we can restore it
+    _preHintIndicatorState = _isExecuting
+      ? IndicatorState.Executing
+      : _streamingStarted
+        ? IndicatorState.Streaming
+        : IndicatorState.Idle;
+
+    if (_layoutActive)
     {
-      if (_isExecuting)
-      {
-        _executionWindow.ClearForCancelHint();
-      }
-      if (_layoutActive)
-      {
-        _layout.WriteMarkupLine("[dim italic yellow]  Press Esc or Ctrl+C again to cancel[/]");
-      }
-      else
-      {
-        AnsiConsole.Markup("[dim italic yellow]  Press Esc or Ctrl+C again to cancel[/]");
-      }
-      _cancelHintShowing = true;
+      _layout.SetIndicator(IndicatorState.CancelHint);
+    }
+    else
+    {
+      AnsiConsole.Markup("[dim italic yellow]  Press Esc or Ctrl+C again to cancel[/]");
     }
   }
 
   public void ClearCancelHint()
   {
-    lock (_layout.ConsoleLock)
+    if (_layoutActive)
     {
-      if (!_cancelHintShowing) return;
-      _cancelHintShowing = false;
-      if (!_layoutActive)
-      {
-        // In non-layout mode, clear the hint text at the cursor position
-        System.Console.Write("\r                                                  \r");
-      }
-      // In layout mode, the hint was written as output which scrolls naturally — no clearing needed
-      if (_isExecuting)
-      {
-        _executionWindow.RestoreAfterCancelHint();
-      }
+      // Restore the previous indicator state
+      _layout.SetIndicator(_preHintIndicatorState);
+    }
+    else
+    {
+      System.Console.Write("\r                                                  \r");
     }
   }
+
+  public void ShowModal(string title, string content)
+  {
+    var panel = new Panel(Markup.Escape(content))
+      .Header($"[bold]{Markup.Escape(title)}[/]")
+      .Border(BoxBorder.Rounded)
+      .BorderColor(Color.Blue)
+      .Expand();
+
+    if (_layoutActive)
+    {
+      _layout.ShowModal(panel);
+    }
+    else
+    {
+      AnsiConsole.Write(panel);
+    }
+  }
+
+  public void DismissModal()
+  {
+    if (_layoutActive)
+    {
+      _layout.DismissModal();
+    }
+  }
+
+  public bool IsModalActive => _layoutActive && _layout.IsModalActive;
 
   public void ActivateLayout()
   {
@@ -502,13 +438,15 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     {
       if (StatusLine is not null)
       {
-        _layout.UpdateStatusLine(StatusLine);
+        _layout.UpdateStatus(StatusLine);
       }
 
       _inputReader = new AsyncInputReader(_layout)
       {
         OnCancelHintRequested = RenderCancelHint,
         OnCancelHintCleared = ClearCancelHint,
+        IsModalActive = () => _layout.IsModalActive,
+        OnModalDismissRequested = () => _layout.DismissModal(),
       };
       _inputReader.Start();
     }
@@ -538,7 +476,6 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   public void Dispose()
   {
     _inputReader?.Dispose();
-    _executionWindow.Dispose();
     _layout.Dispose();
   }
 

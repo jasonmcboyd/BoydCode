@@ -68,7 +68,7 @@ public sealed class SessionsSlashCommand : ISlashCommand
 
     if (sessions.Count == 0)
     {
-      AnsiConsole.MarkupLine("No saved sessions found.");
+      SpectreHelpers.OutputMarkup("No saved sessions found.");
       return;
     }
 
@@ -102,11 +102,11 @@ public sealed class SessionsSlashCommand : ISlashCommand
       table.AddRow(idDisplay, projectDisplay, messageCount, lastAccessed, preview);
     }
 
-    AnsiConsole.Write(table);
+    SpectreHelpers.OutputRenderable(table);
 
     if (_activeSession.Session is not null)
     {
-      AnsiConsole.WriteLine();
+      SpectreHelpers.OutputLine();
       SpectreHelpers.Dim("  * = current session");
     }
   }
@@ -124,11 +124,11 @@ public sealed class SessionsSlashCommand : ISlashCommand
 
     if (session is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Session [bold]{Markup.Escape(sessionId)}[/] not found.");
+      SpectreHelpers.Error($"Session '{sessionId}' not found.");
       return;
     }
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     var grid = SpectreHelpers.InfoGrid();
     SpectreHelpers.AddInfoRow(grid, "Session", session.Id);
@@ -139,15 +139,15 @@ public sealed class SessionsSlashCommand : ISlashCommand
         "Project", session.ProjectName ?? "(none)",
         "Messages", session.Conversation.Messages.Count.ToString(CultureInfo.InvariantCulture));
     SpectreHelpers.AddInfoRow(grid, "Directory", session.WorkingDirectory);
-    AnsiConsole.Write(grid);
+    SpectreHelpers.OutputRenderable(grid);
 
     // Show first 5 messages as preview
     var messages = session.Conversation.Messages;
     if (messages.Count > 0)
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.MarkupLine("  [dim]Recent messages[/]");
-      AnsiConsole.WriteLine();
+      SpectreHelpers.OutputLine();
+      SpectreHelpers.OutputMarkup("  [dim]Recent messages[/]");
+      SpectreHelpers.OutputLine();
 
       var previewMessages = messages.Take(5);
       foreach (var msg in previewMessages)
@@ -160,19 +160,19 @@ public sealed class SessionsSlashCommand : ISlashCommand
         };
 
         var text = GetMessageText(msg, 120);
-        AnsiConsole.MarkupLine($"    {roleLabel}: {Markup.Escape(text)}");
+        SpectreHelpers.OutputMarkup($"    {roleLabel}: {Markup.Escape(text)}");
       }
 
       if (messages.Count > 5)
       {
         var remaining = messages.Count - 5;
-        AnsiConsole.MarkupLine($"    [dim]... {remaining.ToString(CultureInfo.InvariantCulture)} more message(s)[/]");
+        SpectreHelpers.OutputMarkup($"    [dim]... {remaining.ToString(CultureInfo.InvariantCulture)} more message(s)[/]");
       }
     }
 
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine($"  [dim]Resume with:[/] boydcode --resume {Markup.Escape(session.Id)}");
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup($"  [dim]Resume with:[/] boydcode --resume {Markup.Escape(session.Id)}");
+    SpectreHelpers.OutputLine();
   }
 
   private async Task HandleDeleteAsync(string[] tokens, CancellationToken ct)
@@ -187,21 +187,21 @@ public sealed class SessionsSlashCommand : ISlashCommand
 
     if (_activeSession.Session?.Id == sessionId)
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] Cannot delete the current active session.");
+      SpectreHelpers.Error("Cannot delete the current active session.");
       return;
     }
 
     var session = await _sessionRepository.LoadAsync(sessionId, ct);
     if (session is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Session [bold]{Markup.Escape(sessionId)}[/] not found.");
+      SpectreHelpers.Error($"Session '{sessionId}' not found.");
       return;
     }
 
     if (_ui.IsInteractive)
     {
       var messageCount = session.Conversation.Messages.Count;
-      AnsiConsole.MarkupLine(
+      SpectreHelpers.OutputMarkup(
           $"  Delete session [bold]{Markup.Escape(sessionId)}[/] " +
           $"({messageCount.ToString(CultureInfo.InvariantCulture)} messages, " +
           $"project: {Markup.Escape(session.ProjectName ?? "(none)")})?");
@@ -214,7 +214,7 @@ public sealed class SessionsSlashCommand : ISlashCommand
     }
 
     await _sessionRepository.DeleteAsync(sessionId, ct);
-    AnsiConsole.MarkupLine($"[green]v[/] Session [bold]{Markup.Escape(sessionId)}[/] deleted.");
+    SpectreHelpers.Success($"Session '{sessionId}' deleted.");
   }
 
   private static string GetFirstMessagePreview(Domain.Entities.Session session, int maxLength)

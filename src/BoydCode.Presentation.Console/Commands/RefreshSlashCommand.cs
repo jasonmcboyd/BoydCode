@@ -142,7 +142,7 @@ public sealed class RefreshSlashCommand : ISlashCommand
     var afterPromptLength = session.SystemPrompt?.Length ?? 0;
     var gitDirCount = resolvedDirs.Count(d => d.IsGitRepository);
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
     SpectreHelpers.Success("Session context refreshed.");
     _ui.StaleSettingsWarning = null;
 
@@ -154,7 +154,7 @@ public sealed class RefreshSlashCommand : ISlashCommand
         _activeProvider.Config?.ProviderType ?? LlmProviderType.Gemini,
         ct);
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     // Directories
     var dirLabel = $"{afterDirCount} ({gitDirCount} git)";
@@ -187,12 +187,12 @@ public sealed class RefreshSlashCommand : ISlashCommand
         : $"unchanged ({afterPromptLength:N0} chars)";
     RenderSummaryLine("System prompt", promptLabel, promptChanged);
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
   }
 
   private static void RenderSummaryLine(string label, string value, bool changed)
   {
     var style = changed ? "bold" : "dim";
-    AnsiConsole.MarkupLine($"    [dim]{Markup.Escape(label),-16}[/][{style}]{value}[/]");
+    SpectreHelpers.OutputMarkup($"    [dim]{Markup.Escape(label),-16}[/][{style}]{value}[/]");
   }
 }

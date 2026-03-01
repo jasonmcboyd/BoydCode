@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # BoydCode
 
 AI coding assistant with JEA-constrained PowerShell execution, built on Clean Architecture.
@@ -54,6 +58,41 @@ Domain                        → Entities, records, enums, configuration models
 - **System prompt ownership** — `ChatCommand` sets `session.SystemPrompt` to a composite of project name, the project's custom prompt (or `Project.DefaultSystemPrompt`), and resolved directory context. `AgentOrchestrator` prepends `MetaPrompt.Text` (a static Domain constant describing the shell-only execution model) when constructing `LlmRequest.SystemPrompt` each turn — or uses `MetaPrompt.Text` alone if no session prompt is set. `Conversation` is a pure message accumulator and does not hold the system prompt
 - **Response envelope and agentic loop** — Every request includes a `tools` array containing the Shell tool's name, description, and JSON parameter schema. The model emits structured `tool_use` content blocks when it decides a command would help. Responses mix `TextBlock` (explanatory text) and `ToolUseBlock` (tool invocation with `Id`, `Name`, `ArgumentsJson`) content blocks. The `stop_reason` field signals intent: `"tool_use"` means there are tool calls to execute (`LlmResponse.HasToolUse`), `"end_turn"` means the turn is complete. The orchestrator runs an agentic loop: stream/render text → detect tool calls → execute via execution engine → add `ToolResultBlock` (keyed by the `tool_use` block's `Id` for correlation) → send updated conversation back to the LLM → repeat until `stop_reason` is `"end_turn"` or max rounds reached
 - **Response streaming** — `StreamChunk` discriminated union (`TextChunk`, `ToolCallChunk`, `CompletionChunk`) enables structured streaming from `ILlmProvider.StreamAsync`; `StreamAccumulator` collects chunks into `LlmResponse` for the tool execution loop; `StreamingResponseConverter` bridges MEAI `ChatResponseUpdate` to domain `StreamChunk`; orchestrator streams by default, falls back to `SendAsync` when `SupportsStreaming` is false
+
+## Spectre.Console Patterns (Presentation.Console)
+
+UX design docs live in `docs/ux/`. These are prescriptive — they define what the UI SHOULD look like. All implementation must conform to these specs.
+
+### Rendering Principles
+
+- **Compose, don't splat**: Build `IRenderable` trees from Spectre widgets (`Rows`, `Grid`, `Markup`, `Text`, `Rule`, `Panel`). Never emit output line-by-line with repeated `OutputMarkup`/`MarkupLine` calls — that produces fragmented content blocks in the TuiLayout and bypasses Spectre's measurement system
+- **Factory methods returning `IRenderable`**: Follow the `ConversationRenderables` pattern — static factory methods that return composed renderables. Callers do `SpectreHelpers.OutputRenderable(thing)`, not 15 imperative write calls
+- **Data records for renderables**: Decouple renderables from domain types. Pass a flat sealed record (e.g., `BannerData`) so the renderable has zero domain dependencies and is testable by constructing the record directly
+- **Grid for column alignment**: Use `Grid` with `NoWrap()` for fixed-width content alongside variable content. Grid handles padding and vertical alignment — never hand-calculate padding with `new string(' ', n)`
+- **Rows for vertical stacking**: Use `Rows(...)` to compose multiple renderables into a single unit. This is how a banner, conversation turn, or modal overlay should be structured — one `IRenderable` containing children
+- **Let Spectre measure**: Don't read `Console.WindowWidth` inside render methods. Pass terminal dimensions to factory methods; let Spectre's `Measure()` handle available width within layout regions
+
+### Layout-Aware Output
+
+All console output in `Presentation.Console` must go through layout-aware methods:
+- `SpectreHelpers.OutputMarkup(markup)` — routes to `TuiLayout.AddContentMarkup` when layout active, `AnsiConsole.MarkupLine` otherwise
+- `SpectreHelpers.OutputLine(text)` — routes to `TuiLayout.AddContentLine` when layout active, `AnsiConsole.WriteLine` otherwise
+- `SpectreHelpers.OutputRenderable(renderable)` — routes to `TuiLayout.AddContent` when layout active, `AnsiConsole.Write` otherwise
+- **Never call `AnsiConsole.MarkupLine`/`AnsiConsole.Write`/`Console.WriteLine` directly** from slash commands or UI rendering code — the Live context will overwrite it on the next frame
+
+### Interactive Prompts
+
+Wrap all interactive prompts (`SelectionPrompt`, `TextPrompt`, `Confirm`, etc.) with `SuspendLayout()`/`ResumeLayout()`. Use the `SpectreHelpers` prompt wrappers which handle this automatically. Suspend/Resume is re-entrant (safe to nest).
+
+### TUI Architecture
+
+The TUI uses a 4-region `Layout` inside `AnsiConsole.Live()`:
+- **Content** (Ratio 1) — conversation history, tool results, banners, slash command output
+- **Indicator** (Size 1) — `Rule` with embedded status text (Thinking/Streaming/Executing/CancelHint)
+- **Input** (Size 1) — rendered input line with cursor
+- **StatusBar** (Size 1) — session metadata
+
+The render loop runs at ~60fps. Worker threads update shared state; the render loop reads it. No direct console writes during Live — everything goes through the content model.
 
 ## Target & Toolchain
 

@@ -14,6 +14,14 @@ using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
+// Ensure UTF-8 output encoding so Spectre.Console detects Unicode capability correctly.
+// Windows terminals (Windows Terminal, ConPTY) render Unicode fine, but .NET defaults to
+// the system code page which causes Spectre to set Capabilities.Unicode = false.
+System.Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+// Apply accessibility settings (NO_COLOR, etc.) before any Spectre output.
+AccessibilityConfig.Apply();
+
 // Wire up global exception handlers before anything else.
 // These catch exceptions that escape all other handlers (background tasks, finalizers, etc.).
 AppDomain.CurrentDomain.UnhandledException += (_, e) =>

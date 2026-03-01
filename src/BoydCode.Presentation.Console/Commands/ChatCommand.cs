@@ -5,6 +5,7 @@ using BoydCode.Domain.Configuration;
 using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
 using BoydCode.Domain.LlmRequests;
+using BoydCode.Presentation.Console.Renderables;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -51,6 +52,10 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     [CommandOption("--project <NAME>")]
     [Description("Project name to use for this session")]
     public string? Project { get; set; }
+
+    [CommandOption("--accessible")]
+    [Description("Enable accessible mode (reduced animation, text-only indicators)")]
+    public bool Accessible { get; set; }
   }
 
   public ChatCommand(
@@ -87,6 +92,11 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
 
   public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
   {
+    if (settings.Accessible)
+    {
+      AccessibilityConfig.Accessible = true;
+    }
+
     var workingDirectory = Directory.GetCurrentDirectory();
 
     // Resolve project
@@ -97,7 +107,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
 
     foreach (var dir in resolvedDirs.Where(d => !d.Exists))
     {
-      _ui.RenderError($"Warning: Directory does not exist: {dir.Path}");
+      AnsiConsole.MarkupLine($"[yellow]![/] [yellow]Warning:[/] Directory does not exist: {Markup.Escape(dir.Path)}");
     }
 
     // Determine provider type: CLI > last-used > appsettings default
@@ -161,13 +171,6 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       }
     }
 
-    RenderBanner(llmConfig, workingDirectory, isConfigured, project.Name, resolvedDirs, executionConfig.Mode, project.DockerImage);
-
-    if (isConfigured)
-    {
-      _ui.RenderHint("Type a message to start, or /help for available commands.");
-    }
-
     // Create execution engine via factory
     var engine = await _engineFactory.CreateAsync(executionConfig, resolvedDirs, project.Name);
     await _activeEngine.SetAsync(engine, executionConfig.Mode);
@@ -196,10 +199,6 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       await _conversationLogger.LogLlmContextAsync(
           session.SystemPrompt ?? "", metaPromptText,
           ToolNames, llmConfig.Model, llmConfig.ProviderType);
-
-      var messageCount = session.Conversation.Messages.Count;
-      var createdDate = session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
-      _ui.RenderHint($"Resumed session {session.Id} ({messageCount} messages from {createdDate})");
     }
     else
     {
@@ -218,8 +217,49 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
           ToolNames, llmConfig.Model, llmConfig.ProviderType);
     }
 
+    // Render the banner BEFORE layout activation so it writes directly to the terminal
+    int termHeight;
+    try { termHeight = System.Console.WindowHeight; } catch { termHeight = 24; }
+    var termWidth = AnsiConsole.Profile.Width;
+
+    var bannerData = new BannerData
+    {
+      ProviderName = llmConfig.ProviderType.ToString(),
+      ModelName = llmConfig.Model,
+      ProjectName = project.Name,
+      ExecutionMode = executionConfig.Mode.ToString(),
+      WorkingDirectory = workingDirectory,
+      Version = GetAssemblyVersion(),
+      DockerImage = project.DockerImage,
+      GitRepositories = resolvedDirs
+        .Where(d => d.IsGitRepository)
+        .Select(d => new BannerData.GitInfo(d.RepoRoot ?? d.Path, d.GitBranch))
+        .ToList(),
+      IsConfigured = isConfigured,
+      TerminalHeight = termHeight,
+      TerminalWidth = termWidth,
+      Accessible = AccessibilityConfig.Accessible,
+      SupportsUnicode = AnsiConsole.Profile.Capabilities.Unicode,
+      IsResumedSession = !string.IsNullOrEmpty(settings.ResumeSessionId),
+      ResumeSessionId = !string.IsNullOrEmpty(settings.ResumeSessionId) ? session.Id : null,
+      ResumeMessageCount = !string.IsNullOrEmpty(settings.ResumeSessionId) ? session.Conversation.Messages.Count : 0,
+      ResumeTimestamp = !string.IsNullOrEmpty(settings.ResumeSessionId) ? session.CreatedAt : null,
+    };
+
+    var bannerRenderable = BannerRenderable.Build(bannerData);
+
+    // Write banner to stdout scrollback (part of terminal history)
+    AnsiConsole.Write(bannerRenderable);
+    AnsiConsole.WriteLine();
+
     // Run the interactive loop
     _ui.ActivateLayout();
+
+    // Also add banner to TUI content region so it's visible after layout takes over.
+    // Without this, the TUI immediately fills the screen and pushes the banner above
+    // the visible area — the user would have to scroll up to see it.
+    SpectreHelpers.OutputRenderable(bannerRenderable);
+
     try
     {
       await _orchestrator.RunSessionAsync(session);
@@ -254,6 +294,16 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     _ => (LlmProviderType.Gemini, false),
   };
 
+  private static string GetAssemblyVersion()
+  {
+    var assembly = System.Reflection.Assembly.GetEntryAssembly();
+    var version = assembly?.GetName().Version;
+    if (version is null) return "dev";
+    return version.Build > 0
+      ? $"{version.Major}.{version.Minor}.{version.Build}"
+      : $"{version.Major}.{version.Minor}";
+  }
+
   private static string? GetApiKeyFromEnvironment(LlmProviderType provider) => provider switch
   {
     LlmProviderType.Anthropic => Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"),
@@ -263,94 +313,6 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     LlmProviderType.Ollama => null,
     _ => null,
   };
-
-  private static void RenderBanner(LlmProviderConfig config, string workingDirectory, bool isConfigured, string projectName, IReadOnlyList<ResolvedDirectory>? resolvedDirectories, ExecutionMode executionMode, string? dockerImage)
-  {
-    // Detect short terminals and use compact banner
-    var isCompact = false;
-    try
-    {
-      isCompact = System.Console.WindowHeight < 30;
-    }
-    catch
-    {
-      // WindowHeight may throw on non-interactive terminals
-    }
-
-    AnsiConsole.WriteLine();
-
-    if (isCompact)
-    {
-      AnsiConsole.MarkupLine("  [bold cyan]BOYD[/][bold blue]CODE[/]  [dim]v0.1  AI Coding Assistant[/]");
-    }
-    else
-    {
-      // BOYD ascii art with dim metadata floated right of rows 2-6.
-      AnsiConsole.MarkupLine("  [bold cyan]██████╗  ██████╗ ██╗   ██╗██████╗[/]           [dim]Users:      1[/]");
-      AnsiConsole.MarkupLine("  [bold cyan]██╔══██╗██╔═══██╗╚██╗ ██╔╝██╔══██╗[/]          [dim]Revenue:    $0[/]");
-      AnsiConsole.MarkupLine("  [bold cyan]██████╔╝██║   ██║ ╚████╔╝ ██║  ██║[/]          [dim]Valuation:  $0,000,000,000[/]");
-      AnsiConsole.MarkupLine("  [bold cyan]██╔══██╗██║   ██║  ╚██╔╝  ██║  ██║[/]          [dim]Commas:     tres[/]");
-      AnsiConsole.MarkupLine("  [bold cyan]██████╔╝╚██████╔╝   ██║   ██████╔╝[/]          [dim]Status:     pre-unicorn[/]");
-      AnsiConsole.MarkupLine("  [bold cyan]╚═════╝  ╚═════╝    ╚═╝   ╚═════╝[/]");
-
-      // CODE ascii art indented beneath BOYD
-      AnsiConsole.MarkupLine("  [bold blue]                 ██████╗  ██████╗ ██████╗ ███████╗[/]");
-      AnsiConsole.MarkupLine("  [bold blue]                ██╔════╝ ██╔═══██╗██╔══██╗██╔════╝[/]");
-      AnsiConsole.MarkupLine("  [bold blue]                ██║      ██║   ██║██║  ██║█████╗[/]");
-      AnsiConsole.MarkupLine("  [bold blue]                ██║      ██║   ██║██║  ██║██╔══╝[/]");
-      AnsiConsole.MarkupLine("  [bold blue]                ╚██████╗ ╚██████╔╝██████╔╝███████╗[/]");
-      AnsiConsole.MarkupLine("  [bold blue]                 ╚═════╝  ╚═════╝ ╚═════╝ ╚══════╝[/]");
-
-      // Version + tagline on one line
-      AnsiConsole.MarkupLine("  [dim]v0.1  Artificial Intelligence, Personal Edition[/]");
-    }
-
-    AnsiConsole.WriteLine();
-
-    // Thin rule separator
-    AnsiConsole.Write(new Rule().RuleStyle("dim"));
-    AnsiConsole.WriteLine();
-
-    // Session info as a clean two-column grid (label / value / label / value)
-    var grid = SpectreHelpers.InfoGrid();
-
-    SpectreHelpers.AddInfoRow(grid, "Provider", config.ProviderType.ToString(), "Project", projectName);
-    SpectreHelpers.AddInfoRow(grid, "Model", config.Model, "Engine", executionMode.ToString());
-    SpectreHelpers.AddInfoRow(grid, "cwd", workingDirectory);
-
-    if (dockerImage is not null)
-    {
-      SpectreHelpers.AddInfoRow(grid, "Docker", dockerImage);
-    }
-
-    if (resolvedDirectories is not null)
-    {
-      foreach (var dir in resolvedDirectories.Where(d => d.IsGitRepository))
-      {
-        var branchInfo = dir.GitBranch is not null ? $" ({dir.GitBranch})" : "";
-        SpectreHelpers.AddInfoRow(grid, "Git", $"{dir.RepoRoot ?? dir.Path}{branchInfo}");
-      }
-    }
-
-    AnsiConsole.Write(grid);
-    AnsiConsole.WriteLine();
-
-    // Status footer
-    if (isConfigured)
-    {
-      var engineNote = executionMode == ExecutionMode.Container
-          ? "Commands execute inside a Docker container."
-          : "Commands run in a constrained PowerShell runspace.";
-      AnsiConsole.MarkupLine($"  [green]Ready[/]  [dim]{engineNote}[/]");
-    }
-    else
-    {
-      AnsiConsole.MarkupLine("  [yellow bold]Not configured[/]");
-      AnsiConsole.MarkupLine("  [dim]Use[/] [bold]/provider setup[/] [dim]to configure an API key, or pass[/] [bold]--api-key[/][dim].[/]");
-    }
-
-    AnsiConsole.WriteLine();
-  }
 
   internal static string BuildSystemPrompt(
       Project project,

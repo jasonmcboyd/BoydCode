@@ -9,7 +9,7 @@ internal sealed class AsyncInputReader : IDisposable
   private const int PollingIntervalMs = 16;
   private const int CancelWindowMs = 1000;
 
-  private readonly TerminalLayout? _layout;
+  private readonly TuiLayout? _layout;
   private readonly Channel<string> _completedLines = Channel.CreateUnbounded<string>();
   private readonly StringBuilder _lineBuffer = new();
   private readonly List<string> _history = [];
@@ -29,7 +29,7 @@ internal sealed class AsyncInputReader : IDisposable
   private Timer? _cancelResetTimer;
   private bool _disposed;
 
-  public AsyncInputReader(TerminalLayout? layout)
+  public AsyncInputReader(TuiLayout? layout)
   {
     _layout = layout;
   }
@@ -163,7 +163,14 @@ internal sealed class AsyncInputReader : IDisposable
         break;
 
       case ConsoleKey.Escape:
-        HandleCancelPress();
+        if (IsModalActive?.Invoke() == true)
+        {
+          OnModalDismissRequested?.Invoke();
+        }
+        else
+        {
+          HandleCancelPress();
+        }
         break;
 
       case ConsoleKey.Tab:
@@ -278,7 +285,7 @@ internal sealed class AsyncInputReader : IDisposable
   {
     if (_layout is not null)
     {
-      _layout.UpdateInputLine(_lineBuffer.ToString(), _cursorPosition);
+      _layout.UpdateInput(_lineBuffer.ToString(), _cursorPosition);
     }
     else
     {
@@ -411,6 +418,17 @@ internal sealed class AsyncInputReader : IDisposable
   /// Action callback for clearing the cancel hint. Set by the parent UI after construction.
   /// </summary>
   public Action? OnCancelHintCleared { get; set; }
+
+  /// <summary>
+  /// Checks whether a modal overlay is currently active. When true, Esc dismisses the modal
+  /// instead of triggering cancellation.
+  /// </summary>
+  public Func<bool>? IsModalActive { get; set; }
+
+  /// <summary>
+  /// Invoked when Esc is pressed while a modal is active.
+  /// </summary>
+  public Action? OnModalDismissRequested { get; set; }
 
   private sealed class CancellationScope : IDisposable
   {

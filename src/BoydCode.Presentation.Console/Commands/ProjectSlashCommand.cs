@@ -105,14 +105,14 @@ public sealed class ProjectSlashCommand : ISlashCommand
     var existing = await _projectRepository.LoadAsync(name, ct);
     if (existing is not null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Project [bold]{Markup.Escape(name)}[/] already exists.");
+      SpectreHelpers.Error($"Project '{name}' already exists.");
       return;
     }
 
     var project = new Project(name);
     await _projectRepository.SaveAsync(project, ct);
-    AnsiConsole.MarkupLine($"[green]v[/] Project [bold]{Markup.Escape(name)}[/] created.");
-    AnsiConsole.WriteLine();
+    SpectreHelpers.Success($"Project '{name}' created.");
+    SpectreHelpers.OutputLine();
 
     if (!_ui.IsInteractive)
     {
@@ -122,11 +122,11 @@ public sealed class ProjectSlashCommand : ISlashCommand
     var wantConfigure = SpectreHelpers.Confirm("Configure project settings now?", defaultValue: false);
     if (!wantConfigure)
     {
-      AnsiConsole.MarkupLine($"[dim]Tip: Use /project edit {Markup.Escape(name)} to configure later.[/]");
+      SpectreHelpers.OutputMarkup($"[dim]Tip: Use /project edit {Markup.Escape(name)} to configure later.[/]");
       return;
     }
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     var sections = SpectreHelpers.MultiSelect("Which settings would you like to configure?", ConfigureSections);
 
@@ -149,8 +149,8 @@ public sealed class ProjectSlashCommand : ISlashCommand
     }
 
     await _projectRepository.SaveAsync(project, ct);
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine($"[green]v[/] Project [bold]{Markup.Escape(name)}[/] saved.");
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.Success($"Project '{name}' saved.");
   }
 
   // ──────────────────────────────────────────────
@@ -163,7 +163,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     if (names.Count == 0)
     {
-      AnsiConsole.MarkupLine("No projects found.");
+      SpectreHelpers.OutputMarkup("No projects found.");
       SpectreHelpers.Dim("Create one with /project create <name>");
       return;
     }
@@ -205,7 +205,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
           lastUsed);
     }
 
-    AnsiConsole.Write(table);
+    SpectreHelpers.OutputRenderable(table);
   }
 
   // ──────────────────────────────────────────────
@@ -227,7 +227,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
     var project = await _projectRepository.LoadAsync(name, ct);
     if (project is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Project [bold]{Markup.Escape(name)}[/] not found.");
+      SpectreHelpers.Error($"Project '{name}' not found.");
       return;
     }
 
@@ -237,7 +237,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
         && !project.RequireContainer
         && project.Execution is null;
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     // Grid section
     var grid = SpectreHelpers.InfoGrid();
@@ -272,13 +272,13 @@ public sealed class ProjectSlashCommand : ISlashCommand
           new Markup(""));
     }
 
-    AnsiConsole.Write(grid);
+    SpectreHelpers.OutputRenderable(grid);
 
     // Directories
     if (project.Directories.Count > 0)
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.MarkupLine("  [dim]Directories[/]");
+      SpectreHelpers.OutputLine();
+      SpectreHelpers.OutputMarkup("  [dim]Directories[/]");
 
       var resolvedDirs = _directoryResolver.Resolve(project.Directories);
 
@@ -306,58 +306,58 @@ public sealed class ProjectSlashCommand : ISlashCommand
         dirTable.AddRow($"- {Markup.Escape(dir.Path)}", accessStyle, gitInfo);
       }
 
-      AnsiConsole.Write(new Padder(dirTable).PadLeft(4));
+      SpectreHelpers.OutputRenderable(new Padder(dirTable).PadLeft(4));
     }
 
     // Meta prompt
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine("  [dim]Meta prompt[/]");
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup("  [dim]Meta prompt[/]");
+    SpectreHelpers.OutputLine();
     var fullMetaPrompt = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
     foreach (var line in fullMetaPrompt.Trim().Split('\n'))
     {
       var trimmed = line.TrimEnd('\r');
-      AnsiConsole.MarkupLine(trimmed.Length > 0
+      SpectreHelpers.OutputMarkup(trimmed.Length > 0
           ? $"    {Markup.Escape(trimmed.TrimStart())}"
           : "");
     }
 
     // System prompt
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine("  [dim]System prompt[/]");
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup("  [dim]System prompt[/]");
+    SpectreHelpers.OutputLine();
 
     if (project.SystemPrompt is not null)
     {
-      AnsiConsole.MarkupLine($"    {Markup.Escape(project.SystemPrompt)}");
+      SpectreHelpers.OutputMarkup($"    {Markup.Escape(project.SystemPrompt)}");
     }
     else
     {
-      AnsiConsole.MarkupLine($"    [dim](default)[/] {Markup.Escape(Project.DefaultSystemPrompt)}");
+      SpectreHelpers.OutputMarkup($"    [dim](default)[/] {Markup.Escape(Project.DefaultSystemPrompt)}");
     }
 
     // JEA profiles
     if (project.Execution?.JeaProfiles is { Count: > 0 })
     {
-      AnsiConsole.WriteLine();
-      AnsiConsole.MarkupLine("  [dim]JEA profiles[/]");
+      SpectreHelpers.OutputLine();
+      SpectreHelpers.OutputMarkup("  [dim]JEA profiles[/]");
       var profiles = string.Join(", ", project.Execution.JeaProfiles.Select(p => $"[cyan]{Markup.Escape(p)}[/]"));
-      AnsiConsole.MarkupLine($"  {profiles}");
+      SpectreHelpers.OutputMarkup($"  {profiles}");
     }
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     // Stale settings footer
     if (string.Equals(project.Name, _activeProject.Name, StringComparison.OrdinalIgnoreCase)
         && _ui.StaleSettingsWarning is not null)
     {
-      AnsiConsole.MarkupLine($"  [yellow]* {Markup.Escape(_ui.StaleSettingsWarning)}[/]");
-      AnsiConsole.WriteLine();
+      SpectreHelpers.OutputMarkup($"  [yellow]* {Markup.Escape(_ui.StaleSettingsWarning)}[/]");
+      SpectreHelpers.OutputLine();
     }
 
     if (isMinimal)
     {
-      AnsiConsole.MarkupLine($"  [dim]Tip: Use /project edit {Markup.Escape(project.Name)} to configure settings.[/]");
+      SpectreHelpers.OutputMarkup($"  [dim]Tip: Use /project edit {Markup.Escape(project.Name)} to configure settings.[/]");
     }
   }
 
@@ -380,7 +380,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
     var project = await _projectRepository.LoadAsync(name, ct);
     if (project is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Project [bold]{Markup.Escape(name)}[/] not found.");
+      SpectreHelpers.Error($"Project '{name}' not found.");
       return;
     }
 
@@ -449,7 +449,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
       }
 
       SpectreHelpers.Success("Project saved.");
-      AnsiConsole.WriteLine();
+      SpectreHelpers.OutputLine();
     }
   }
 
@@ -486,19 +486,19 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     if (name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase))
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] Cannot delete the ambient project [bold]_default[/].");
+      SpectreHelpers.Error("Cannot delete the ambient project '_default'.");
       return;
     }
 
     var project = await _projectRepository.LoadAsync(name, ct);
     if (project is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Project [bold]{Markup.Escape(name)}[/] not found.");
+      SpectreHelpers.Error($"Project '{name}' not found.");
       return;
     }
 
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine($"  This will delete project [bold]{Markup.Escape(name)}[/]:");
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup($"  This will delete project [bold]{Markup.Escape(name)}[/]:");
 
     var details = new List<string>();
 
@@ -526,15 +526,15 @@ public sealed class ProjectSlashCommand : ISlashCommand
     {
       foreach (var detail in details)
       {
-        AnsiConsole.MarkupLine($"    [dim]-[/] {detail}");
+        SpectreHelpers.OutputMarkup($"    [dim]-[/] {detail}");
       }
     }
     else
     {
-      AnsiConsole.MarkupLine("    [dim]No custom configuration.[/]");
+      SpectreHelpers.OutputMarkup("    [dim]No custom configuration.[/]");
     }
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     if (!_ui.IsInteractive || !SpectreHelpers.Confirm($"Delete project [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
     {
@@ -543,7 +543,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
     }
 
     await _projectRepository.DeleteAsync(name, ct);
-    AnsiConsole.MarkupLine($"[green]v[/] Project [bold]{Markup.Escape(name)}[/] deleted.");
+    SpectreHelpers.Success($"Project '{name}' deleted.");
   }
 
   // ──────────────────────────────────────────────
@@ -564,8 +564,8 @@ public sealed class ProjectSlashCommand : ISlashCommand
       var accessLevel = SpectreHelpers.Select("  Access level:", [DirectoryAccessLevel.ReadWrite, DirectoryAccessLevel.ReadOnly]);
 
       project.Directories.Add(new ProjectDirectory(path, accessLevel));
-      AnsiConsole.MarkupLine($"  [green]v[/] Added [bold]{Markup.Escape(path)}[/] ({accessLevel})");
-      AnsiConsole.WriteLine();
+      SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Added [bold]{Markup.Escape(path)}[/] ({accessLevel})");
+      SpectreHelpers.OutputLine();
     }
   }
 
@@ -591,10 +591,10 @@ public sealed class ProjectSlashCommand : ISlashCommand
     if (!string.IsNullOrWhiteSpace(image))
     {
       project.DockerImage = image;
-      AnsiConsole.MarkupLine($"  [green]v[/] Docker image set to [bold]{Markup.Escape(image)}[/].");
+      SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Docker image set to [bold]{Markup.Escape(image)}[/].");
 
       project.RequireContainer = SpectreHelpers.Confirm("  Require container execution?", defaultValue: true);
-      AnsiConsole.MarkupLine($"  [green]v[/] Require container: [bold]{project.RequireContainer}[/].");
+      SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Require container: [bold]{project.RequireContainer}[/].");
     }
     else
     {
@@ -610,7 +610,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
   {
     if (project.Directories.Count > 0)
     {
-      AnsiConsole.WriteLine();
+      SpectreHelpers.OutputLine();
       var dirTable = SpectreHelpers.SimpleTable("#", "Path", "Access");
       dirTable.Columns[0].RightAligned();
 
@@ -626,7 +626,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
             accessStyle);
       }
 
-      AnsiConsole.Write(dirTable);
+      SpectreHelpers.OutputRenderable(dirTable);
     }
     else
     {
@@ -644,28 +644,28 @@ public sealed class ProjectSlashCommand : ISlashCommand
           var accessLevel = SpectreHelpers.Select("  Access level:", [DirectoryAccessLevel.ReadWrite, DirectoryAccessLevel.ReadOnly]);
 
           project.Directories.Add(new ProjectDirectory(path, accessLevel));
-          AnsiConsole.MarkupLine($"  [green]v[/] Added [bold]{Markup.Escape(path)}[/] ({accessLevel})");
+          SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Added [bold]{Markup.Escape(path)}[/] ({accessLevel})");
           break;
         }
       case "Remove directory":
         {
           if (project.Directories.Count == 0)
           {
-            AnsiConsole.MarkupLine("  [yellow]No directories to remove.[/]");
+            SpectreHelpers.OutputMarkup("  [yellow]No directories to remove.[/]");
             break;
           }
 
           var pathToRemove = SpectreHelpers.Select("  Select directory to remove:", project.Directories.Select(d => d.Path));
 
           project.Directories.RemoveAll(d => d.Path == pathToRemove);
-          AnsiConsole.MarkupLine($"  [green]v[/] Removed [bold]{Markup.Escape(pathToRemove)}[/]");
+          SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Removed [bold]{Markup.Escape(pathToRemove)}[/]");
           break;
         }
       case "Change access level":
         {
           if (project.Directories.Count == 0)
           {
-            AnsiConsole.MarkupLine("  [yellow]No directories to modify.[/]");
+            SpectreHelpers.OutputMarkup("  [yellow]No directories to modify.[/]");
             break;
           }
 
@@ -677,7 +677,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
           if (index >= 0)
           {
             project.Directories[index] = new ProjectDirectory(pathToChange, newLevel);
-            AnsiConsole.MarkupLine($"  [green]v[/] Changed [bold]{Markup.Escape(pathToChange)}[/] to {newLevel}");
+            SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Changed [bold]{Markup.Escape(pathToChange)}[/] to {newLevel}");
           }
 
           break;
@@ -692,8 +692,8 @@ public sealed class ProjectSlashCommand : ISlashCommand
     var currentCustom = project.SystemPrompt ?? Project.DefaultSystemPrompt;
     var isDefault = project.SystemPrompt is null;
     var label = isDefault ? "[dim](default)[/] " : "";
-    AnsiConsole.MarkupLine($"  [bold]Current:[/] {label}{Markup.Escape(currentCustom)}");
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputMarkup($"  [bold]Current:[/] {label}{Markup.Escape(currentCustom)}");
+    SpectreHelpers.OutputLine();
 
     var choices = new List<string> { "Set new prompt", "Back" };
     if (!isDefault)
@@ -720,14 +720,14 @@ public sealed class ProjectSlashCommand : ISlashCommand
   {
     if (project.DockerImage is not null)
     {
-      AnsiConsole.MarkupLine($"  [bold]Current:[/] {Markup.Escape(project.DockerImage)}");
+      SpectreHelpers.OutputMarkup($"  [bold]Current:[/] {Markup.Escape(project.DockerImage)}");
     }
     else
     {
-      AnsiConsole.MarkupLine("  [bold]Current:[/] [dim](not set)[/]");
+      SpectreHelpers.OutputMarkup("  [bold]Current:[/] [dim](not set)[/]");
     }
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     var image = SpectreHelpers.PromptOptional("  Docker image [dim](Enter to clear)[/]:");
 
@@ -739,23 +739,23 @@ public sealed class ProjectSlashCommand : ISlashCommand
     else
     {
       project.DockerImage = image;
-      AnsiConsole.MarkupLine($"  [green]v[/] Docker image set to [bold]{Markup.Escape(image)}[/].");
+      SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Docker image set to [bold]{Markup.Escape(image)}[/].");
     }
   }
 
   private static void EditRequireContainer(Project project)
   {
-    AnsiConsole.MarkupLine($"  [bold]Current:[/] {(project.RequireContainer ? "[green]Yes[/]" : "No")}");
+    SpectreHelpers.OutputMarkup($"  [bold]Current:[/] {(project.RequireContainer ? "[green]Yes[/]" : "No")}");
 
     if (project.DockerImage is null)
     {
-      AnsiConsole.MarkupLine("  [yellow]Warning:[/] No Docker image is configured.");
+      SpectreHelpers.Warning("No Docker image is configured.");
     }
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     project.RequireContainer = SpectreHelpers.Confirm("  Require container execution?", defaultValue: project.RequireContainer);
-    AnsiConsole.MarkupLine($"  [green]v[/] Require container set to [bold]{project.RequireContainer}[/].");
+    SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Require container set to [bold]{project.RequireContainer}[/].");
   }
 
   // ──────────────────────────────────────────────

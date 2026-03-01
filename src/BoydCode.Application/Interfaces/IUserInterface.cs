@@ -27,6 +27,9 @@ public interface IUserInterface
   void RenderCancelHint();
   void ClearCancelHint();
   void ExpandLastToolOutput();
+  void ShowModal(string title, string content);
+  void DismissModal();
+  bool IsModalActive { get; }
   IDisposable BeginCancellationMonitor(Action onCancelRequested);
   void ActivateLayout();
   void DeactivateLayout();

@@ -103,31 +103,75 @@ internal static class SpectreHelpers
   //  LAYOUT SUSPEND/RESUME HELPERS
   // ──────────────────────────────────────────────
 
-  private static void SuspendLayout() => TerminalLayout.Current?.Suspend();
+  private static void SuspendLayout() => TuiLayout.Current?.Suspend();
 
-  private static void ResumeLayout() => TerminalLayout.Current?.Resume();
+  private static void ResumeLayout() => TuiLayout.Current?.Resume();
+
+  // ──────────────────────────────────────────────
+  //  LAYOUT-AWARE OUTPUT
+  // ──────────────────────────────────────────────
+
+  internal static void OutputMarkup(string markup)
+  {
+    if (TuiLayout.Current is { IsActive: true } layout)
+    {
+      layout.AddContentMarkup(markup);
+    }
+    else
+    {
+      AnsiConsole.MarkupLine(markup);
+    }
+  }
+
+  internal static void OutputLine(string text = "")
+  {
+    if (TuiLayout.Current is { IsActive: true } layout)
+    {
+      layout.AddContentLine(text);
+    }
+    else
+    {
+      if (text.Length > 0)
+        AnsiConsole.WriteLine(text);
+      else
+        AnsiConsole.WriteLine();
+    }
+  }
+
+  internal static void OutputRenderable(IRenderable renderable)
+  {
+    if (TuiLayout.Current is { IsActive: true } layout)
+    {
+      layout.AddContent(renderable);
+    }
+    else
+    {
+      AnsiConsole.Write(renderable);
+      AnsiConsole.WriteLine();
+    }
+  }
 
   // ──────────────────────────────────────────────
   //  STATUS MESSAGES (escape internally)
   // ──────────────────────────────────────────────
 
   public static void Success(string message) =>
-    AnsiConsole.MarkupLine($"  [green]v[/] {Markup.Escape(message)}");
+    OutputMarkup($"  [green]\u2713[/] {Markup.Escape(message)}");
 
   public static void Error(string message) =>
-    AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(message)}");
+    OutputMarkup($"[red bold]Error:[/] [red]{Markup.Escape(message)}[/]");
 
   public static void Warning(string message) =>
-    AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(message)}");
+    OutputMarkup($"[yellow]Warning:[/] {Markup.Escape(message)}");
 
   public static void Usage(string message) =>
-    AnsiConsole.MarkupLine($"[yellow]Usage:[/] {Markup.Escape(message)}");
+    OutputMarkup($"[yellow]Usage:[/] {Markup.Escape(message)}");
 
   public static void Dim(string message) =>
-    AnsiConsole.MarkupLine($"[dim]{Markup.Escape(message)}[/]");
+    OutputMarkup($"[dim]{Markup.Escape(message)}[/]");
 
   public static void Cancelled() =>
-    AnsiConsole.MarkupLine("[dim]Cancelled.[/]");
+    OutputMarkup("[dim]Cancelled.[/]");
 
   // ──────────────────────────────────────────────
   //  SECTION DIVIDER
@@ -135,8 +179,8 @@ internal static class SpectreHelpers
 
   public static void Section(string title)
   {
-    AnsiConsole.WriteLine();
-    AnsiConsole.Write(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
+    OutputLine();
+    OutputRenderable(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
   }
 
   // ──────────────────────────────────────────────
@@ -338,6 +382,21 @@ internal static class SpectreHelpers
         new Markup($"[cyan]{Markup.Escape(value1)}[/]"),
         new Markup($"[dim]{Markup.Escape(label2)}[/]"),
         new Markup($"[cyan]{Markup.Escape(value2)}[/]"));
+  }
+
+  internal static Grid CompactInfoGrid()
+  {
+    var grid = new Grid();
+    grid.AddColumn(new GridColumn().PadLeft(1).PadRight(1).NoWrap());
+    grid.AddColumn(new GridColumn());
+    return grid;
+  }
+
+  internal static void AddCompactInfoRow(Grid grid, string label, string value)
+  {
+    grid.AddRow(
+        new Markup($"[dim]{Markup.Escape(label)}[/]"),
+        new Markup($"[cyan]{Markup.Escape(value)}[/]"));
   }
 
   // ──────────────────────────────────────────────

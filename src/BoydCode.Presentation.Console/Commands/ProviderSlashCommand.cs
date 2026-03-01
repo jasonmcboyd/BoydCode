@@ -73,11 +73,7 @@ public sealed class ProviderSlashCommand : ISlashCommand
 
   private async Task HandleListAsync(CancellationToken ct)
   {
-    var table = new Table();
-    table.AddColumn("Provider");
-    table.AddColumn("Status");
-    table.AddColumn("Model");
-    table.AddColumn("API Key");
+    var table = SpectreHelpers.SimpleTable("Provider", "Status", "Model", "API Key");
 
     var allProfiles = await _providerConfigStore.GetAllAsync(ct);
     var profileLookup = allProfiles.ToDictionary(p => p.ProviderType);
@@ -93,14 +89,14 @@ public sealed class ProviderSlashCommand : ISlashCommand
           ? "[green bold]active[/]"
           : profile?.ApiKey is not null
               ? "[dim]ready[/]"
-              : "";
+              : "[dim]--[/]";
 
       var model = profile?.DefaultModel
           ?? ProviderDefaults.DefaultModelFor(providerType);
 
       var apiKeyDisplay = profile?.ApiKey is { Length: > 0 } key
           ? MaskApiKey(key)
-          : "[dim]not set[/]";
+          : "[dim](not set)[/]";
 
       table.AddRow(
           Markup.Escape(providerType.ToString()),
@@ -109,7 +105,7 @@ public sealed class ProviderSlashCommand : ISlashCommand
           apiKeyDisplay);
     }
 
-    AnsiConsole.Write(table);
+    SpectreHelpers.OutputRenderable(table);
   }
 
   private async Task HandleSetupAsync(string[] tokens, CancellationToken ct)
@@ -166,15 +162,14 @@ public sealed class ProviderSlashCommand : ISlashCommand
 
     await _providerConfigStore.SetLastUsedProviderAsync(providerType, ct);
 
-    AnsiConsole.MarkupLine(
-        $"[green]Provider '{Markup.Escape(providerType.ToString())}' configured and activated.[/]");
+    SpectreHelpers.Success($"Provider '{providerType}' configured and activated.");
   }
 
   private void HandleShow()
   {
     if (!_activeProvider.IsConfigured)
     {
-      AnsiConsole.MarkupLine("[yellow]No provider is currently active. Use /provider setup to configure one.[/]");
+      SpectreHelpers.Warning("No provider is currently active. Use /provider setup to configure one.");
       return;
     }
 
@@ -193,7 +188,7 @@ public sealed class ProviderSlashCommand : ISlashCommand
         .Border(BoxBorder.Rounded)
         .Padding(1, 0, 1, 0);
 
-    AnsiConsole.Write(panel);
+    SpectreHelpers.OutputRenderable(panel);
   }
 
   private async Task HandleRemoveAsync(string[] tokens, CancellationToken ct)
@@ -227,13 +222,10 @@ public sealed class ProviderSlashCommand : ISlashCommand
     if (_activeProvider.IsConfigured
         && _activeProvider.Config!.ProviderType == providerType)
     {
-      AnsiConsole.MarkupLine(
-          $"[yellow]Warning: '{Markup.Escape(providerType.ToString())}' is the active provider. "
-          + "It will remain active for this session but won't persist.[/]");
+      SpectreHelpers.Warning($"'{providerType}' is the active provider. It will remain active for this session but won't persist.");
     }
 
-    AnsiConsole.MarkupLine(
-        $"[green]Provider '{Markup.Escape(providerType.ToString())}' removed.[/]");
+    SpectreHelpers.Success($"Provider '{providerType}' removed.");
   }
 
   private LlmProviderConfig BuildConfigFromProfile(ProviderProfile profile)

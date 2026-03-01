@@ -1,16 +1,18 @@
+using System.Text;
 using BoydCode.Application.Interfaces;
 using BoydCode.Domain.SlashCommands;
-using Spectre.Console;
 
 namespace BoydCode.Presentation.Console.Commands;
 
 public sealed class HelpSlashCommand : ISlashCommand
 {
   private readonly ISlashCommandRegistry _registry;
+  private readonly IUserInterface _ui;
 
-  public HelpSlashCommand(ISlashCommandRegistry registry)
+  public HelpSlashCommand(ISlashCommandRegistry registry, IUserInterface ui)
   {
     _registry = registry;
+    _ui = ui;
   }
 
   public SlashCommandDescriptor Descriptor { get; } = new(
@@ -26,32 +28,37 @@ public sealed class HelpSlashCommand : ISlashCommand
       return Task.FromResult(false);
     }
 
-    var table = new Table()
-        .Border(TableBorder.Rounded)
-        .BorderColor(Color.Blue);
-    table.AddColumn("[bold]Command[/]");
-    table.AddColumn("[bold]Description[/]");
+    var sb = new StringBuilder();
 
-    // Built-in commands (not in registry — they live in the AgentOrchestrator loop)
-    table.AddRow("/quit", "Exit the session");
-    table.AddRow("/exit", "Exit the session");
+    // Built-in commands (not in registry -- they live in the AgentOrchestrator loop)
+    AppendCommand(sb, "/quit", "Exit the session");
+    AppendCommand(sb, "/exit", "Exit the session");
 
     // Registered commands
     foreach (var descriptor in _registry.GetAllDescriptors())
     {
-      table.AddRow(
-          Markup.Escape(descriptor.Prefix),
-          Markup.Escape(descriptor.Description));
+      AppendCommand(sb, descriptor.Prefix, descriptor.Description);
 
       foreach (var sub in descriptor.Subcommands)
       {
-        table.AddRow(
-            $"  [dim]{Markup.Escape(sub.Usage)}[/]",
-            $"  [dim]{Markup.Escape(sub.Description)}[/]");
+        AppendSubcommand(sb, sub.Usage, sub.Description);
       }
     }
 
-    AnsiConsole.Write(table);
+    _ui.ShowModal("Help", sb.ToString().TrimEnd());
     return Task.FromResult(true);
+  }
+
+  private static void AppendCommand(StringBuilder sb, string command, string description)
+  {
+    sb.Append(command.PadRight(24));
+    sb.AppendLine(description);
+  }
+
+  private static void AppendSubcommand(StringBuilder sb, string usage, string description)
+  {
+    sb.Append("  ");
+    sb.Append(usage.PadRight(22));
+    sb.AppendLine(description);
   }
 }

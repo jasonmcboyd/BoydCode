@@ -133,7 +133,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     if (names.Count == 0)
     {
-      AnsiConsole.MarkupLine("No JEA profiles found.");
+      SpectreHelpers.OutputMarkup("No JEA profiles found.");
       SpectreHelpers.Dim("Create one with /jea create <name>");
       return;
     }
@@ -162,7 +162,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
           profile.Modules.Count.ToString(CultureInfo.InvariantCulture));
     }
 
-    AnsiConsole.Write(table);
+    SpectreHelpers.OutputRenderable(table);
   }
 
   // ──────────────────────────────────────────────
@@ -183,7 +183,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     var profile = await _store.LoadAsync(name, ct);
     if (profile is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Profile [bold]{Markup.Escape(name)}[/] not found.");
+      SpectreHelpers.Error($"Profile '{name}' not found.");
       return;
     }
 
@@ -194,9 +194,9 @@ public sealed partial class JeaSlashCommand : ISlashCommand
         .Border(BoxBorder.Rounded)
         .Padding(1, 0);
 
-    AnsiConsole.WriteLine();
-    AnsiConsole.Write(panel);
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputRenderable(panel);
+    SpectreHelpers.OutputLine();
   }
 
   // ──────────────────────────────────────────────
@@ -217,7 +217,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     var existing = await _store.LoadAsync(name, ct);
     if (existing is not null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Profile [bold]{Markup.Escape(name)}[/] already exists.");
+      SpectreHelpers.Error($"Profile '{name}' already exists.");
       return;
     }
 
@@ -253,7 +253,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
             entries.Add(new JeaProfileEntry(commandName, isDenied));
             var marker = isDenied ? "[red]Deny[/]" : "[green]Allow[/]";
-            AnsiConsole.MarkupLine($"  [green]v[/] {marker} [bold]{Markup.Escape(commandName)}[/]");
+            SpectreHelpers.OutputMarkup($"  [green]\u2713[/] {marker} [bold]{Markup.Escape(commandName)}[/]");
             break;
           }
         case "Add module":
@@ -261,7 +261,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
             var moduleName = SpectreHelpers.PromptNonEmpty("  Module name:");
 
             modules.Add(moduleName);
-            AnsiConsole.MarkupLine($"  [green]v[/] Module [bold]{Markup.Escape(moduleName)}[/] added.");
+            SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Module [bold]{Markup.Escape(moduleName)}[/] added.");
             break;
           }
       }
@@ -271,7 +271,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     await _store.SaveAsync(profile, ct);
 
     var filePath = GetProfileFilePath(name);
-    AnsiConsole.MarkupLine($"[green]v[/] Profile [bold]{Markup.Escape(name)}[/] created.");
+    SpectreHelpers.Success($"Profile '{name}' created.");
     SpectreHelpers.Dim($"File: {filePath}");
   }
 
@@ -293,7 +293,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     var profile = await _store.LoadAsync(name, ct);
     if (profile is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Profile [bold]{Markup.Escape(name)}[/] not found.");
+      SpectreHelpers.Error($"Profile '{name}' not found.");
       return;
     }
 
@@ -329,7 +329,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
                     PSLanguageModeName.RestrictedLanguage,
                     PSLanguageModeName.NoLanguage,
                 });
-            AnsiConsole.MarkupLine($"  [green]v[/] Language mode set to [bold]{languageMode}[/].");
+            SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Language mode set to [bold]{languageMode}[/].");
             break;
           }
         case "Add command":
@@ -340,28 +340,28 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
             entries.Add(new JeaProfileEntry(commandName, isDenied));
             var marker = isDenied ? "[red]Deny[/]" : "[green]Allow[/]";
-            AnsiConsole.MarkupLine($"  [green]v[/] {marker} [bold]{Markup.Escape(commandName)}[/]");
+            SpectreHelpers.OutputMarkup($"  [green]\u2713[/] {marker} [bold]{Markup.Escape(commandName)}[/]");
             break;
           }
         case "Remove command":
           {
             if (entries.Count == 0)
             {
-              AnsiConsole.MarkupLine("  [yellow]No commands to remove.[/]");
+              SpectreHelpers.OutputMarkup("  [yellow]No commands to remove.[/]");
               break;
             }
 
             var commandToRemove = SpectreHelpers.Select("  Select command to remove:", entries.Select(e => e.CommandName));
 
             entries.RemoveAll(e => e.CommandName == commandToRemove);
-            AnsiConsole.MarkupLine($"  [green]v[/] Removed [bold]{Markup.Escape(commandToRemove)}[/].");
+            SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Removed [bold]{Markup.Escape(commandToRemove)}[/].");
             break;
           }
         case "Toggle command deny":
           {
             if (entries.Count == 0)
             {
-              AnsiConsole.MarkupLine("  [yellow]No commands to toggle.[/]");
+              SpectreHelpers.OutputMarkup("  [yellow]No commands to toggle.[/]");
               break;
             }
 
@@ -380,7 +380,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
               var entry = entries[index];
               entries[index] = entry with { IsDenied = !entry.IsDenied };
               var newStatus = entries[index].IsDenied ? "[red]Deny[/]" : "[green]Allow[/]";
-              AnsiConsole.MarkupLine($"  [green]v[/] [bold]{Markup.Escape(entry.CommandName)}[/] set to {newStatus}.");
+              SpectreHelpers.OutputMarkup($"  [green]\u2713[/] [bold]{Markup.Escape(entry.CommandName)}[/] set to {newStatus}.");
             }
 
             break;
@@ -390,21 +390,21 @@ public sealed partial class JeaSlashCommand : ISlashCommand
             var moduleName = SpectreHelpers.PromptNonEmpty("  Module name:");
 
             modules.Add(moduleName);
-            AnsiConsole.MarkupLine($"  [green]v[/] Module [bold]{Markup.Escape(moduleName)}[/] added.");
+            SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Module [bold]{Markup.Escape(moduleName)}[/] added.");
             break;
           }
         case "Remove module":
           {
             if (modules.Count == 0)
             {
-              AnsiConsole.MarkupLine("  [yellow]No modules to remove.[/]");
+              SpectreHelpers.OutputMarkup("  [yellow]No modules to remove.[/]");
               break;
             }
 
             var moduleToRemove = SpectreHelpers.Select("  Select module to remove:", modules);
 
             modules.Remove(moduleToRemove);
-            AnsiConsole.MarkupLine($"  [green]v[/] Removed module [bold]{Markup.Escape(moduleToRemove)}[/].");
+            SpectreHelpers.OutputMarkup($"  [green]\u2713[/] Removed module [bold]{Markup.Escape(moduleToRemove)}[/].");
             break;
           }
       }
@@ -414,7 +414,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     await _store.SaveAsync(updatedProfile, ct);
 
     var filePath = GetProfileFilePath(name);
-    AnsiConsole.MarkupLine($"[green]v[/] Profile [bold]{Markup.Escape(name)}[/] saved.");
+    SpectreHelpers.Success($"Profile '{name}' saved.");
     SpectreHelpers.Dim($"File: {filePath}");
   }
 
@@ -438,7 +438,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     {
       if (deletable.Count == 0)
       {
-        AnsiConsole.MarkupLine("No profiles available to delete.");
+        SpectreHelpers.OutputMarkup("No profiles available to delete.");
         return;
       }
 
@@ -447,14 +447,14 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     if (name.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase))
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Cannot delete the global profile [bold]{BuiltInJeaProfile.GlobalName}[/].");
+      SpectreHelpers.Error($"Cannot delete the global profile '{BuiltInJeaProfile.GlobalName}'.");
       return;
     }
 
     var profile = await _store.LoadAsync(name, ct);
     if (profile is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Profile [bold]{Markup.Escape(name)}[/] not found.");
+      SpectreHelpers.Error($"Profile '{name}' not found.");
       return;
     }
 
@@ -465,7 +465,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     }
 
     await _store.DeleteAsync(name, ct);
-    AnsiConsole.MarkupLine($"[green]v[/] Profile [bold]{Markup.Escape(name)}[/] deleted.");
+    SpectreHelpers.Success($"Profile '{name}' deleted.");
   }
 
   // ──────────────────────────────────────────────
@@ -494,16 +494,16 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     var effective = await _composer.ComposeAsync(profileNames, ct);
 
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine($"  [bold]Language mode:[/]  {effective.LanguageMode}");
-    AnsiConsole.MarkupLine($"  [bold]Commands:[/]       {effective.AllowedCommands.Count}");
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup($"  [bold]Language mode:[/]  {effective.LanguageMode}");
+    SpectreHelpers.OutputMarkup($"  [bold]Commands:[/]       {effective.AllowedCommands.Count}");
 
     if (effective.AllowedCommands.Count > 0)
     {
       SpectreHelpers.Section("Allowed commands");
       foreach (var command in effective.AllowedCommands)
       {
-        AnsiConsole.MarkupLine($"    [green]v[/] {Markup.Escape(command)}");
+        SpectreHelpers.OutputMarkup($"    [green]\u2713[/] {Markup.Escape(command)}");
       }
     }
 
@@ -512,14 +512,14 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       SpectreHelpers.Section("Modules");
       foreach (var module in effective.Modules)
       {
-        AnsiConsole.MarkupLine($"    {Markup.Escape(module)}");
+        SpectreHelpers.OutputMarkup($"    {Markup.Escape(module)}");
       }
     }
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
     var sources = string.Join(", ", sourceProfiles.Select(Markup.Escape));
-    AnsiConsole.MarkupLine($"  [dim]Source profiles: {sources}[/]");
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputMarkup($"  [dim]Source profiles: {sources}[/]");
+    SpectreHelpers.OutputLine();
   }
 
   // ──────────────────────────────────────────────
@@ -531,7 +531,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     var projectName = _activeProject.Name;
     if (projectName is null || projectName.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase))
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] No project selected. Use [bold]/project create[/] or [bold]--project[/] to select a project first.");
+      SpectreHelpers.Error("No project selected. Use /project create or --project to select a project first.");
       return;
     }
 
@@ -549,7 +549,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
       if (assignable.Count == 0)
       {
-        AnsiConsole.MarkupLine("No profiles available to assign.");
+        SpectreHelpers.OutputMarkup("No profiles available to assign.");
         SpectreHelpers.Dim("Create one with /jea create <name>");
         return;
       }
@@ -560,14 +560,14 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     var profile = await _store.LoadAsync(name, ct);
     if (profile is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Profile [bold]{Markup.Escape(name)}[/] not found.");
+      SpectreHelpers.Error($"Profile '{name}' not found.");
       return;
     }
 
     var project = await _projectRepository.LoadAsync(projectName, ct);
     if (project is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Project [bold]{Markup.Escape(projectName)}[/] not found.");
+      SpectreHelpers.Error($"Project '{projectName}' not found.");
       return;
     }
 
@@ -575,13 +575,13 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     if (project.Execution.JeaProfiles.Contains(name, StringComparer.OrdinalIgnoreCase))
     {
-      AnsiConsole.MarkupLine($"Profile [bold]{Markup.Escape(name)}[/] is already assigned to project [bold]{Markup.Escape(projectName)}[/].");
+      SpectreHelpers.OutputMarkup($"Profile [bold]{Markup.Escape(name)}[/] is already assigned to project [bold]{Markup.Escape(projectName)}[/].");
       return;
     }
 
     project.Execution.JeaProfiles.Add(name);
     await _projectRepository.SaveAsync(project, ct);
-    AnsiConsole.MarkupLine($"[green]v[/] Profile [bold]{Markup.Escape(name)}[/] assigned to project [bold]{Markup.Escape(projectName)}[/].");
+    SpectreHelpers.Success($"Profile '{name}' assigned to project '{projectName}'.");
   }
 
   // ──────────────────────────────────────────────
@@ -593,21 +593,21 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     var projectName = _activeProject.Name;
     if (projectName is null || projectName.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase))
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] No project selected. Use [bold]/project create[/] or [bold]--project[/] to select a project first.");
+      SpectreHelpers.Error("No project selected. Use /project create or --project to select a project first.");
       return;
     }
 
     var project = await _projectRepository.LoadAsync(projectName, ct);
     if (project is null)
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Project [bold]{Markup.Escape(projectName)}[/] not found.");
+      SpectreHelpers.Error($"Project '{projectName}' not found.");
       return;
     }
 
     var assigned = project.Execution?.JeaProfiles ?? [];
     if (assigned.Count == 0)
     {
-      AnsiConsole.MarkupLine($"No JEA profiles assigned to project [bold]{Markup.Escape(projectName)}[/].");
+      SpectreHelpers.OutputMarkup($"No JEA profiles assigned to project [bold]{Markup.Escape(projectName)}[/].");
       return;
     }
 
@@ -623,12 +623,12 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     if (!assigned.Remove(name))
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] Profile [bold]{Markup.Escape(name)}[/] is not assigned to project [bold]{Markup.Escape(projectName)}[/].");
+      SpectreHelpers.Error($"Profile '{name}' is not assigned to project '{projectName}'.");
       return;
     }
 
     await _projectRepository.SaveAsync(project, ct);
-    AnsiConsole.MarkupLine($"[green]v[/] Profile [bold]{Markup.Escape(name)}[/] unassigned from project [bold]{Markup.Escape(projectName)}[/].");
+    SpectreHelpers.Success($"Profile '{name}' unassigned from project '{projectName}'.");
   }
 
   // ──────────────────────────────────────────────
@@ -640,7 +640,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     var names = await _store.ListNamesAsync(ct);
     if (names.Count == 0)
     {
-      AnsiConsole.MarkupLine("No JEA profiles found.");
+      SpectreHelpers.OutputMarkup("No JEA profiles found.");
       SpectreHelpers.Dim("Create one with /jea create <name>");
       return null;
     }
@@ -652,20 +652,20 @@ public sealed partial class JeaSlashCommand : ISlashCommand
   {
     if (string.IsNullOrWhiteSpace(name))
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] Profile name cannot be empty.");
+      SpectreHelpers.Error("Profile name cannot be empty.");
       return false;
     }
 
     if (name.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase)
         || name.Equals(BuiltInJeaProfile.Name, StringComparison.OrdinalIgnoreCase))
     {
-      AnsiConsole.MarkupLine($"[red]Error:[/] [bold]{Markup.Escape(name)}[/] is a reserved profile name.");
+      SpectreHelpers.Error($"'{name}' is a reserved profile name.");
       return false;
     }
 
     if (!ProfileNameRegex().IsMatch(name))
     {
-      AnsiConsole.MarkupLine("[red]Error:[/] Profile name must contain only letters, numbers, hyphens, and underscores.");
+      SpectreHelpers.Error("Profile name must contain only letters, numbers, hyphens, and underscores.");
       return false;
     }
 
@@ -685,7 +685,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       lines.Add("[bold]Allowed commands:[/]");
       foreach (var command in profile.AllowedCommands)
       {
-        lines.Add($"  [green]v[/] {Markup.Escape(command)}");
+        lines.Add($"  [green]\u2713[/] {Markup.Escape(command)}");
       }
     }
 

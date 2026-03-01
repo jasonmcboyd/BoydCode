@@ -141,6 +141,12 @@ public sealed partial class AgentOrchestrator
 
     _ui.SetAgentBusy(true);
 
+    // Create a turn-level CTS so Esc/Ctrl+C cancels streaming and thinking, not just tool execution
+    using var turnCts = new CancellationTokenSource();
+    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, turnCts.Token);
+    using var turnMonitor = _ui.BeginCancellationMonitor(() => turnCts.Cancel());
+    var turnToken = linkedCts.Token;
+
     const int maxToolRounds = 50;
 
     // Build the base request from session state — tier-1/2 fields are stable across rounds
@@ -157,65 +163,79 @@ public sealed partial class AgentOrchestrator
       ToolChoice = ToolChoiceStrategy.Auto,
     };
 
-    for (var round = 0; round < maxToolRounds; round++)
+    try
     {
-      // Check if context compaction is needed
-      await CompactIfNeededAsync(session, ct);
-
-      // Build per-turn request — only Messages changes each round
-      var request = baseRequest with
+      for (var round = 0; round < maxToolRounds; round++)
       {
-        Messages = session.Conversation.Messages,
-        Stream = _activeProvider.Provider!.Capabilities.SupportsStreaming,
-      };
+        // Check if context compaction is needed
+        await CompactIfNeededAsync(session, turnToken);
 
-      await _conversationLogger.LogLlmRequestAsync(
-          baseRequest.Model, session.Conversation.Messages.Count,
-          session.Conversation.EstimateTokenCount(), ct);
-
-      _ui.RenderThinkingStart();
-
-      LlmResponse response;
-      if (request.Stream)
-      {
-        response = await StreamResponseAsync(request, ct);
-      }
-      else
-      {
-        response = await _activeProvider.Provider!.SendAsync(request, ct);
-        _ui.RenderThinkingStop();
-        var textContent = response.TextContent;
-        if (!string.IsNullOrEmpty(textContent))
+        // Build per-turn request — only Messages changes each round
+        var request = baseRequest with
         {
-          _ui.RenderAssistantText(textContent);
+          Messages = session.Conversation.Messages,
+          Stream = _activeProvider.Provider!.Capabilities.SupportsStreaming,
+        };
+
+        await _conversationLogger.LogLlmRequestAsync(
+            baseRequest.Model, session.Conversation.Messages.Count,
+            session.Conversation.EstimateTokenCount(), turnToken);
+
+        _ui.RenderThinkingStart();
+
+        LlmResponse response;
+        if (request.Stream)
+        {
+          response = await StreamResponseAsync(request, turnToken);
         }
+        else
+        {
+          response = await _activeProvider.Provider!.SendAsync(request, turnToken);
+          _ui.RenderThinkingStop();
+          var textContent = response.TextContent;
+          if (!string.IsNullOrEmpty(textContent))
+          {
+            _ui.RenderAssistantText(textContent);
+          }
+        }
+
+        _totalInputTokens += response.Usage.InputTokens;
+        _totalOutputTokens += response.Usage.OutputTokens;
+        await _conversationLogger.LogLlmResponseAsync(
+            response.TextContent, response.ToolUseCalls.Count(),
+            response.Usage.InputTokens, response.Usage.OutputTokens, turnToken);
+        _ui.RenderTokenUsage(_totalInputTokens, _totalOutputTokens);
+
+        // Add assistant response to conversation
+        session.Conversation.AddAssistantMessage(response.Content);
+
+        // Process tool calls or stop
+        if (!response.HasToolUse)
+        {
+          _ui.SetAgentBusy(false);
+          await AutoSaveSessionAsync(session, ct);
+          return;
+        }
+
+        await ProcessToolCallsAsync(session, response.ToolUseCalls, turnToken);
       }
 
-      _totalInputTokens += response.Usage.InputTokens;
-      _totalOutputTokens += response.Usage.OutputTokens;
-      await _conversationLogger.LogLlmResponseAsync(
-          response.TextContent, response.ToolUseCalls.Count(),
-          response.Usage.InputTokens, response.Usage.OutputTokens, ct);
-      _ui.RenderTokenUsage(_totalInputTokens, _totalOutputTokens);
-
-      // Add assistant response to conversation
-      session.Conversation.AddAssistantMessage(response.Content);
-
-      // Process tool calls or stop
-      if (!response.HasToolUse)
-      {
-        _ui.SetAgentBusy(false);
-        await AutoSaveSessionAsync(session, ct);
-        return;
-      }
-
-      await ProcessToolCallsAsync(session, response.ToolUseCalls, ct);
+      _ui.SetAgentBusy(false);
+      LogMaxToolRoundsReached(_logger, maxToolRounds);
+      _ui.RenderError($"Reached maximum tool call rounds ({maxToolRounds}). Stopping to prevent runaway execution.");
+      await AutoSaveSessionAsync(session, ct);
     }
-
-    _ui.SetAgentBusy(false);
-    LogMaxToolRoundsReached(_logger, maxToolRounds);
-    _ui.RenderError($"Reached maximum tool call rounds ({maxToolRounds}). Stopping to prevent runaway execution.");
-    await AutoSaveSessionAsync(session, ct);
+    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+    {
+      // Turn was cancelled by the user (Esc/Ctrl+C), not by the outer session token.
+      // Clean up gracefully — the conversation may have a partial turn.
+      _ui.RenderThinkingStop();
+      _ui.RenderStreamingComplete();
+      _ui.RenderExecutingStop();
+      _ui.SetAgentBusy(false);
+      _ui.RenderHint("Cancelled.");
+      await AutoSaveSessionAsync(session, ct);
+    }
   }
 
   private async Task ProcessToolCallsAsync(Session session, IEnumerable<ToolUseBlock> toolCalls, CancellationToken ct)
@@ -245,10 +265,6 @@ public sealed partial class AgentOrchestrator
         var command = root.GetProperty("command").GetString()
             ?? throw new ArgumentException("command is required");
 
-        using var executionCts = new CancellationTokenSource();
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, executionCts.Token);
-        using var monitor = _ui.BeginCancellationMonitor(() => executionCts.Cancel());
-
         var outputStreamed = false;
         var result = await _activeEngine.Engine!.ExecuteAsync(
             command, session.WorkingDirectory,
@@ -257,7 +273,7 @@ public sealed partial class AgentOrchestrator
               _ui.RenderOutputLine(line);
               outputStreamed = true;
             },
-            linkedCts.Token);
+            ct);
         _ui.RenderExecutingStop();
 
         // Format output for LLM

@@ -39,17 +39,17 @@ public sealed class LoginCommand : AsyncCommand
     var oauthConfig = OAuthProviderRegistry.GetConfig(Provider);
     if (oauthConfig is null)
     {
-      AnsiConsole.MarkupLine($"[red]Provider '{Provider}' does not support OAuth login.[/]");
+      SpectreHelpers.Error($"Provider '{Provider}' does not support OAuth login.");
       return (int)ExitCode.ConfigurationError;
     }
 
-    AnsiConsole.MarkupLine($"[bold]Logging in to {Provider}...[/]");
+    AnsiConsole.MarkupLine($"[bold]Logging in to {Markup.Escape(Provider.ToString())}...[/]");
 
     // Resolve effective client credentials
     var clientConfig = await ResolveClientCredentialsAsync(oauthConfig);
     if (clientConfig is null || string.IsNullOrEmpty(clientConfig.ClientId))
     {
-      AnsiConsole.MarkupLine("[red]OAuth client ID is required. Please try again.[/]");
+      SpectreHelpers.Error("OAuth client ID is required. Please try again.");
       return (int)ExitCode.ConfigurationError;
     }
 
@@ -68,13 +68,13 @@ public sealed class LoginCommand : AsyncCommand
     var authUrl = BuildAuthorizationUrl(oauthConfig, clientConfig.ClientId, codeChallenge, redirectUri, state);
 
     // Open browser
-    AnsiConsole.MarkupLine("Opening browser for authentication...");
-    AnsiConsole.MarkupLine("[dim]If the browser doesn't open, visit:[/]");
-    AnsiConsole.MarkupLine($"[link]{authUrl}[/]");
+    SpectreHelpers.Dim("Opening browser for authentication...");
+    SpectreHelpers.Dim("If the browser doesn't open, visit:");
+    AnsiConsole.MarkupLine($"  [link]{authUrl}[/]");
     OpenBrowser(authUrl);
 
     // Wait for callback
-    AnsiConsole.MarkupLine("Waiting for authorization...");
+    SpectreHelpers.Dim("Waiting for authorization...");
     using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
     string authorizationCode;
@@ -84,21 +84,21 @@ public sealed class LoginCommand : AsyncCommand
     }
     catch (OperationCanceledException)
     {
-      AnsiConsole.MarkupLine("[red]Login timed out. Please try again.[/]");
+      SpectreHelpers.Error("Login timed out. Please try again.");
       return (int)ExitCode.AuthenticationError;
     }
     catch (InvalidOperationException ex)
     {
-      AnsiConsole.MarkupLine($"[red]{ex.Message}[/]");
+      SpectreHelpers.Error(ex.Message);
       return (int)ExitCode.AuthenticationError;
     }
 
     // Exchange code for tokens
-    AnsiConsole.MarkupLine("Exchanging authorization code for tokens...");
+    SpectreHelpers.Dim("Exchanging authorization code for tokens...");
     var tokenResult = await ExchangeCodeForTokensAsync(oauthConfig, clientConfig.ClientId, clientConfig.ClientSecret, authorizationCode, codeVerifier, redirectUri, cts.Token);
     if (tokenResult is null)
     {
-      AnsiConsole.MarkupLine("[red]Failed to exchange authorization code for tokens.[/]");
+      SpectreHelpers.Error("Failed to exchange authorization code for tokens.");
       return (int)ExitCode.AuthenticationError;
     }
 
@@ -111,7 +111,7 @@ public sealed class LoginCommand : AsyncCommand
         expiresAt,
         tokenResult.Scope ?? oauthConfig.Scope);
 
-    AnsiConsole.MarkupLine("[green]Successfully logged in![/]");
+    SpectreHelpers.Success("Successfully logged in!");
     return (int)ExitCode.Success;
   }
 
@@ -131,37 +131,24 @@ public sealed class LoginCommand : AsyncCommand
     }
 
     // Prompt user for credentials
-    AnsiConsole.MarkupLine("[yellow]This provider requires your own OAuth client credentials.[/]");
-    AnsiConsole.MarkupLine("[dim]You can create them at: https://console.cloud.google.com/apis/credentials[/]");
+    SpectreHelpers.Warning("This provider requires your own OAuth client credentials.");
+    SpectreHelpers.Dim("You can create them at: https://console.cloud.google.com/apis/credentials");
 
     var clientId = SpectreHelpers.PromptNonEmpty("Enter [green]Client ID[/]:");
 
     string? clientSecret = null;
     if (oauthConfig.RequiresClientSecret)
     {
-      clientSecret = AnsiConsole.Prompt(
-          new TextPrompt<string>("Enter [green]Client Secret[/]:")
-              .Secret()
-              .ValidationErrorMessage("[red]Client Secret cannot be empty[/]")
-              .Validate(s => !string.IsNullOrWhiteSpace(s)));
+      clientSecret = SpectreHelpers.PromptSecret("Enter [green]Client Secret[/]:");
     }
 
     string? gcpProject = null;
     string? gcpLocation = null;
     if (oauthConfig.RequiresClientSecret)
     {
-      AnsiConsole.MarkupLine("[dim]Vertex AI requires a GCP project ID and location.[/]");
+      SpectreHelpers.Dim("Vertex AI requires a GCP project ID and location.");
       gcpProject = SpectreHelpers.PromptNonEmpty("Enter [green]GCP Project ID[/]:");
-
-      gcpLocation = AnsiConsole.Prompt(
-          new TextPrompt<string>("Enter [green]GCP Location[/] [dim](default: us-central1)[/]:")
-              .DefaultValue("us-central1")
-              .AllowEmpty());
-
-      if (string.IsNullOrWhiteSpace(gcpLocation))
-      {
-        gcpLocation = "us-central1";
-      }
+      gcpLocation = SpectreHelpers.PromptWithDefault("Enter [green]GCP Location[/]:", "us-central1");
     }
 
     // Save for future use
@@ -242,8 +229,7 @@ public sealed class LoginCommand : AsyncCommand
     if (!response.IsSuccessStatusCode)
     {
       var errorBody = await response.Content.ReadAsStringAsync(ct);
-      AnsiConsole.MarkupLine($"[red]Token exchange failed ({response.StatusCode}):[/]");
-      AnsiConsole.MarkupLine($"[red]{Markup.Escape(errorBody)}[/]");
+      SpectreHelpers.Error($"Token exchange failed ({response.StatusCode}): {errorBody}");
       return null;
     }
 

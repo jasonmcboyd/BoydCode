@@ -1,0 +1,434 @@
+# Style Tokens (Prescriptive)
+
+This document defines the REQUIRED visual language for BoydCode v2. Every color,
+weight, symbol, spacing value, and border style has exactly one semantic meaning.
+When building new UI, find the existing token. Do not invent new ones.
+
+This replaces the previous descriptive style-tokens document. All values here
+are prescriptive -- they describe what the app SHOULD use, not what it currently
+uses.
+
+---
+
+## 1. Semantic Color System
+
+### 1.1 The Six Colors
+
+BoydCode uses exactly six semantic colors. Every use of color in the application
+maps to one of these. No exceptions.
+
+| Token    | Spectre Markup | Spectre Object     | Meaning                                |
+|----------|----------------|--------------------|----------------------------------------|
+| success  | `[green]`      | `Color.Green`      | Completed, allowed, ready, confirmed   |
+| error    | `[red]`        | `Color.Red`        | Failed, denied, broken, destructive    |
+| warning  | `[yellow]`     | `Color.Yellow`     | Caution, degraded, attention needed    |
+| info     | `[cyan]`       | `Color.Cyan`       | Data values, identifiers, paths, names |
+| accent   | `[blue]`       | `Color.Blue`       | Brand, interactive elements, commands  |
+| muted    | `[dim]`        | `Style.Plain.Dim()`| Metadata, hints, secondary, disabled   |
+
+### 1.2 Color Rules
+
+1. **Never use color alone.** Every colored element MUST have a text label,
+   symbol, or structural cue that conveys the same meaning without color.
+   This serves NO_COLOR users and colorblind users (~8% of males).
+
+2. **One color per semantic.** Green means success. Period. Do not use green
+   for "active provider" or "editable field" -- those are not "success."
+
+3. **Stick to ANSI 4-bit colors.** The six tokens above all map to standard
+   ANSI colors that adapt to the user's terminal theme. Do not use extended
+   colors like `mediumpurple1` or `darkorange` -- they have fixed RGB values
+   that clash with many terminal themes.
+
+4. **No color combinations.** Do not combine colors (e.g., `[yellow on red]`).
+   Use weight (bold, dim) for emphasis within a color.
+
+5. **Respect NO_COLOR.** When the `NO_COLOR` environment variable is set,
+   Spectre.Console strips all color automatically. Design every element to
+   remain meaningful without color.
+
+### 1.3 Color Modifiers
+
+Colors can be combined with weight modifiers for emphasis:
+
+| Combination      | Markup           | Usage                                 |
+|------------------|------------------|---------------------------------------|
+| Error emphasis   | `[red bold]`     | Error prefix: `[red bold]Error:[/]`   |
+| Brand primary    | `[bold cyan]`    | "BOYD" in startup banner              |
+| Brand secondary  | `[bold blue]`    | "CODE" in startup banner              |
+| Warning emphasis | `[yellow bold]`  | "Not configured" in startup banner    |
+
+No other color + modifier combinations are permitted. If you need emphasis,
+use `[bold]` without color.
+
+### 1.4 Threshold Colors
+
+For numeric indicators that change color at breakpoints:
+
+| Condition    | Token   | Example                  |
+|--------------|---------|--------------------------|
+| < 50%        | success | Context usage bar (green) |
+| 50% - 79%    | warning | Context usage bar (yellow)|
+| >= 80%       | error   | Context usage bar (red)   |
+
+### 1.5 NO_COLOR Compliance
+
+When `NO_COLOR` is set or `AnsiConsole.Profile.Capabilities.ColorSystem` is
+`ColorSystem.NoColors`:
+
+- All `[color]` markup is stripped (Spectre handles this automatically)
+- `[bold]` and `[dim]` MAY still render as font weights (terminal-dependent)
+- Status symbols (checkmark, cross) remain visible as text
+- Layout borders render as ASCII fallbacks
+- All information remains conveyed through text, symbols, and structure
+
+---
+
+## 2. Typography Hierarchy
+
+### 2.1 Four Weight Levels
+
+Every text element in the application uses exactly one of these four levels:
+
+```
+Level 1: [bold]            Headings, entity names, primary actions
+Level 2: (plain/unstyled)  Body text, standard content, responses
+Level 3: [dim]             Metadata, timestamps, secondary info, labels
+Level 4: [dim italic]      Hints, ephemeral status, contextual tips
+```
+
+### 2.2 Level Usage Rules
+
+**Level 1 -- Bold**
+- Section headings in modal overlays
+- Entity names in confirmation messages: `Project [bold]my-project[/] created.`
+- Table column headers
+- The user prompt indicator `>`
+- Panel headers
+- Primary actions in help text
+
+**Level 2 -- Plain**
+- All conversation body text (user messages, assistant responses)
+- Tool output content
+- Table cell values
+- Prompt response text
+- Error message body (after the red prefix)
+
+**Level 3 -- Dim**
+- Info grid labels: `[dim]Provider[/]  Gemini`
+- Timestamps and durations: `[dim]2.3s[/]`
+- Token counts: `[dim]4,521 in / 892 out[/]`
+- Status bar content
+- Separator rule styles
+- Line counts: `[dim]42 lines[/]`
+- Empty state placeholders: `[dim](not set)[/]`
+- Keyboard hint labels
+
+**Level 4 -- Dim Italic**
+- "Type a message to start, or /help for available commands."
+- "Press Esc again to cancel"
+- "/expand to show full output"
+- Session resume notice
+
+### 2.3 Prohibited Combinations
+
+- Do not use `[italic]` without `[dim]`. Italic alone has no defined meaning.
+- Do not use `[underline]`. It conflicts with hyperlink styling in some terminals.
+- Do not use `[strikethrough]`. It has poor terminal support.
+- Do not use `[bold dim]`. These are contradictory.
+
+---
+
+## 3. Status Symbols
+
+### 3.1 Symbol Inventory
+
+Every status indicator uses a Unicode symbol paired with colored text:
+
+| Name     | Character | Codepoint | Markup               | Meaning              |
+|----------|-----------|-----------|----------------------|----------------------|
+| check    | \u2713    | U+2713    | `[green]\u2713[/]`   | Success, allowed     |
+| cross    | \u2717    | U+2717    | `[red]\u2717[/]`     | Error, denied        |
+| warning  | !         | U+0021    | `[yellow]![/]`       | Warning, caution     |
+| bullet   | \u2022    | U+2022    | `\u2022`             | List item            |
+| arrow    | \u25b6    | U+25B6    | `[dim]\u25b6[/]`     | Current/active       |
+| dash     | \u2014    | U+2014    | `[dim]\u2014[/]`     | Not set, empty       |
+| at       | @         | U+0040    | (varies by state)    | Activity indicator   |
+
+### 3.2 Activity Indicator
+
+The `@` character serves as the activity indicator prefix in the indicator bar.
+It replaces the braille dot spinner from v1. Rationale: braille characters are
+noisy for screen readers and do not animate meaningfully at low refresh rates.
+
+| State       | Indicator Bar Content                            |
+|-------------|--------------------------------------------------|
+| Idle        | `[dim]` horizontal rule (Spectre `Rule`)         |
+| Thinking    | `[yellow]@ Thinking...[/]`                       |
+| Streaming   | `[cyan]@ Streaming...[/]`                        |
+| Executing   | `[blue]@ Executing... (2.3s)[/]`                 |
+| Cancel hint | `[yellow]Press Esc again to cancel[/]`           |
+| Modal open  | `[dim]Esc to dismiss[/]`                         |
+
+In accessible mode (`BOYDCODE_ACCESSIBLE=1`), the `@` is replaced with a
+static text prefix: `[Working]`, `[Streaming]`, etc.
+
+### 3.3 Deprecated Symbols
+
+The following symbols from v1 are removed in v2:
+
+| Old Symbol | Replacement     | Reason                              |
+|------------|-----------------|-------------------------------------|
+| `v` (Latin)| `\u2713` (check)| Proper checkmark, universally clear |
+| Braille spinner (`\u283F` etc.) | `@` character | Screen reader noise, poor portability |
+| `*` (asterisk) | `\u25b6` (arrow) | Clearer "current item" indicator |
+| `--` (double hyphen) | `\u2014` (em dash) | Proper typographic dash |
+
+### 3.4 Context Chart Symbols
+
+Used exclusively in `/context show` visualization:
+
+| Symbol      | Codepoint | Usage                     |
+|-------------|-----------|---------------------------|
+| Full block  | U+2588    | Filled bar segments       |
+| Light shade | U+2591    | Free space segments       |
+| Black square| U+25A0    | Legend color indicators    |
+
+These are the only permitted characters for data visualization. No sparklines,
+no ASCII art graphs.
+
+---
+
+## 4. Spacing and Padding
+
+### 4.1 Indentation
+
+| Level   | Width | Usage                                        |
+|---------|-------|----------------------------------------------|
+| Level 0 | 0     | Error/warning prefixes, rule separators     |
+| Level 1 | 2     | Conversation content, status messages, tool results |
+| Level 2 | 4     | Nested content within panels, sub-items     |
+
+All indentation uses spaces, never tabs.
+
+### 4.2 Vertical Spacing
+
+| Pattern                           | Blank Lines | Implementation            |
+|-----------------------------------|-------------|---------------------------|
+| Between conversation turns        | 1           | Empty row in content      |
+| Between text blocks within a turn | 0           | Continuous rendering      |
+| Before section divider (Rule)     | 1           | `SpectreHelpers.Section()`|
+| After section divider (Rule)      | 0           | Content follows directly  |
+| After streaming complete          | 1           | Single blank line         |
+| Between tool preview and result   | 0           | Continuous rendering      |
+| Between content and modal         | 0           | Modal replaces content    |
+
+### 4.3 Panel Padding
+
+All panels use consistent internal padding:
+
+| Panel Type        | Padding                | Spectre API             |
+|-------------------|------------------------|-------------------------|
+| Modal overlay     | `Padding(2, 1)`        | 2 horizontal, 1 vertical|
+| Tool preview      | `Padding(1, 0)`        | 1 horizontal, 0 vertical|
+| Conversation msg  | `Padding(0, 0)`        | No padding (borderless) |
+| Crash panel       | `Padding(1, 1, 1, 1)`  | 1 on all sides          |
+| Info display      | `Padding(1, 0)`        | 1 horizontal, 0 vertical|
+
+### 4.4 Grid Column Spacing
+
+| Grid Type       | Col 0 Pad        | Col 1 Pad     | Usage               |
+|-----------------|-------------------|---------------|---------------------|
+| Info grid       | PadLeft(2) PadRight(1) | PadRight(4) | Key-value display |
+| Status bar      | PadLeft(0) PadRight(1) | PadRight(0) | Bottom bar        |
+
+---
+
+## 5. Border Styles
+
+### 5.1 Three Permitted Borders
+
+| Style          | Spectre API              | Usage                            |
+|----------------|--------------------------|----------------------------------|
+| Rounded        | `BoxBorder.Rounded`      | Modal overlays, tool previews, detail panels |
+| None           | `BoxBorder.None`         | Conversation messages (invisible container) |
+| Simple (Table) | `TableBorder.Simple`     | All data tables                  |
+
+### 5.2 Border Colors
+
+| Context            | Border Color    | Spectre API         |
+|--------------------|-----------------|---------------------|
+| Modal overlay      | Default (white) | (no `.BorderColor()`)  |
+| Tool preview       | Dim grey        | `.BorderColor(Color.Grey)` |
+| Error panel        | Red             | `.BorderColor(Color.Red)` |
+| All other panels   | Default (white) | (no `.BorderColor()`)  |
+
+### 5.3 Rules (Horizontal Lines)
+
+| Context            | Style                  | Spectre API                        |
+|--------------------|------------------------|------------------------------------|
+| Section divider    | Dim, left-justified    | `new Rule("[bold]{title}[/]").LeftJustified().RuleStyle("dim")` |
+| Indicator bar idle | Dim, no title          | `new Rule().RuleStyle("dim")`      |
+| Banner separator   | Dim, no title          | `new Rule().RuleStyle("dim")`      |
+| Turn separator     | Dim, no title          | `new Rule().RuleStyle("dim")`      |
+
+---
+
+## 6. Prompt Styling
+
+### 6.1 Input Prompt
+
+| Context          | Display       | Implementation                    |
+|------------------|---------------|-----------------------------------|
+| Layout active    | `> `          | AsyncInputReader renders directly |
+| Fallback mode    | `[bold blue]>[/] ` | Spectre TextPrompt          |
+
+### 6.2 Interactive Prompt Labels
+
+All interactive prompts follow this convention:
+
+- Field name highlighted in green: `"Project [green]name[/]:"`
+- Optional hint in dim: `"Path [dim](Enter to finish)[/]:"`
+- Default value shown: `"Model [dim](gemini-2.5-pro)[/]:"`
+- Secret fields: `.Secret()` on TextPrompt
+- Validation errors in red: `"[red]Name cannot be empty[/]"`
+
+### 6.3 Selection Prompt Highlight
+
+All SelectionPrompt and MultiSelectionPrompt use:
+```csharp
+.HighlightStyle(new Style(Color.Green))
+```
+
+---
+
+## 7. Composite Patterns
+
+### 7.1 Status Message Pattern
+
+All status messages use these exact formats. SpectreHelpers methods enforce them.
+
+```
+Success:  "  [green]\u2713[/] {escaped message}"
+Error:    "[red bold]Error:[/] {escaped message}"
+Warning:  "[yellow]![/] [yellow]Warning:[/] {escaped message}"
+Usage:    "[yellow]Usage:[/] {escaped message}"
+Dim:      "[dim]{escaped message}[/]"
+Cancelled:"[dim]Cancelled.[/]"
+```
+
+Note: Success uses U+2713 checkmark (not lowercase "v"). Error uses bold red
+prefix. Warning includes the `!` symbol.
+
+### 7.2 Error with Suggestion Pattern
+
+```
+[red bold]Error:[/] {error description}
+  [yellow]Suggestion:[/] [dim]{suggestion text}[/]
+```
+
+### 7.3 Inline Entity Reference
+
+Entity names referenced in messages use `[bold]`:
+```
+[green]\u2713[/] Project [bold]{name}[/] created.
+[red bold]Error:[/] Project [bold]{name}[/] not found.
+```
+
+### 7.4 Tool Result Summary
+
+```
+Success:   "  [green]\u2713[/] [dim]Shell[/]  [dim]42 lines | 0.3s[/]"
+Error:     "  [red]\u2717[/] [dim]Shell[/]  [dim]42 lines | 0.3s[/]"
+Expand:    "  [dim italic]/expand to show full output[/]"
+No output: "  [green]\u2713[/] [dim]Shell[/]  [dim]{truncated result}[/]"
+```
+
+### 7.5 Empty State Labels
+
+All empty/unset values use the same pattern -- parenthesized, dim:
+
+| Value        | Markup                |
+|--------------|-----------------------|
+| Not set      | `[dim](not set)[/]`   |
+| None         | `[dim](none)[/]`      |
+| Default      | `[dim](default)[/]`   |
+| Ambient      | `[dim](ambient)[/]`   |
+| Global       | `[dim](global)[/]`    |
+| N/A          | `[dim]\u2014[/]`      |
+
+The em dash (`\u2014`) is used in table cells where a text label would be verbose.
+The parenthesized labels are used in prose context.
+
+---
+
+## 8. Responsive Tiers
+
+### 8.1 Width Tiers
+
+| Tier     | Width Range | Status Bar          | Conversation Margin | Tool Preview |
+|----------|-------------|---------------------|---------------------|--------------|
+| Full     | >= 120 col  | Full pipe-separated | 2-space indent      | Full width   |
+| Standard | 80-119 col  | Abbreviated items   | 2-space indent      | Full width   |
+| Compact  | < 80 col    | Minimal (provider + model only) | 1-space indent | Wrapped |
+
+### 8.2 Height Tiers
+
+| Tier     | Height Range | Banner          | Content Rows    | Status |
+|----------|-------------|-----------------|-----------------|--------|
+| Full     | >= 30 rows   | ASCII art       | Height - 3      | Full   |
+| Standard | 15-29 rows   | Compact one-line| Height - 3      | Full   |
+| Minimal  | 10-14 rows   | None            | Height - 3      | Abbreviated |
+| Fallback | < 10 rows    | None, no Layout | Scrollback mode | Inline |
+
+### 8.3 Detection
+
+```csharp
+var width = AnsiConsole.Profile.Width;
+var widthTier = width >= 120 ? "full" : width >= 80 ? "standard" : "compact";
+
+int height;
+try { height = Console.WindowHeight; }
+catch { height = 24; }
+var heightTier = height >= 30 ? "full"
+    : height >= 15 ? "standard"
+    : height >= 10 ? "minimal"
+    : "fallback";
+```
+
+---
+
+## 9. Accessibility Requirements
+
+### 9.1 Accessible Mode
+
+When `BOYDCODE_ACCESSIBLE=1` environment variable is set:
+
+- All animated indicators replaced with static text: `[Working]` not `@`
+- All color removed (equivalent to NO_COLOR)
+- All Unicode decorative characters replaced with ASCII equivalents
+- All panels use ASCII borders (`BoxBorder.Ascii`)
+- Tables use plain text separators
+- Modal overlays announced with `===` delimiters
+- Screen reader-friendly: output is sequential, no cursor repositioning
+
+### 9.2 NO_COLOR Behavior
+
+When `NO_COLOR` environment variable is set:
+
+- All `[color]` markup stripped (Spectre.Console automatic)
+- `[bold]` and `[dim]` may still render (terminal-dependent)
+- Unicode symbols preserved (checkmark, cross, etc.)
+- Layout structure preserved
+- All information conveyed through text and structure
+
+### 9.3 Non-Interactive Fallback
+
+When `AnsiConsole.Profile.Capabilities.Interactive` is false:
+
+- No Layout widget (render to scrollback)
+- No Live display (one-shot output)
+- No AsyncInputReader (blocking `Console.ReadLine`)
+- No modal overlays (slash commands output to scrollback)
+- No animated indicators (static text)
+- All prompts require flag-based alternatives

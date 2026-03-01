@@ -135,8 +135,8 @@ public sealed class ContextSlashCommand : ISlashCommand
       _ => "red",
     };
 
-    AnsiConsole.WriteLine();
-    AnsiConsole.MarkupLine(string.Format(
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [bold]{0}[/] [dim]\u00b7[/] [bold]{1}[/] [dim]\u00b7[/] [{2}]{3}/{4} tokens ({5})[/]",
         Markup.Escape(providerName),
@@ -145,32 +145,32 @@ public sealed class ContextSlashCommand : ISlashCommand
         SpectreHelpers.FormatCompact(totalUsed),
         SpectreHelpers.FormatCompact(contextLimit),
         SpectreHelpers.FormatPercent(usagePercent)));
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     // ── Stacked bar ───────────────────────────────
 
     RenderStackedBar(systemPromptTokens, toolTokensTotal, messageTokensTotal, freeTokens, bufferTokens, contextLimit);
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     // ── Legend ─────────────────────────────────────
 
-    AnsiConsole.MarkupLine("  [bold]Estimated usage by category[/]");
+    SpectreHelpers.OutputMarkup("  [bold]Estimated usage by category[/]");
     RenderLegend("\u25a0", "blue", "System prompt", systemPromptTokens, contextLimit);
     RenderLegend("\u25a0", "mediumpurple1", "Tools", toolTokensTotal, contextLimit);
     RenderLegend("\u25a0", "green", "Messages", messageTokensTotal, contextLimit);
     RenderLegend("\u25a0", "grey", "Free space", freeTokens, contextLimit);
     RenderLegend("\u25a0", "darkorange", "Compact buffer", bufferTokens, contextLimit);
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     // ── System prompt breakdown ───────────────────
 
-    AnsiConsole.MarkupLine(string.Format(
+    SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [blue bold]System prompt[/] [dim]\u00b7[/] {0} tokens",
         SpectreHelpers.FormatCompact(systemPromptTokens)));
     RenderTreeLine(false, "Meta prompt", string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(metaPromptTokens)));
     RenderTreeLine(true, "Session prompt", string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(sessionPromptTokens)));
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     // ── Message breakdown ─────────────────────────
 
@@ -179,7 +179,7 @@ public sealed class ContextSlashCommand : ISlashCommand
         + messageBreakdown.ToolCallCount
         + messageBreakdown.ToolResultCount;
 
-    AnsiConsole.MarkupLine(string.Format(
+    SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [green bold]Messages[/] [dim]\u00b7[/] {0} messages, {1} tokens",
         totalMessageCount.ToString(CultureInfo.InvariantCulture),
@@ -196,17 +196,17 @@ public sealed class ContextSlashCommand : ISlashCommand
     RenderTreeLine(true, "Tool results", string.Format(
         CultureInfo.InvariantCulture, "{0} results, {1} tokens",
         messageBreakdown.ToolResultCount, SpectreHelpers.FormatCompact(messageBreakdown.ToolResultTokens)));
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
 
     // ── Tool inventory ────────────────────────────
 
-    AnsiConsole.MarkupLine(string.Format(
+    SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [mediumpurple1 bold]Tools[/] [dim]\u00b7[/] 1 tool, {0} tokens",
         SpectreHelpers.FormatCompact(toolTokensTotal)));
     RenderTreeLine(true, shellTool.Name, string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(toolTokensTotal)));
 
-    AnsiConsole.WriteLine();
+    SpectreHelpers.OutputLine();
   }
 
   // ──────────────────────────────────────────────
@@ -279,7 +279,7 @@ public sealed class ContextSlashCommand : ISlashCommand
       bar.Append(CultureInfo.InvariantCulture, $"[{segments[i].color}]{new string(ch, charWidths[i])}[/]");
     }
 
-    AnsiConsole.MarkupLine(bar.ToString());
+    SpectreHelpers.OutputMarkup(bar.ToString());
   }
 
   private static void RenderLegend(string indicator, string color, string label, int tokens, int contextLimit)
@@ -287,7 +287,7 @@ public sealed class ContextSlashCommand : ISlashCommand
     var percent = contextLimit > 0 ? (double)tokens / contextLimit * 100 : 0;
     var tokenStr = SpectreHelpers.FormatCompact(tokens);
     var percentStr = SpectreHelpers.FormatPercent(percent);
-    AnsiConsole.MarkupLine(string.Format(
+    SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "    [{0}]{1}[/] {2,-18}{3,8} tokens  ({4})",
         color,
@@ -300,7 +300,7 @@ public sealed class ContextSlashCommand : ISlashCommand
   private static void RenderTreeLine(bool isLast, string label, string value)
   {
     var connector = isLast ? "\u2514\u2500\u2500" : "\u251c\u2500\u2500";
-    AnsiConsole.MarkupLine(string.Format(
+    SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [dim]{0}[/] {1,-20}{2}",
         connector,
@@ -406,7 +406,7 @@ public sealed class ContextSlashCommand : ISlashCommand
     var conversation = session.Conversation;
     if (conversation.Messages.Count == 0)
     {
-      AnsiConsole.MarkupLine("Nothing to compact.");
+      SpectreHelpers.OutputMarkup("Nothing to compact.");
       return;
     }
 
@@ -447,7 +447,7 @@ public sealed class ContextSlashCommand : ISlashCommand
     var conversation = session.Conversation;
     if (conversation.Messages.Count < 4)
     {
-      AnsiConsole.MarkupLine("Not enough conversation to summarize (need at least 4 messages).");
+      SpectreHelpers.OutputMarkup("Not enough conversation to summarize (need at least 4 messages).");
       return;
     }
 

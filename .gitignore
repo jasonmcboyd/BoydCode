@@ -14,6 +14,9 @@ packages/
 *.nupkg
 **/Properties/launchSettings.json
 
+## Publish output
+publish/
+
 ## Build results
 [Dd]ebug/
 [Rr]elease/

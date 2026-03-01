@@ -1,36 +1,28 @@
-using System.Diagnostics;
 using BoydCode.Application.Interfaces;
+using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 
 namespace BoydCode.Presentation.Console;
 
-public sealed class SpectreUserInterface : IUserInterface
+public sealed class SpectreUserInterface : IUserInterface, IDisposable
 {
-  private const int WindowSize = 5;
-  private const int MaxBufferLines = 10_000;
-
   private readonly IAnsiConsole _stderr = AnsiConsole.Create(
       new AnsiConsoleSettings { Out = new AnsiConsoleOutput(System.Console.Error) });
 
-  private readonly object _consoleLock = new();
-  private readonly Stopwatch _executionStopwatch = new();
+  private readonly TerminalLayout _layout = new();
+  private readonly ExecutionWindow _executionWindow;
+  private AsyncInputReader? _inputReader;
+
   private bool _streamingStarted;
   private bool _isThinking;
   private bool _isExecuting;
   private bool _cancelHintShowing;
-  private bool _executionOutputSeen;
+  private bool _layoutActive;
 
-  // Contained output window state
-  private readonly Queue<string> _outputBuffer = new();
-  private int _windowDisplayLines;
-  private bool _windowActive;
-  private bool _useContainedOutput;
-  private DateTime _lastRedraw = DateTime.MinValue;
-  private bool _redrawPending;
-
-  // Post-execution state for /expand
-  private List<string>? _lastOutputBuffer;
-  private bool _lastOutputExpanded;
+  public SpectreUserInterface()
+  {
+    _executionWindow = new ExecutionWindow(_layout.ConsoleLock);
+  }
 
   public bool IsInteractive => AnsiConsole.Profile.Capabilities.Interactive;
 
@@ -38,14 +30,22 @@ public sealed class SpectreUserInterface : IUserInterface
 
   public string? StaleSettingsWarning { get; set; }
 
-  public Task<string> GetUserInputAsync(CancellationToken ct = default)
+  public async Task<string> GetUserInputAsync(CancellationToken ct = default)
   {
     if (!IsInteractive)
     {
       var line = System.Console.ReadLine();
-      return Task.FromResult(line ?? "/quit");
+      return line ?? "/quit";
     }
 
+    if (_layoutActive && _inputReader is not null)
+    {
+      // Async input: read from Channel (user can type while agent works)
+      _layout.UpdateQueueCount(_inputReader.PendingCount);
+      return await _inputReader.ReadLineAsync(ct);
+    }
+
+    // Fallback: blocking Spectre.Console prompt
     if (StatusLine is not null)
     {
       AnsiConsole.MarkupLine($"[dim]{Markup.Escape(StatusLine)}[/]");
@@ -59,7 +59,7 @@ public sealed class SpectreUserInterface : IUserInterface
     var input = AnsiConsole.Prompt(
         new TextPrompt<string>("[bold blue]>[/]")
             .AllowEmpty());
-    return Task.FromResult(input);
+    return input;
   }
 
   private static string FormatToolPreview(string toolName, string argumentsJson)
@@ -196,7 +196,6 @@ public sealed class SpectreUserInterface : IUserInterface
 
   public void RenderAssistantText(string text)
   {
-    // Render as markdown-ish content with a left border
     AnsiConsole.Write(new Panel(Markup.Escape(text))
         .Border(BoxBorder.None)
         .PadLeft(1));
@@ -244,268 +243,48 @@ public sealed class SpectreUserInterface : IUserInterface
 
   public void RenderExecutingStart()
   {
-    lock (_consoleLock)
+    lock (_layout.ConsoleLock)
     {
       _isExecuting = true;
       _cancelHintShowing = false;
-      _executionOutputSeen = false;
-      _useContainedOutput = IsInteractive && AnsiConsole.Profile.Capabilities.Ansi;
-      _outputBuffer.Clear();
-      _windowDisplayLines = 0;
-      _windowActive = false;
-      _lastRedraw = DateTime.MinValue;
-      _redrawPending = false;
-      _executionStopwatch.Restart();
-      AnsiConsole.Markup("[dim italic]  Executing...[/]");
+      var useContainedOutput = IsInteractive && AnsiConsole.Profile.Capabilities.Ansi;
+      _executionWindow.Start(useContainedOutput);
     }
   }
 
   public void RenderExecutingStop()
   {
-    lock (_consoleLock)
+    lock (_layout.ConsoleLock)
     {
       if (!_isExecuting) return;
       _isExecuting = false;
       _cancelHintShowing = false;
-      if (_useContainedOutput && _redrawPending)
-      {
-        RedrawWindow(bypassThrottle: true);
-      }
-      System.Console.Write("\r                                                  \r");
+      _executionWindow.Stop();
     }
   }
 
   public void RenderOutputLine(string line)
   {
-    lock (_consoleLock)
+    lock (_layout.ConsoleLock)
     {
       if (_cancelHintShowing)
       {
         System.Console.Write("\r                                                  \r");
         _cancelHintShowing = false;
       }
-      _executionOutputSeen = true;
-
-      if (_useContainedOutput)
-      {
-        if (_outputBuffer.Count >= MaxBufferLines)
-        {
-          _outputBuffer.Dequeue();
-        }
-        _outputBuffer.Enqueue(line);
-        RedrawWindow(bypassThrottle: false);
-      }
-      else
-      {
-        System.Console.Write("  ");
-        System.Console.WriteLine(line);
-      }
+      _executionWindow.AddOutputLine(line);
     }
   }
 
   public void RenderToolResult(string toolName, string result, bool isError)
   {
-    lock (_consoleLock)
+    lock (_layout.ConsoleLock)
     {
-      _executionStopwatch.Stop();
-      var duration = FormatDuration(_executionStopwatch.Elapsed);
-      var lineCount = _outputBuffer.Count;
-
-      if (_useContainedOutput)
-      {
-        // Save output for /expand before clearing
-        _lastOutputBuffer = new List<string>(_outputBuffer);
-        _lastOutputExpanded = false;
-
-        if (lineCount > WindowSize)
-        {
-          // Collapse the window: move cursor up and erase the visible lines
-          System.Console.Write($"\x1b[{_windowDisplayLines}A");
-          System.Console.Write("\x1b[0J");
-
-          if (isError)
-          {
-            AnsiConsole.MarkupLine(
-                $"  [red][[{Markup.Escape(toolName)} error]][/] [dim]{lineCount} lines | {duration}[/]" +
-                $"  [dim italic](/expand to show full output)[/]");
-          }
-          else
-          {
-            AnsiConsole.MarkupLine(
-                $"  [green][[{Markup.Escape(toolName)}]][/] [dim]{lineCount} lines | {duration}[/]" +
-                $"  [dim italic](/expand to show full output)[/]");
-          }
-        }
-        else if (lineCount > 0)
-        {
-          // Lines are already visible, just render the summary below
-          if (isError)
-          {
-            AnsiConsole.MarkupLine(
-                $"  [red][[{Markup.Escape(toolName)} error]][/] [dim]{lineCount} lines | {duration}[/]");
-          }
-          else
-          {
-            AnsiConsole.MarkupLine(
-                $"  [green][[{Markup.Escape(toolName)}]][/] [dim]{lineCount} lines | {duration}[/]");
-          }
-        }
-        else
-        {
-          // No output at all
-          if (isError)
-          {
-            AnsiConsole.MarkupLine(
-                $"  [red][[{Markup.Escape(toolName)} error]][/] {Markup.Escape(Truncate(result, 500))}");
-          }
-          else
-          {
-            var summary = Truncate(result, 200);
-            AnsiConsole.MarkupLine(
-                $"  [green][[{Markup.Escape(toolName)}]][/] [dim]{Markup.Escape(summary)}[/]");
-          }
-        }
-
-        _outputBuffer.Clear();
-        _windowDisplayLines = 0;
-        _windowActive = false;
-      }
-      else
-      {
-        // Non-ANSI fallback: original behavior
-        _lastOutputBuffer = null;
-        if (isError)
-        {
-          AnsiConsole.MarkupLine(
-              $"  [red][[{Markup.Escape(toolName)} error]][/] {Markup.Escape(Truncate(result, 500))}");
-        }
-        else
-        {
-          var summary = Truncate(result, 200);
-          AnsiConsole.MarkupLine(
-              $"  [green][[{Markup.Escape(toolName)}]][/] [dim]{Markup.Escape(summary)}[/]");
-        }
-      }
+      _executionWindow.RenderToolResult(toolName, result, isError, outputStreamed: _executionWindow.OutputLineCount > 0 || _isExecuting);
     }
   }
 
-  public void ExpandLastToolOutput()
-  {
-    if (_lastOutputBuffer is null || _lastOutputBuffer.Count == 0)
-    {
-      AnsiConsole.MarkupLine("[dim]No tool output to expand.[/]");
-      return;
-    }
-
-    if (_lastOutputExpanded)
-    {
-      AnsiConsole.MarkupLine("[dim]Output already expanded.[/]");
-      return;
-    }
-
-    _lastOutputExpanded = true;
-    foreach (var line in _lastOutputBuffer)
-    {
-      System.Console.Write("  ");
-      System.Console.WriteLine(line);
-    }
-  }
-
-  private void RedrawWindow(bool bypassThrottle)
-  {
-    if (_outputBuffer.Count == 0) return;
-
-    if (!bypassThrottle)
-    {
-      var now = DateTime.UtcNow;
-      if ((now - _lastRedraw).TotalMilliseconds < 50)
-      {
-        _redrawPending = true;
-        return;
-      }
-      _lastRedraw = now;
-    }
-
-    _redrawPending = false;
-
-    if (!_windowActive)
-    {
-      // First output line: clear the "Executing..." text
-      System.Console.Write("\r                                                  \r");
-      _windowActive = true;
-    }
-
-    int termWidth;
-    try { termWidth = System.Console.WindowWidth; }
-    catch { termWidth = 120; }
-    var maxWidth = Math.Max(termWidth - 6, 10);
-
-    if (_outputBuffer.Count <= WindowSize)
-    {
-      // Still filling the window: just write the newest line
-      if (_windowDisplayLines < _outputBuffer.Count)
-      {
-        var newest = _outputBuffer.Last();
-        System.Console.Write("  ");
-        System.Console.WriteLine(TruncateForDisplay(newest, maxWidth));
-        _windowDisplayLines = _outputBuffer.Count;
-      }
-    }
-    else
-    {
-      // Window is full: cursor up and rewrite the visible lines
-      if (_windowDisplayLines > 0)
-      {
-        System.Console.Write($"\x1b[{_windowDisplayLines}A");
-      }
-
-      var tail = _outputBuffer.Skip(_outputBuffer.Count - WindowSize).ToArray();
-      for (var i = 0; i < WindowSize; i++)
-      {
-        System.Console.Write("\x1b[2K");
-        var displayLine = TruncateForDisplay(tail[i], maxWidth);
-        if (i == 0)
-        {
-          // Show line counter right-aligned on the first visible line
-          var counter = $" [{_outputBuffer.Count} lines]";
-          var contentWidth = maxWidth - counter.Length;
-          if (contentWidth > 0 && displayLine.Length > contentWidth)
-          {
-            displayLine = displayLine[..contentWidth];
-          }
-          System.Console.Write("  ");
-          System.Console.Write(displayLine);
-          System.Console.Write($"\x1b[{maxWidth + 4}G");
-          System.Console.Write($"\x1b[2m{counter}\x1b[22m");
-          System.Console.WriteLine();
-        }
-        else
-        {
-          System.Console.Write("  ");
-          System.Console.WriteLine(displayLine);
-        }
-      }
-
-      _windowDisplayLines = WindowSize;
-    }
-  }
-
-  private static string TruncateForDisplay(string line, int maxWidth)
-  {
-    if (line.Length <= maxWidth) return line;
-    return maxWidth > 3 ? line[..(maxWidth - 3)] + "..." : line[..maxWidth];
-  }
-
-  private static string FormatDuration(TimeSpan elapsed)
-  {
-    if (elapsed.TotalMinutes >= 1)
-    {
-      return $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s";
-    }
-    return elapsed.TotalSeconds >= 10
-        ? $"{elapsed.TotalSeconds:F0}s"
-        : $"{elapsed.TotalSeconds:F1}s";
-  }
+  public void ExpandLastToolOutput() => _executionWindow.ExpandLastToolOutput();
 
   public void RenderError(string message)
   {
@@ -557,17 +336,16 @@ public sealed class SpectreUserInterface : IUserInterface
 
   public void RenderMarkdown(string markdown)
   {
-    // For now, render as escaped text. Phase 3 will add proper markdown rendering.
     AnsiConsole.Write(new Panel(Markup.Escape(markdown)).Border(BoxBorder.Rounded));
   }
 
   public void RenderCancelHint()
   {
-    lock (_consoleLock)
+    lock (_layout.ConsoleLock)
     {
       if (_isExecuting)
       {
-        System.Console.Write("\r                                                  \r");
+        _executionWindow.ClearForCancelHint();
       }
       AnsiConsole.Markup("[dim italic yellow]  Press Esc or Ctrl+C again to cancel[/]");
       _cancelHintShowing = true;
@@ -576,20 +354,78 @@ public sealed class SpectreUserInterface : IUserInterface
 
   public void ClearCancelHint()
   {
-    lock (_consoleLock)
+    lock (_layout.ConsoleLock)
     {
       if (!_cancelHintShowing) return;
       System.Console.Write("\r                                                  \r");
       _cancelHintShowing = false;
-      if (_isExecuting && !_executionOutputSeen)
+      if (_isExecuting)
       {
-        AnsiConsole.Markup("[dim italic]  Executing...[/]");
+        _executionWindow.RestoreAfterCancelHint();
       }
     }
   }
 
+  public void ActivateLayout()
+  {
+    if (!IsInteractive) return;
+
+    _layout.Activate();
+    _layoutActive = _layout.IsActive;
+
+    if (_layoutActive)
+    {
+      if (StatusLine is not null)
+      {
+        _layout.UpdateStatusLine(StatusLine);
+      }
+
+      _inputReader = new AsyncInputReader(_layout)
+      {
+        OnCancelHintRequested = RenderCancelHint,
+        OnCancelHintCleared = ClearCancelHint,
+      };
+      _inputReader.Start();
+    }
+  }
+
+  public void DeactivateLayout()
+  {
+    _layoutActive = false;
+    _inputReader?.Dispose();
+    _inputReader = null;
+    _layout.Deactivate();
+  }
+
+  public void SuspendLayout() => _layout.Suspend();
+
+  public void ResumeLayout() => _layout.Resume();
+
+  public void SetAgentBusy(bool busy)
+  {
+    _layout.SetAgentBusy(busy);
+    if (_inputReader is not null)
+    {
+      _layout.UpdateQueueCount(_inputReader.PendingCount);
+    }
+  }
+
+  public void Dispose()
+  {
+    _inputReader?.Dispose();
+    _executionWindow.Dispose();
+    _layout.Dispose();
+  }
+
   public IDisposable BeginCancellationMonitor(Action onCancelRequested)
   {
+    if (_layoutActive && _inputReader is not null)
+    {
+      // Delegate to AsyncInputReader's integrated cancellation
+      return _inputReader.BeginCancellationMonitor(onCancelRequested);
+    }
+
+    // Fallback: use standalone monitor
     return new CancellationMonitor(this, onCancelRequested);
   }
 
@@ -654,14 +490,12 @@ public sealed class SpectreUserInterface : IUserInterface
         var now = DateTimeOffset.UtcNow;
         if ((now - _lastPressTime).TotalMilliseconds <= 1000)
         {
-          // Second press within window — cancel
           _resetTimer?.Dispose();
           _resetTimer = null;
           shouldCancel = true;
         }
         else
         {
-          // First press — start reset timer
           _lastPressTime = now;
           shouldShowHint = true;
           _resetTimer?.Dispose();
@@ -677,7 +511,6 @@ public sealed class SpectreUserInterface : IUserInterface
         }
       }
 
-      // Invoke callbacks outside the lock to avoid deadlock
       if (shouldShowHint)
       {
         _ui.RenderCancelHint();
@@ -713,15 +546,5 @@ public sealed class SpectreUserInterface : IUserInterface
 
       _pollCts.Dispose();
     }
-  }
-
-  private static string Truncate(string text, int maxLength)
-  {
-    if (text.Length <= maxLength)
-    {
-      return text;
-    }
-
-    return text[..maxLength] + "...";
   }
 }

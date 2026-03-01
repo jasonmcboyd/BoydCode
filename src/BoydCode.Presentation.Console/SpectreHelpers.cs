@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
@@ -99,6 +100,14 @@ internal static class SpectreHelpers
   }
 
   // ──────────────────────────────────────────────
+  //  LAYOUT SUSPEND/RESUME HELPERS
+  // ──────────────────────────────────────────────
+
+  private static void SuspendLayout() => TerminalLayout.Current?.Suspend();
+
+  private static void ResumeLayout() => TerminalLayout.Current?.Resume();
+
+  // ──────────────────────────────────────────────
   //  STATUS MESSAGES (escape internally)
   // ──────────────────────────────────────────────
 
@@ -134,33 +143,135 @@ internal static class SpectreHelpers
   //  PROMPTS (labels are developer-authored markup)
   // ──────────────────────────────────────────────
 
-  public static string PromptNonEmpty(string label) =>
-    AnsiConsole.Prompt(
-      new TextPrompt<string>(label)
-        .Validate(v => !string.IsNullOrWhiteSpace(v)
-          ? ValidationResult.Success()
-          : ValidationResult.Error("Value cannot be empty")));
+  public static string PromptNonEmpty(string label)
+  {
+    SuspendLayout();
+    try
+    {
+      return AnsiConsole.Prompt(
+        new TextPrompt<string>(label)
+          .Validate(v => !string.IsNullOrWhiteSpace(v)
+            ? ValidationResult.Success()
+            : ValidationResult.Error("Value cannot be empty")));
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
 
-  public static string PromptOptional(string label) =>
-    AnsiConsole.Prompt(
-      new TextPrompt<string>(label)
-        .AllowEmpty());
+  public static string PromptOptional(string label)
+  {
+    SuspendLayout();
+    try
+    {
+      return AnsiConsole.Prompt(
+        new TextPrompt<string>(label)
+          .AllowEmpty());
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
 
-  public static string Select(string title, IEnumerable<string> choices, int defaultIndex = 0) =>
-    SelectCore(
-      new SelectionPrompt<string>()
-        .Title(title)
-        .AddChoices(choices)
-        .HighlightStyle(new Style(Color.Green)),
-      defaultIndex);
+  public static string PromptSecret(string label, bool allowEmpty = false)
+  {
+    SuspendLayout();
+    try
+    {
+      var prompt = new TextPrompt<string>(label).Secret();
+      if (allowEmpty) prompt.AllowEmpty();
+      return AnsiConsole.Prompt(prompt);
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
 
-  public static T Select<T>(string title, IEnumerable<T> choices, int defaultIndex = 0) where T : notnull =>
-    SelectCore(
-      new SelectionPrompt<T>()
-        .Title(title)
-        .AddChoices(choices)
-        .HighlightStyle(new Style(Color.Green)),
-      defaultIndex);
+  public static string PromptWithDefault(string label, string defaultValue)
+  {
+    SuspendLayout();
+    try
+    {
+      return AnsiConsole.Prompt(
+        new TextPrompt<string>(label)
+          .DefaultValue(defaultValue)
+          .ShowDefaultValue());
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
+
+  public static T Ask<T>(string label)
+  {
+    SuspendLayout();
+    try
+    {
+      return AnsiConsole.Ask<T>(label);
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
+
+  public static string Select(string title, IEnumerable<string> choices, int defaultIndex = 0)
+  {
+    SuspendLayout();
+    try
+    {
+      return SelectCore(
+        new SelectionPrompt<string>()
+          .Title(title)
+          .AddChoices(choices)
+          .HighlightStyle(new Style(Color.Green)),
+        defaultIndex);
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
+
+  public static T Select<T>(string title, IEnumerable<T> choices, int defaultIndex = 0) where T : notnull
+  {
+    SuspendLayout();
+    try
+    {
+      return SelectCore(
+        new SelectionPrompt<T>()
+          .Title(title)
+          .AddChoices(choices)
+          .HighlightStyle(new Style(Color.Green)),
+        defaultIndex);
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
+
+  public static List<T> MultiSelect<T>(string title, IEnumerable<T> choices) where T : notnull
+  {
+    SuspendLayout();
+    try
+    {
+      return AnsiConsole.Prompt(
+        new MultiSelectionPrompt<T>()
+          .Title(title)
+          .NotRequired()
+          .AddChoices(choices)
+          .HighlightStyle(new Style(Color.Green)));
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
 
   private static T SelectCore<T>(SelectionPrompt<T> prompt, int defaultIndex) where T : notnull
   {
@@ -173,8 +284,18 @@ internal static class SpectreHelpers
     return prompt.Show(vim);
   }
 
-  public static bool Confirm(string prompt, bool defaultValue = true) =>
-    AnsiConsole.Confirm(prompt, defaultValue);
+  public static bool Confirm(string prompt, bool defaultValue = true)
+  {
+    SuspendLayout();
+    try
+    {
+      return AnsiConsole.Confirm(prompt, defaultValue);
+    }
+    finally
+    {
+      ResumeLayout();
+    }
+  }
 
   // ──────────────────────────────────────────────
   //  TABLE FACTORY

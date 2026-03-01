@@ -146,25 +146,14 @@ public sealed class ProviderSlashCommand : ISlashCommand
 
     var isOllama = providerType == LlmProviderType.Ollama;
 
-    var apiKeyPrompt = new TextPrompt<string>("API key:")
-        .Secret();
-
-    if (isOllama)
-    {
-      apiKeyPrompt.AllowEmpty();
-    }
-
-    var apiKey = AnsiConsole.Prompt(apiKeyPrompt);
+    var apiKey = SpectreHelpers.PromptSecret("API key:", allowEmpty: isOllama);
     if (string.IsNullOrWhiteSpace(apiKey))
     {
       apiKey = null;
     }
 
     var defaultModel = ProviderDefaults.DefaultModelFor(providerType);
-    var model = AnsiConsole.Prompt(
-        new TextPrompt<string>("Model:")
-            .DefaultValue(defaultModel)
-            .ShowDefaultValue());
+    var model = SpectreHelpers.PromptWithDefault("Model:", defaultModel);
 
     var profile = new ProviderProfile(providerType, apiKey, model);
     await _providerConfigStore.SaveAsync(profile, ct);

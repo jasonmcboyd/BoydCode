@@ -12,6 +12,8 @@ namespace BoydCode.Presentation.Console.Commands;
 
 public sealed class ProjectSlashCommand : ISlashCommand
 {
+  private static readonly string[] ConfigureSections = ["Directories", "System prompt", "Container settings"];
+
   private readonly IProjectRepository _projectRepository;
   private readonly DirectoryResolver _directoryResolver;
   private readonly DirectoryGuard _directoryGuard;
@@ -126,12 +128,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     AnsiConsole.WriteLine();
 
-    var sections = AnsiConsole.Prompt(
-        new MultiSelectionPrompt<string>()
-            .Title("Which settings would you like to configure?")
-            .NotRequired()
-            .InstructionsText("[dim](Press [blue]<space>[/] to toggle, [green]<enter>[/] to confirm)[/]")
-            .AddChoices("Directories", "System prompt", "Container settings"));
+    var sections = SpectreHelpers.MultiSelect("Which settings would you like to configure?", ConfigureSections);
 
     if (sections.Contains("Directories"))
     {
@@ -225,7 +222,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
-        : _activeProject.Name ?? AnsiConsole.Ask<string>("Project name:");
+        : _activeProject.Name ?? SpectreHelpers.Ask<string>("Project name:");
 
     var project = await _projectRepository.LoadAsync(name, ct);
     if (project is null)
@@ -378,7 +375,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
-        : _activeProject.Name ?? AnsiConsole.Ask<string>("Project name:");
+        : _activeProject.Name ?? SpectreHelpers.Ask<string>("Project name:");
 
     var project = await _projectRepository.LoadAsync(name, ct);
     if (project is null)
@@ -485,7 +482,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
-        : AnsiConsole.Ask<string>("Project name:");
+        : SpectreHelpers.Ask<string>("Project name:");
 
     if (name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase))
     {
@@ -574,10 +571,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
   private static void PromptSystemPrompt(Project project)
   {
-    var prompt = AnsiConsole.Prompt(
-        new TextPrompt<string>("  Custom system prompt [dim](Enter for default)[/]:")
-            .DefaultValue(Project.DefaultSystemPrompt)
-            .ShowDefaultValue());
+    var prompt = SpectreHelpers.PromptWithDefault("  Custom system prompt [dim](Enter for default)[/]:", Project.DefaultSystemPrompt);
 
     if (prompt == Project.DefaultSystemPrompt)
     {

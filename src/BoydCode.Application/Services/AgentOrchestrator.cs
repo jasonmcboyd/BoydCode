@@ -139,6 +139,8 @@ public sealed partial class AgentOrchestrator
       return;
     }
 
+    _ui.SetAgentBusy(true);
+
     const int maxToolRounds = 50;
 
     // Build the base request from session state — tier-1/2 fields are stable across rounds
@@ -202,6 +204,7 @@ public sealed partial class AgentOrchestrator
       // Process tool calls or stop
       if (!response.HasToolUse)
       {
+        _ui.SetAgentBusy(false);
         await AutoSaveSessionAsync(session, ct);
         return;
       }
@@ -209,6 +212,7 @@ public sealed partial class AgentOrchestrator
       await ProcessToolCallsAsync(session, response.ToolUseCalls, ct);
     }
 
+    _ui.SetAgentBusy(false);
     LogMaxToolRoundsReached(_logger, maxToolRounds);
     _ui.RenderError($"Reached maximum tool call rounds ({maxToolRounds}). Stopping to prevent runaway execution.");
     await AutoSaveSessionAsync(session, ct);
@@ -250,7 +254,6 @@ public sealed partial class AgentOrchestrator
             command, session.WorkingDirectory,
             onOutputLine: line =>
             {
-              _ui.RenderExecutingStop();
               _ui.RenderOutputLine(line);
               outputStreamed = true;
             },

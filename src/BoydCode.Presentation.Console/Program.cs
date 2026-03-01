@@ -37,6 +37,13 @@ AppDomain.CurrentDomain.ProcessExit += (_, _) =>
 {
   try
   {
+    // Dispose UI first (tears down layout, stops input reader)
+    var ui = host?.Services.GetService<IUserInterface>();
+    if (ui is IDisposable disposableUi)
+    {
+      disposableUi.Dispose();
+    }
+
     var activeEngine = host?.Services.GetService<ActiveExecutionEngine>();
     activeEngine?.DisposeAsync().AsTask().GetAwaiter().GetResult();
 

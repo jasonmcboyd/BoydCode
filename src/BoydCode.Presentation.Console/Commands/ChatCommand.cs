@@ -219,6 +219,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
     }
 
     // Run the interactive loop
+    _ui.ActivateLayout();
     try
     {
       await _orchestrator.RunSessionAsync(session);
@@ -235,6 +236,10 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       await _conversationLogger.LogSessionEndAsync("error");
       _ui.RenderError($"Fatal error: {ex.Message}\n  Suggestion: The session has ended. Please restart boydcode.");
       return (int)ExitCode.GeneralError;
+    }
+    finally
+    {
+      _ui.DeactivateLayout();
     }
 
     return (int)ExitCode.Success;

@@ -28,4 +28,9 @@ public interface IUserInterface
   void ClearCancelHint();
   void ExpandLastToolOutput();
   IDisposable BeginCancellationMonitor(Action onCancelRequested);
+  void ActivateLayout();
+  void DeactivateLayout();
+  void SuspendLayout();
+  void ResumeLayout();
+  void SetAgentBusy(bool busy);
 }

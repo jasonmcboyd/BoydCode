@@ -6,7 +6,12 @@ using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
 using BoydCode.Domain.LlmRequests;
 using BoydCode.Domain.SlashCommands;
+using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
+using Terminal.Gui.Input;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -161,7 +166,25 @@ public sealed class ProjectSlashCommand : ISlashCommand
   {
     var names = await _projectRepository.ListNamesAsync(ct);
 
-    if (names.Count == 0)
+    var projects = new List<Project>();
+    foreach (var name in names)
+    {
+      var project = await _projectRepository.LoadAsync(name, ct);
+      if (project is not null)
+      {
+        projects.Add(project);
+      }
+    }
+
+    var spectreUi = _ui as SpectreUserInterface;
+    if (spectreUi?.Toplevel is not null)
+    {
+      ShowInteractiveList(spectreUi, projects);
+      return;
+    }
+
+    // Fallback: inline text output for non-interactive mode
+    if (projects.Count == 0)
     {
       SpectreHelpers.OutputMarkup("No projects found.");
       SpectreHelpers.Dim("Create one with /project create <name>");
@@ -172,39 +195,117 @@ public sealed class ProjectSlashCommand : ISlashCommand
     SpectreHelpers.OutputMarkup($"{"Name",-22}{"Dirs",6}  {"Docker",-28}{"Last used"}");
     SpectreHelpers.OutputMarkup(new string('\u2500', 75));
 
-    foreach (var name in names)
+    foreach (var project in projects)
     {
-      var project = await _projectRepository.LoadAsync(name, ct);
-      if (project is null)
-      {
-        continue;
-      }
-
-      var resolvedDirs = _directoryResolver.Resolve(project.Directories);
-      var gitCount = resolvedDirs.Count(d => d.IsGitRepository);
-      var dirCount = gitCount > 0
-          ? $"{project.Directories.Count.ToString(CultureInfo.InvariantCulture)} ({gitCount.ToString(CultureInfo.InvariantCulture)} git)"
-          : project.Directories.Count.ToString(CultureInfo.InvariantCulture);
-
-      var execLabel = project.DockerImage is not null
-          ? project.RequireContainer
-              ? $"{project.DockerImage} (required)"
-              : project.DockerImage
-          : "--";
-
-      var lastUsed = project.LastAccessedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-
-      var isAmbient = name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase);
-      var displayName = isAmbient ? $"{name} (ambient)" : name;
-
-      SpectreHelpers.OutputMarkup(
-        $"{Markup.Escape(displayName),-22}" +
-        $"{dirCount,6}  " +
-        $"{Markup.Escape(execLabel),-28}" +
-        $"{lastUsed}");
+      FormatProjectInlineRow(project);
     }
 
     SpectreHelpers.OutputLine();
+  }
+
+  private void FormatProjectInlineRow(Project project)
+  {
+    var resolvedDirs = _directoryResolver.Resolve(project.Directories);
+    var gitCount = resolvedDirs.Count(d => d.IsGitRepository);
+    var dirCount = gitCount > 0
+        ? $"{project.Directories.Count.ToString(CultureInfo.InvariantCulture)} ({gitCount.ToString(CultureInfo.InvariantCulture)} git)"
+        : project.Directories.Count.ToString(CultureInfo.InvariantCulture);
+
+    var execLabel = project.DockerImage is not null
+        ? project.RequireContainer
+            ? $"{project.DockerImage} (required)"
+            : project.DockerImage
+        : "--";
+
+    var lastUsed = project.LastAccessedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    var isAmbient = project.Name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase);
+    var displayName = isAmbient ? $"{project.Name} (ambient)" : project.Name;
+
+    SpectreHelpers.OutputMarkup(
+      $"{Markup.Escape(displayName),-22}" +
+      $"{dirCount,6}  " +
+      $"{Markup.Escape(execLabel),-28}" +
+      $"{lastUsed}");
+  }
+
+  private void ShowInteractiveList(SpectreUserInterface spectreUi, List<Project> projects)
+  {
+    var toplevel = spectreUi.Toplevel!;
+
+    var actions = new List<ActionDefinition<Project>>
+    {
+      new(
+        Key.Enter, "Show",
+        item => { if (item is not null) _ = HandleShowAsync(["/project", "show", item.Name], default); },
+        IsPrimary: true),
+      new(
+        Key.E, "Edit",
+        item => { if (item is not null) _ = HandleEditAsync(["/project", "edit", item.Name], default); },
+        HotkeyDisplay: "e"),
+      new(
+        Key.D, "Delete",
+        item => { if (item is not null) _ = HandleDeleteAsync(["/project", "delete", item.Name], default); },
+        HotkeyDisplay: "d"),
+      new(
+        Key.N, "New",
+        _ => { var __ = HandleCreateAsync(["/project", "create"], default); },
+        HotkeyDisplay: "n",
+        RequiresSelection: false),
+    };
+
+    var window = new InteractiveListWindow<Project>(
+      "Projects",
+      projects,
+      FormatProjectRow,
+      actions,
+      columnHeader: "Name              Dirs  Docker       Last used",
+      emptyMessage: "No projects found.",
+      emptyHint: "Use /project create to add one.");
+
+    window.CloseRequested += () =>
+    {
+      TguiApp.Invoke(() =>
+      {
+        toplevel.Remove(window);
+        window.Dispose();
+        toplevel.InputView.SetFocus();
+      });
+    };
+
+    TguiApp.Invoke(() =>
+    {
+      toplevel.Add(window);
+      window.SetFocus();
+    });
+  }
+
+  private string FormatProjectRow(Project project, int rowWidth)
+  {
+    var isAmbient = project.Name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase);
+    var displayName = isAmbient ? $"{project.Name} (ambient)" : project.Name;
+
+    if (displayName.Length > 18)
+    {
+      displayName = string.Concat(displayName.AsSpan(0, 15), "...");
+    }
+
+    var dirCount = project.Directories.Count.ToString(CultureInfo.InvariantCulture);
+
+    var execLabel = project.DockerImage is not null
+        ? project.RequireContainer
+            ? $"{project.DockerImage} (req)"
+            : project.DockerImage
+        : "--";
+
+    if (execLabel.Length > 13)
+    {
+      execLabel = string.Concat(execLabel.AsSpan(0, 10), "...");
+    }
+
+    var lastUsed = project.LastAccessedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    return $"{displayName,-18}{dirCount,4}  {execLabel,-13}{lastUsed}";
   }
 
   // ──────────────────────────────────────────────

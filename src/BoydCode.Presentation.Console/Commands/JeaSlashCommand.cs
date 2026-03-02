@@ -6,7 +6,12 @@ using BoydCode.Domain.Configuration;
 using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
 using BoydCode.Domain.SlashCommands;
+using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
+using Terminal.Gui.Input;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -132,9 +137,17 @@ public sealed partial class JeaSlashCommand : ISlashCommand
   {
     await EnsureGlobalProfileAsync(ct);
 
-    var names = await _store.ListNamesAsync(ct);
+    var profiles = await BuildProfileListAsync(ct);
 
-    if (names.Count == 0)
+    var spectreUi = _ui as SpectreUserInterface;
+    if (spectreUi?.Toplevel is not null)
+    {
+      ShowJeaListWindow(spectreUi, profiles, ct);
+      return;
+    }
+
+    // Fallback: inline text output for non-interactive mode
+    if (profiles.Count == 0)
     {
       SpectreHelpers.OutputMarkup("No JEA profiles found.");
       SpectreHelpers.Dim("Create one with /jea create <name>");
@@ -145,16 +158,10 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     SpectreHelpers.OutputMarkup($"{"Name",-22}{"Language Mode",-22}{"Commands",8}  {"Modules",7}");
     SpectreHelpers.OutputMarkup(new string('\u2500', 65));
 
-    foreach (var name in names)
+    foreach (var profile in profiles)
     {
-      var profile = await _store.LoadAsync(name, ct);
-      if (profile is null)
-      {
-        continue;
-      }
-
-      var isGlobal = name.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase);
-      var displayName = isGlobal ? $"{name} (global)" : name;
+      var isGlobal = profile.Name.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase);
+      var displayName = isGlobal ? $"{profile.Name} (global)" : profile.Name;
 
       SpectreHelpers.OutputMarkup(
         $"{Markup.Escape(displayName),-22}" +
@@ -164,6 +171,116 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     }
 
     SpectreHelpers.OutputLine();
+  }
+
+  private async Task<List<JeaProfile>> BuildProfileListAsync(CancellationToken ct)
+  {
+    var names = await _store.ListNamesAsync(ct);
+    var profiles = new List<JeaProfile>();
+
+    foreach (var name in names)
+    {
+      var profile = await _store.LoadAsync(name, ct);
+      if (profile is not null)
+      {
+        profiles.Add(profile);
+      }
+    }
+
+    return profiles;
+  }
+
+  private void ShowJeaListWindow(
+    SpectreUserInterface spectreUi,
+    List<JeaProfile> profiles,
+    CancellationToken ct)
+  {
+    InteractiveListWindow<JeaProfile>? window = null;
+
+    var actions = new List<ActionDefinition<JeaProfile>>
+    {
+      new(
+        Key.Enter, "Show",
+        item =>
+        {
+          if (item is null) return;
+          var filePath = GetProfileFilePath(item.Name);
+          var content = BuildProfileDetailText(item, filePath);
+          _ui.ShowModal(item.Name, content);
+        },
+        IsPrimary: true),
+      new(
+        Key.E, "Edit",
+        item =>
+        {
+          if (item is null) return;
+          DismissJeaListWindow(spectreUi, ref window);
+          _ = HandleEditAsync(["/jea", "edit", item.Name], ct);
+        },
+        HotkeyDisplay: "e"),
+      new(
+        Key.D, "Delete",
+        item =>
+        {
+          if (item is null) return;
+          DismissJeaListWindow(spectreUi, ref window);
+          _ = HandleDeleteAsync(["/jea", "delete", item.Name], ct);
+        },
+        HotkeyDisplay: "d"),
+      new(
+        Key.N, "New",
+        item =>
+        {
+          DismissJeaListWindow(spectreUi, ref window);
+          _ = HandleCreateAsync(["/jea", "create"], ct);
+        },
+        HotkeyDisplay: "n",
+        RequiresSelection: false),
+    };
+
+    window = new InteractiveListWindow<JeaProfile>(
+      "JEA Profiles",
+      profiles,
+      FormatJeaProfile,
+      actions,
+      columnHeader: $"{"Name",-22}{"Language Mode",-22}{"Commands",8}  {"Modules",7}",
+      emptyMessage: "No JEA profiles found.",
+      emptyHint: "Use /jea create to add one.");
+
+    window.CloseRequested += () => DismissJeaListWindow(spectreUi, ref window);
+
+    TguiApp.Invoke(() =>
+    {
+      spectreUi.Toplevel!.Add(window);
+      window.SetFocus();
+    });
+  }
+
+  private static void DismissJeaListWindow(
+    SpectreUserInterface spectreUi,
+    ref InteractiveListWindow<JeaProfile>? window)
+  {
+    if (window is null) return;
+    var w = window;
+    window = null;
+
+    TguiApp.Invoke(() =>
+    {
+      spectreUi.Toplevel?.Remove(w);
+      w.Dispose();
+      spectreUi.Toplevel?.InputView.SetFocus();
+    });
+  }
+
+  private static string FormatJeaProfile(JeaProfile profile, int rowWidth)
+  {
+    var isGlobal = profile.Name.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase);
+    var displayName = isGlobal ? $"{profile.Name} (global)" : profile.Name;
+
+    return $"{displayName,-22}" +
+        $"{profile.LanguageMode,-22}" +
+        $"{profile.Entries.Count.ToString(CultureInfo.InvariantCulture),8}  " +
+        $"{profile.Modules.Count.ToString(CultureInfo.InvariantCulture),7}";
   }
 
   // ──────────────────────────────────────────────

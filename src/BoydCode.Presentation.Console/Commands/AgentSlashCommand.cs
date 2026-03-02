@@ -1,7 +1,13 @@
 using System.Globalization;
 using BoydCode.Application.Interfaces;
+using BoydCode.Domain.Entities;
 using BoydCode.Domain.SlashCommands;
+using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
+using Terminal.Gui.Input;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -54,6 +60,15 @@ public sealed class AgentSlashCommand : ISlashCommand
   private void HandleList()
   {
     var agents = _agentRegistry.GetAll();
+
+    var spectreUi = _ui as SpectreUserInterface;
+    if (spectreUi?.Toplevel is not null)
+    {
+      ShowInteractiveList(spectreUi, agents);
+      return;
+    }
+
+    // Fallback: inline text output for non-interactive mode
     if (agents.Count == 0)
     {
       SpectreHelpers.OutputMarkup("[yellow]No agents found.[/]");
@@ -78,6 +93,68 @@ public sealed class AgentSlashCommand : ISlashCommand
     }
 
     SpectreHelpers.OutputLine();
+  }
+
+  private void ShowInteractiveList(SpectreUserInterface spectreUi, IReadOnlyList<AgentDefinition> agents)
+  {
+    var toplevel = spectreUi.Toplevel!;
+
+    var actions = new List<ActionDefinition<AgentDefinition>>
+    {
+      new(
+        Key.Enter, "Show",
+        item => { if (item is not null) HandleShow(item.Name); },
+        IsPrimary: true),
+    };
+
+    var window = new InteractiveListWindow<AgentDefinition>(
+      "Agents",
+      agents,
+      FormatAgentRow,
+      actions,
+      columnHeader: "Name              Description               Scope      Model",
+      emptyMessage: "No agents found.",
+      emptyHint: "Add agent definitions as .md files in ~/.boydcode/agents/ or .boydcode/agents/");
+
+    window.CloseRequested += () =>
+    {
+      TguiApp.Invoke(() =>
+      {
+        toplevel.Remove(window);
+        window.Dispose();
+        toplevel.InputView.SetFocus();
+      });
+    };
+
+    TguiApp.Invoke(() =>
+    {
+      toplevel.Add(window);
+      window.SetFocus();
+    });
+  }
+
+  private static string FormatAgentRow(AgentDefinition agent, int rowWidth)
+  {
+    var name = agent.Name;
+    if (name.Length > 18)
+    {
+      name = string.Concat(name.AsSpan(0, 15), "...");
+    }
+
+    var description = agent.Description;
+    if (description.Length > 26)
+    {
+      description = string.Concat(description.AsSpan(0, 23), "...");
+    }
+
+    var scope = agent.Scope.ToString();
+    var model = agent.ModelOverride ?? "-";
+    if (model.Length > 15)
+    {
+      model = string.Concat(model.AsSpan(0, 12), "...");
+    }
+
+    return $"{name,-18}{description,-26}{scope,-11}{model}";
   }
 
   private void HandleShow(string? name)

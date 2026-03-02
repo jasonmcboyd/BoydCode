@@ -2,9 +2,15 @@ using System.Globalization;
 using BoydCode.Application.Interfaces;
 using BoydCode.Application.Services;
 using BoydCode.Domain.ContentBlocks;
+using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
 using BoydCode.Domain.SlashCommands;
+using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
+using Terminal.Gui.Input;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -77,16 +83,24 @@ public sealed class ConversationsSlashCommand : ISlashCommand
   {
     var sessions = await _sessionRepository.ListAsync(ct);
 
-    if (sessions.Count == 0)
-    {
-      SpectreHelpers.OutputMarkup("No saved conversations found.");
-      return;
-    }
-
     var sorted = sessions
         .OrderByDescending(s => s.LastAccessedAt)
         .Take(20)
         .ToList();
+
+    var spectreUi = _ui as SpectreUserInterface;
+    if (spectreUi?.Toplevel is not null)
+    {
+      ShowInteractiveList(spectreUi, sorted);
+      return;
+    }
+
+    // Fallback: inline text output for non-interactive mode
+    if (sorted.Count == 0)
+    {
+      SpectreHelpers.OutputMarkup("No saved conversations found.");
+      return;
+    }
 
     SpectreHelpers.OutputLine();
     SpectreHelpers.OutputMarkup($"{"ID",-12}{"Name",-18}{"Project",-14}{"Msgs",5}  {"Last accessed",-18}{"Preview"}");
@@ -128,6 +142,71 @@ public sealed class ConversationsSlashCommand : ISlashCommand
     }
 
     SpectreHelpers.OutputLine();
+  }
+
+  private void ShowInteractiveList(SpectreUserInterface spectreUi, List<Session> sessions)
+  {
+    var toplevel = spectreUi.Toplevel!;
+
+    var actions = new List<ActionDefinition<Session>>
+    {
+      new(
+        Key.Enter, "Show",
+        item => { if (item is not null) _ = HandleShowAsync(["/conversations", "show", item.Id], default); },
+        IsPrimary: true),
+      new(
+        Key.R, "Rename",
+        item => { if (item is not null) _ = HandleRenameAsync(["/conversations", "rename", item.Id], default); },
+        HotkeyDisplay: "r"),
+      new(
+        Key.D, "Delete",
+        item =>
+        {
+          if (item is null) return;
+          _ = HandleDeleteAsync(["/conversations", "delete", item.Id], default);
+        },
+        HotkeyDisplay: "d"),
+    };
+
+    var window = new InteractiveListWindow<Session>(
+      "Conversations",
+      sessions,
+      FormatSessionRow,
+      actions,
+      columnHeader: "Name                     Messages  Created",
+      emptyMessage: "No saved conversations found.");
+
+    window.CloseRequested += () =>
+    {
+      TguiApp.Invoke(() =>
+      {
+        toplevel.Remove(window);
+        window.Dispose();
+        toplevel.InputView.SetFocus();
+      });
+    };
+
+    TguiApp.Invoke(() =>
+    {
+      toplevel.Add(window);
+      window.SetFocus();
+    });
+  }
+
+  private string FormatSessionRow(Session session, int rowWidth)
+  {
+    var nameOrId = session.Name ?? session.Id;
+    var msgCount = session.Conversation.Messages.Count
+        .ToString(CultureInfo.InvariantCulture);
+    var created = session.CreatedAt.LocalDateTime
+        .ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+    if (nameOrId.Length > 25)
+    {
+      nameOrId = string.Concat(nameOrId.AsSpan(0, 22), "...");
+    }
+
+    return $"{nameOrId,-25}{msgCount,8}  {created}";
   }
 
   private async Task HandleShowAsync(string[] tokens, CancellationToken ct)

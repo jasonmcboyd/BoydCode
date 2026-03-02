@@ -4,8 +4,13 @@ using BoydCode.Application.Services;
 using BoydCode.Domain.Configuration;
 using BoydCode.Domain.Enums;
 using BoydCode.Domain.SlashCommands;
+using BoydCode.Presentation.Console.Terminal;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
+using Terminal.Gui.Input;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -71,14 +76,42 @@ public sealed class ProviderSlashCommand : ISlashCommand
     return true;
   }
 
+  private sealed record ProviderListItem(
+    LlmProviderType ProviderType, string Status, string Model, string ApiKeyDisplay);
+
   private async Task HandleListAsync(CancellationToken ct)
   {
+    var items = await BuildProviderListItemsAsync(ct);
+
+    var spectreUi = _ui as SpectreUserInterface;
+    if (spectreUi?.Toplevel is not null)
+    {
+      ShowProviderListWindow(spectreUi, items, ct);
+      return;
+    }
+
+    // Fallback: inline text output for non-interactive mode
     SpectreHelpers.OutputLine();
     SpectreHelpers.OutputMarkup($"{"Provider",-14}{"Status",-10}{"Model",-30}{"API Key"}");
     SpectreHelpers.OutputMarkup(new string('\u2500', 70));
 
+    foreach (var item in items)
+    {
+      SpectreHelpers.OutputMarkup(
+        $"{Markup.Escape(item.ProviderType.ToString()),-14}" +
+        $"{Markup.Escape(item.Status),-10}" +
+        $"{Markup.Escape(item.Model),-30}" +
+        $"{Markup.Escape(item.ApiKeyDisplay)}");
+    }
+
+    SpectreHelpers.OutputLine();
+  }
+
+  private async Task<List<ProviderListItem>> BuildProviderListItemsAsync(CancellationToken ct)
+  {
     var allProfiles = await _providerConfigStore.GetAllAsync(ct);
     var profileLookup = allProfiles.ToDictionary(p => p.ProviderType);
+    var items = new List<ProviderListItem>();
 
     foreach (var providerType in Enum.GetValues<LlmProviderType>())
     {
@@ -96,14 +129,96 @@ public sealed class ProviderSlashCommand : ISlashCommand
           ? MaskApiKey(key)
           : "(not set)";
 
-      SpectreHelpers.OutputMarkup(
-        $"{Markup.Escape(providerType.ToString()),-14}" +
-        $"{Markup.Escape(status),-10}" +
-        $"{Markup.Escape(model),-30}" +
-        $"{Markup.Escape(apiKeyDisplay)}");
+      items.Add(new ProviderListItem(providerType, status, model, apiKeyDisplay));
     }
 
-    SpectreHelpers.OutputLine();
+    return items;
+  }
+
+  private void ShowProviderListWindow(
+    SpectreUserInterface spectreUi,
+    List<ProviderListItem> items,
+    CancellationToken ct)
+  {
+    InteractiveListWindow<ProviderListItem>? window = null;
+
+    var actions = new List<ActionDefinition<ProviderListItem>>
+    {
+      new(
+        Key.Enter, "Show",
+        item => { if (item is not null) HandleShowForProvider(item.ProviderType); },
+        IsPrimary: true),
+      new(
+        Key.S, "Setup",
+        item =>
+        {
+          DismissListWindow(spectreUi, ref window);
+          _ = HandleSetupAsync(["/provider", "setup", item?.ProviderType.ToString() ?? ""], ct);
+        },
+        HotkeyDisplay: "s"),
+      new(
+        Key.R, "Remove",
+        item =>
+        {
+          DismissListWindow(spectreUi, ref window);
+          _ = HandleRemoveAsync(["/provider", "remove", item?.ProviderType.ToString() ?? ""], ct);
+        },
+        HotkeyDisplay: "r"),
+    };
+
+    window = new InteractiveListWindow<ProviderListItem>(
+      "Providers",
+      items,
+      FormatProviderListItem,
+      actions,
+      columnHeader: $"{"Provider",-14}{"Status",-10}{"Model",-30}{"API Key"}");
+
+    window.CloseRequested += () => DismissListWindow(spectreUi, ref window);
+
+    TguiApp.Invoke(() =>
+    {
+      spectreUi.Toplevel!.Add(window);
+      window.SetFocus();
+    });
+  }
+
+  private void HandleShowForProvider(LlmProviderType providerType)
+  {
+    if (_activeProvider.IsConfigured && _activeProvider.Config!.ProviderType == providerType)
+    {
+      HandleShow();
+      return;
+    }
+
+    var content = $"Provider: {providerType}\n" +
+        $"Status:   not active\n" +
+        $"Model:    {ProviderDefaults.DefaultModelFor(providerType)}";
+
+    _ui.ShowModal(providerType.ToString(), content);
+  }
+
+  private static void DismissListWindow(
+    SpectreUserInterface spectreUi,
+    ref InteractiveListWindow<ProviderListItem>? window)
+  {
+    if (window is null) return;
+    var w = window;
+    window = null;
+
+    TguiApp.Invoke(() =>
+    {
+      spectreUi.Toplevel?.Remove(w);
+      w.Dispose();
+      spectreUi.Toplevel?.InputView.SetFocus();
+    });
+  }
+
+  private static string FormatProviderListItem(ProviderListItem item, int rowWidth)
+  {
+    return $"{item.ProviderType.ToString(),-14}" +
+        $"{item.Status,-10}" +
+        $"{item.Model,-30}" +
+        $"{item.ApiKeyDisplay}";
   }
 
   private async Task HandleSetupAsync(string[] tokens, CancellationToken ct)

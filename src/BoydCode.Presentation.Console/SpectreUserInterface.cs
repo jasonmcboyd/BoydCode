@@ -461,6 +461,77 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     });
   }
 
+  public void ShowDetailModal(string title, IReadOnlyList<DetailSection> sections)
+  {
+    InvokeOnUiThread(() =>
+    {
+      if (_toplevel is null) return;
+      DismissCurrentModal();
+
+      var availableWidth = _toplevel.Viewport.Width;
+      var availableHeight = _toplevel.Viewport.Height;
+
+      // Compute content width from label+value pairs and section titles
+      var maxContentWidth = ComputeDetailContentWidth(sections);
+
+      // Content width + chrome: 1 border + 1 padding offset each side = 4
+      var desiredWidth = maxContentWidth + 4;
+      var maxWidth = Math.Max(40, (int)(availableWidth * 0.9));
+      var windowWidth = Math.Min(desiredWidth, maxWidth);
+
+      // Inner content width for height measurement (window width - 4 for chrome)
+      var innerWidth = windowWidth - 4;
+
+      // Content height: sections + rows + dismiss hint (2 lines: blank + text)
+      var contentHeight = DetailModalView.MeasureContentHeight(sections, innerWidth) + 2;
+
+      // Window height + chrome: 1 border top + 1 border bottom = 2
+      var desiredHeight = contentHeight + 2;
+      var maxHeight = Math.Max(5, (int)(availableHeight * 0.9));
+      var windowHeight = Math.Min(desiredHeight, maxHeight);
+
+      var window = new Window
+      {
+        Title = title,
+        X = Pos.Center(),
+        Y = Pos.Center(),
+        Width = windowWidth,
+        Height = windowHeight,
+        BorderStyle = LineStyle.Rounded,
+      };
+
+      window.Border?.SetScheme(Theme.Modal.BorderScheme);
+
+      // Detail content view fills available space minus 1 row for dismiss hint
+      var detailView = new DetailModalView(sections)
+      {
+        X = 0,
+        Y = 0,
+        Width = Dim.Fill(),
+        Height = Dim.Fill(1),
+      };
+
+      // "Esc to dismiss" hint at the bottom
+      var hintLabel = new Label
+      {
+        Text = Theme.Text.EscToDismiss,
+        X = 2,
+        Y = Pos.AnchorEnd(1),
+        Width = Dim.Fill(),
+        Height = 1,
+      };
+
+      hintLabel.SetScheme(new Scheme(Theme.Semantic.Muted));
+
+      window.Add(detailView, hintLabel);
+      _modalWindow = window;
+      _toplevel.Add(window);
+      _toplevel.ActivityBar.SetState(ActivityState.Modal);
+      detailView.CanFocus = true;
+      detailView.SetFocus();
+    });
+  }
+
   public void DismissModal()
   {
     InvokeOnUiThread(() => DismissCurrentModal());
@@ -619,6 +690,55 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   {
     if (_toplevel is null) return;
     TguiApp.Invoke(action);
+  }
+
+  private static int ComputeDetailContentWidth(IReadOnlyList<DetailSection> sections)
+  {
+    var maxLabelLen = 0;
+    var maxValueLen = 0;
+    var maxSectionTitleLen = 0;
+
+    foreach (var section in sections)
+    {
+      if (section.Title is not null)
+      {
+        // Section divider: "── {title} ──" = title + 8 chars of chrome
+        var dividerLen = section.Title.Length + 8;
+        if (dividerLen > maxSectionTitleLen)
+          maxSectionTitleLen = dividerLen;
+      }
+
+      foreach (var row in section.Rows)
+      {
+        if (row.IsMultiLine)
+        {
+          // Multi-line: label at X=2, value at X=4 on next lines
+          // Width contribution is max of label+2 and value+4
+          var labelWidth = row.Label.Length + 2;
+          var firstLineLen = row.Value.IndexOf('\n') is var nl and >= 0
+            ? nl : row.Value.Length;
+          var valueWidth = firstLineLen + 4;
+          var rowWidth = Math.Max(labelWidth, valueWidth);
+          if (rowWidth > maxSectionTitleLen)
+            maxSectionTitleLen = rowWidth;
+        }
+        else
+        {
+          if (row.Label.Length > maxLabelLen)
+            maxLabelLen = row.Label.Length;
+          if (row.Value.Length > maxValueLen)
+            maxValueLen = row.Value.Length;
+        }
+      }
+    }
+
+    // Single-line rows: X=2 + label + 2 padding + value
+    var singleLineWidth = 2 + maxLabelLen + 2 + maxValueLen;
+
+    // Dismiss hint: "Esc to dismiss" at X=2
+    var hintWidth = Theme.Text.EscToDismiss.Length + 2;
+
+    return Math.Max(Math.Max(singleLineWidth, maxSectionTitleLen), hintWidth);
   }
 
   private ActivityState CurrentActivityState()

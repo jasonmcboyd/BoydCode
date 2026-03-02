@@ -29,6 +29,7 @@ public interface IUserInterface
   void ClearCancelHint();
   void ExpandLastToolOutput();
   void ShowModal(string title, string content);
+  void ShowDetailModal(string title, IReadOnlyList<DetailSection> sections);
   void DismissModal();
   bool IsModalActive { get; }
   IDisposable BeginCancellationMonitor(Action onCancelRequested);

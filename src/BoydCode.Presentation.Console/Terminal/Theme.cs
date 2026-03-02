@@ -80,6 +80,37 @@ internal static class Theme
       new Attribute(ColorName16.Blue, Color.None));
   }
 
+  // ─── Chart Colors ──────────────────────────────────────────
+
+  internal static class Chart
+  {
+    internal static readonly Color Tools = new(147, 112, 219);
+    internal static readonly Color FreeSpace = new(128, 128, 128);
+    internal static readonly Color Buffer = new(255, 140, 0);
+
+    internal static readonly Attribute ToolsAttr = new(Tools, Color.None);
+    internal static readonly Attribute FreeSpaceAttr = new(FreeSpace, Color.None);
+    internal static readonly Attribute BufferAttr = new(Buffer, Color.None);
+  }
+
+  // ─── Interactive List ─────────────────────────────────────
+
+  internal static class List
+  {
+    internal static readonly Color SelectedBg = new Color(ColorName16.Blue);
+    internal static readonly Attribute SelectedBackground = new(SelectedBg, SelectedBg);
+    internal static readonly Attribute SelectedText = new(ColorName16.White, SelectedBg);
+    internal static readonly Attribute AlternateRow = new(ColorName16.White, Color.None);
+    internal static Attribute ActionBar => Semantic.Muted;
+  }
+
+  // ─── Focus Indicators ────────────────────────────────────
+
+  internal static class Focus
+  {
+    internal static readonly Attribute Border = new(ColorName16.Blue, Color.None);
+  }
+
   // ─── Unicode Symbols ───────────────────────────────────────
 
   internal static class Symbols
@@ -87,6 +118,7 @@ internal static class Theme
     internal const char Check = '\u2713';
     internal const char Cross = '\u2717';
     internal const char Rule = '\u2500';
+    internal const char Arrow = '\u25b6';
     internal const char BoxTopLeft = '\u250c';
     internal const char BoxTopRight = '\u2510';
     internal const char BoxBottomLeft = '\u2514';
@@ -94,6 +126,9 @@ internal static class Theme
     internal const char BoxVertical = '\u2502';
     internal const char ArrowLeft = '\u2190';
     internal const char ArrowRight = '\u2192';
+    internal const char FullBlock = '\u2588';
+    internal const char LightShade = '\u2591';
+    internal const char BlackSquare = '\u25a0';
 
     internal static readonly char[] SpinnerFrames =
       ['\u280b', '\u2819', '\u2839', '\u2838', '\u283c', '\u2834', '\u2826', '\u2827', '\u2807', '\u280f'];

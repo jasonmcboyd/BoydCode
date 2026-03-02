@@ -1,8 +1,6 @@
 using System.Globalization;
 using BoydCode.Presentation.Console.Renderables;
-using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
-using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace BoydCode.Presentation.Console.Terminal;
 
@@ -48,17 +46,6 @@ internal static class BannerRenderer
     "Status: pre",
   ];
 
-  // Color palette — Color.None inherits the terminal's default background
-  private static readonly Attribute BoydArtAttr = new(ColorName16.BrightCyan, Color.None);
-  private static readonly Attribute CodeArtAttr = new(ColorName16.BrightBlue, Color.None);
-  private static readonly Attribute InfoLabelAttr = new(ColorName16.DarkGray, Color.None);
-  private static readonly Attribute InfoValueAttr = new(ColorName16.Cyan, Color.None);
-  private static readonly Attribute StatusReadyAttr = new(ColorName16.Green, Color.None);
-  private static readonly Attribute StatusNotConfiguredAttr = new(ColorName16.Yellow, Color.None);
-  private static readonly Attribute DimAttr = new(ColorName16.DarkGray, Color.None);
-  private static readonly Attribute DefaultAttr = new(ColorName16.White, Color.None);
-  private static readonly Attribute VersionAttr = new(ColorName16.DarkGray, Color.None);
-
   public static int MeasureBanner(BannerData data, int width)
   {
     if (data.Accessible)
@@ -66,17 +53,17 @@ internal static class BannerRenderer
       return MeasureAccessible(data);
     }
 
-    if (data.TerminalHeight < 10)
+    if (data.TerminalHeight < Theme.Layout.MinimalHeightThreshold)
     {
       return 1; // Fallback: single line
     }
 
     var height = 0;
-    var isNarrow = width < 80;
+    var isNarrow = width < Theme.Layout.StandardWidth;
     var isMinimal = data.TerminalHeight is >= 10 and < 15;
     var canUseAsciiArt = data.SupportsUnicode && !isNarrow;
-    var useFull = data.TerminalHeight >= 30 && canUseAsciiArt;
-    var useCompact = data.TerminalHeight >= 15 && !useFull;
+    var useFull = data.TerminalHeight >= Theme.Layout.FullHeightThreshold && canUseAsciiArt;
+    var useCompact = data.TerminalHeight >= Theme.Layout.CompactHeightThreshold && !useFull;
 
     // Leading blank (skip in minimal)
     if (!isMinimal) height++;
@@ -151,17 +138,17 @@ internal static class BannerRenderer
       return;
     }
 
-    if (data.TerminalHeight < 10)
+    if (data.TerminalHeight < Theme.Layout.MinimalHeightThreshold)
     {
       DrawFallback(view, data, y, width);
       return;
     }
 
-    var isNarrow = width < 80;
+    var isNarrow = width < Theme.Layout.StandardWidth;
     var isMinimal = data.TerminalHeight is >= 10 and < 15;
     var canUseAsciiArt = data.SupportsUnicode && !isNarrow;
-    var useFull = data.TerminalHeight >= 30 && canUseAsciiArt;
-    var useCompact = data.TerminalHeight >= 15 && !useFull;
+    var useFull = data.TerminalHeight >= Theme.Layout.FullHeightThreshold && canUseAsciiArt;
+    var useCompact = data.TerminalHeight >= Theme.Layout.CompactHeightThreshold && !useFull;
 
     // Leading blank (skip in minimal)
     if (!isMinimal) y++;
@@ -242,14 +229,14 @@ internal static class BannerRenderer
     lines += data.GitRepositories.Count;
     lines++; // blank
     lines++; // status
-    if (data.IsConfigured && data.TerminalHeight >= 15) lines += 2; // blank + hint
+    if (data.IsConfigured && data.TerminalHeight >= Theme.Layout.CompactHeightThreshold) lines += 2; // blank + hint
     if (data.IsResumedSession && data.ResumeSessionId is not null) lines += 2; // blank + resume
     return lines;
   }
 
   private static void DrawAccessible(View view, BannerData data, int y, int width)
   {
-    view.SetAttribute(DefaultAttr);
+    view.SetAttribute(Theme.Semantic.Default);
     DrawLine(view, y, $"BOYDCODE v{data.Version}", width);
     y++;
     y++; // blank
@@ -286,10 +273,10 @@ internal static class BannerRenderer
       DrawLine(view, y, "Not configured. Run /provider setup or pass --api-key", width); y++;
     }
 
-    if (data.IsConfigured && data.TerminalHeight >= 15)
+    if (data.IsConfigured && data.TerminalHeight >= Theme.Layout.CompactHeightThreshold)
     {
       y++; // blank
-      DrawLine(view, y, "Type a message to start, or /help for available commands.", width); y++;
+      DrawLine(view, y, Theme.Text.BannerHintWide, width); y++;
     }
 
     if (data.IsResumedSession && data.ResumeSessionId is not null)
@@ -313,26 +300,26 @@ internal static class BannerRenderer
 
     if (data.IsConfigured)
     {
-      view.SetAttribute(StatusReadyAttr);
-      view.AddStr("\u2713 ");
-      view.SetAttribute(BoydArtAttr);
+      view.SetAttribute(Theme.Banner.StatusReady);
+      view.AddStr($"{Theme.Symbols.Check} ");
+      view.SetAttribute(Theme.Banner.BoydArt);
       view.AddStr("BoydCode");
-      view.SetAttribute(DimAttr);
+      view.SetAttribute(Theme.Semantic.Muted);
       view.AddStr(Truncate($" ready ({data.ProviderName}, {data.ModelName}, {FormatProjectName(data.ProjectName)})", width - 12));
     }
     else
     {
-      view.SetAttribute(BoydArtAttr);
+      view.SetAttribute(Theme.Banner.BoydArt);
       view.AddStr("BoydCode: ");
-      view.SetAttribute(StatusNotConfiguredAttr);
+      view.SetAttribute(Theme.Banner.StatusNotConfigured);
       view.AddStr("Not configured.");
-      view.SetAttribute(DimAttr);
+      view.SetAttribute(Theme.Semantic.Muted);
       view.AddStr(" Run ");
-      view.SetAttribute(DefaultAttr);
+      view.SetAttribute(Theme.Semantic.Default);
       view.AddStr("/provider setup");
-      view.SetAttribute(DimAttr);
+      view.SetAttribute(Theme.Semantic.Muted);
       view.AddStr(" or pass ");
-      view.SetAttribute(DefaultAttr);
+      view.SetAttribute(Theme.Semantic.Default);
       view.AddStr("--api-key");
     }
   }
@@ -343,21 +330,21 @@ internal static class BannerRenderer
 
   private static int DrawFullWordmark(View view, BannerData data, int y, int width)
   {
-    var capWidth = Math.Min(width, 80);
+    var capWidth = Math.Min(width, Theme.Layout.StandardWidth);
     var sidebar = width >= 100 ? SidebarWide : SidebarNarrow;
     var maxArtWidth = BoydArt.Max(a => a.Length);
     var gap = Math.Max(2, capWidth - maxArtWidth - sidebar.Max(s => s.Length) - 4);
 
     for (var i = 0; i < BoydArt.Length; i++)
     {
-      view.SetAttribute(BoydArtAttr);
+      view.SetAttribute(Theme.Banner.BoydArt);
       view.Move(0, y);
       view.AddStr(Truncate(BoydArt[i], width));
 
       if (i < sidebar.Length)
       {
         var artPadding = new string(' ', maxArtWidth - BoydArt[i].Length + gap);
-        view.SetAttribute(DimAttr);
+        view.SetAttribute(Theme.Semantic.Muted);
         var sidebarText = artPadding + sidebar[i];
         var remainingWidth = width - BoydArt[i].Length;
         if (remainingWidth > 0)
@@ -371,14 +358,14 @@ internal static class BannerRenderer
 
     foreach (var row in CodeArt)
     {
-      view.SetAttribute(CodeArtAttr);
+      view.SetAttribute(Theme.Banner.CodeArt);
       view.Move(0, y);
       view.AddStr(Truncate(row, width));
       y++;
     }
 
     // Version line
-    view.SetAttribute(VersionAttr);
+    view.SetAttribute(Theme.Banner.Version);
     view.Move(0, y);
     view.AddStr(Truncate($"  v{data.Version}  Artificial Intelligence, Personal Edition", width));
     y++;
@@ -394,13 +381,13 @@ internal static class BannerRenderer
   {
     view.Move(0, y);
     view.AddStr("  ");
-    view.SetAttribute(BoydArtAttr);
+    view.SetAttribute(Theme.Banner.BoydArt);
     view.AddStr("BOYD");
-    view.SetAttribute(CodeArtAttr);
+    view.SetAttribute(Theme.Banner.CodeArt);
     view.AddStr("CODE");
-    view.SetAttribute(VersionAttr);
+    view.SetAttribute(Theme.Banner.Version);
 
-    if (width >= 80)
+    if (width >= Theme.Layout.StandardWidth)
     {
       view.AddStr($"  v{data.Version}  AI Coding Assistant");
     }
@@ -419,9 +406,9 @@ internal static class BannerRenderer
 
   private static void DrawRule(View view, int y, int width)
   {
-    view.SetAttribute(DimAttr);
+    view.SetAttribute(Theme.Semantic.Muted);
     view.Move(0, y);
-    view.AddStr(new string('\u2500', width));
+    view.AddStr(new string(Theme.Symbols.Rule, width));
   }
 
   // -----------------------------------------------
@@ -486,10 +473,10 @@ internal static class BannerRenderer
 
     if (data.ProjectName == DefaultProjectName)
     {
-      view.SetAttribute(InfoLabelAttr);
+      view.SetAttribute(Theme.Banner.InfoLabel);
       view.Move(1, y);
       view.AddStr("Project  ");
-      view.SetAttribute(DimAttr);
+      view.SetAttribute(Theme.Semantic.Muted);
       view.AddStr("(default)");
     }
     else
@@ -534,29 +521,29 @@ internal static class BannerRenderer
     var col1Width = Math.Min(width / 2, 50);
 
     // Left pair
-    view.SetAttribute(InfoLabelAttr);
+    view.SetAttribute(Theme.Banner.InfoLabel);
     view.Move(2, y);
-    view.AddStr(label1.PadRight(10));
-    view.SetAttribute(dimValue1 ? DimAttr : InfoValueAttr);
+    view.AddStr(label1.PadRight(Theme.Layout.InfoLabelPad));
+    view.SetAttribute(dimValue1 ? Theme.Semantic.Muted : Theme.Banner.InfoValue);
     view.AddStr(Truncate(value1, col1Width - 12));
 
     // Right pair (if room)
     if (width >= col1Width + 20)
     {
-      view.SetAttribute(InfoLabelAttr);
+      view.SetAttribute(Theme.Banner.InfoLabel);
       view.Move(col1Width + 2, y);
-      view.AddStr(label2.PadRight(10));
-      view.SetAttribute(dimValue2 ? DimAttr : InfoValueAttr);
+      view.AddStr(label2.PadRight(Theme.Layout.InfoLabelPad));
+      view.SetAttribute(dimValue2 ? Theme.Semantic.Muted : Theme.Banner.InfoValue);
       view.AddStr(Truncate(value2, width - col1Width - 14));
     }
   }
 
   private static void DrawInfoSingle(View view, int y, string label, string value, int maxWidth = int.MaxValue)
   {
-    view.SetAttribute(InfoLabelAttr);
+    view.SetAttribute(Theme.Banner.InfoLabel);
     view.Move(2, y);
-    view.AddStr(label.PadRight(10));
-    view.SetAttribute(InfoValueAttr);
+    view.AddStr(label.PadRight(Theme.Layout.InfoLabelPad));
+    view.SetAttribute(Theme.Banner.InfoValue);
     var availableWidth = Math.Max(0, maxWidth - 12); // 2 indent + 10 padded label
     view.AddStr(Truncate(value, availableWidth));
   }
@@ -575,22 +562,22 @@ internal static class BannerRenderer
       var engineDesc = executionMode == "Container"
         ? "Commands execute inside a Docker container."
         : "Commands run in a constrained PowerShell runspace.";
-      view.SetAttribute(StatusReadyAttr);
-      view.AddStr("\u2713 ");
-      view.SetAttribute(DimAttr);
+      view.SetAttribute(Theme.Banner.StatusReady);
+      view.AddStr($"{Theme.Symbols.Check} ");
+      view.SetAttribute(Theme.Semantic.Muted);
       view.AddStr(Truncate($"Ready  {engineDesc}", width - 4));
     }
     else
     {
-      view.SetAttribute(StatusNotConfiguredAttr);
+      view.SetAttribute(Theme.Banner.StatusNotConfigured);
       view.AddStr("Not configured  ");
-      view.SetAttribute(DimAttr);
+      view.SetAttribute(Theme.Semantic.Muted);
       view.AddStr("Run ");
-      view.SetAttribute(DefaultAttr);
+      view.SetAttribute(Theme.Semantic.Default);
       view.AddStr("/provider setup");
-      view.SetAttribute(DimAttr);
+      view.SetAttribute(Theme.Semantic.Muted);
       view.AddStr(" or pass ");
-      view.SetAttribute(DefaultAttr);
+      view.SetAttribute(Theme.Semantic.Default);
       view.AddStr("--api-key");
     }
 
@@ -605,14 +592,14 @@ internal static class BannerRenderer
 
     if (isConfigured)
     {
-      view.SetAttribute(StatusReadyAttr);
-      view.AddStr("\u2713 ");
-      view.SetAttribute(DimAttr);
+      view.SetAttribute(Theme.Banner.StatusReady);
+      view.AddStr($"{Theme.Symbols.Check} ");
+      view.SetAttribute(Theme.Semantic.Muted);
       view.AddStr("Ready");
     }
     else
     {
-      view.SetAttribute(StatusNotConfiguredAttr);
+      view.SetAttribute(Theme.Banner.StatusNotConfigured);
       view.AddStr("Not configured");
     }
 
@@ -626,20 +613,20 @@ internal static class BannerRenderer
 
   private static void DrawHintLine(View view, int width, int y)
   {
-    view.SetAttribute(DimAttr);
+    view.SetAttribute(Theme.Semantic.Muted);
     view.Move(0, y);
 
-    if (width >= 120)
+    if (width >= Theme.Layout.FullWidth)
     {
-      view.AddStr("  Type a message to start, or /help for available commands.");
+      view.AddStr($"  {Theme.Text.BannerHintWide}");
     }
-    else if (width >= 80)
+    else if (width >= Theme.Layout.StandardWidth)
     {
-      view.AddStr("  Type a message to start, or /help for commands.");
+      view.AddStr($"  {Theme.Text.BannerHintMedium}");
     }
     else
     {
-      view.AddStr("  Type a message, or /help");
+      view.AddStr($"  {Theme.Text.BannerHintNarrow}");
     }
   }
 
@@ -655,7 +642,7 @@ internal static class BannerRenderer
     var timestamp = data.ResumeTimestamp?.LocalDateTime
       .ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) ?? "";
 
-    view.SetAttribute(DimAttr);
+    view.SetAttribute(Theme.Semantic.Muted);
     view.Move(0, y);
     view.AddStr(Truncate(
       $"  Resumed session {shortId} ({data.ResumeMessageCount} messages from {timestamp})",

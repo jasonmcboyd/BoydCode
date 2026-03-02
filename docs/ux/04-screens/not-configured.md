@@ -54,13 +54,16 @@ configured state. The difference is in the last section:
 
 ### Anatomy (Status Footer Only)
 
-1. **Primary status** -- `[yellow bold]Not configured[/]` at 2-space indent.
-2. **Guidance line** -- 2-space indent. Mixed markup:
-   - `[dim]Use[/]` -- dim prefix.
-   - `[bold]/provider setup[/]` -- bold command reference.
-   - `[dim]to configure an API key, or pass[/]` -- dim connecting text.
-   - `[bold]--api-key[/]` -- bold flag reference.
-   - `[dim].[/]` -- dim period.
+(Markup notation indicates visual intent, not implementation API.)
+
+1. **Primary status** -- `[yellow bold]Not configured[/]` (`Theme.Banner.StatusNotConfigured`,
+   warning yellow, bold) at 2-space indent.
+2. **Guidance line** -- 2-space indent. Mixed styles:
+   - `[dim]Use[/]` -- `Theme.Semantic.Muted` prefix.
+   - `[bold]/provider setup[/]` -- bold default, command reference.
+   - `[dim]to configure an API key, or pass[/]` -- `Theme.Semantic.Muted` connecting text.
+   - `[bold]--api-key[/]` -- bold default, flag reference.
+   - `[dim].[/]` -- `Theme.Semantic.Muted` period.
 
 ### What Is Absent
 
@@ -82,13 +85,15 @@ conversation without a provider.
 | Not configured (full banner) | Terminal height >= 30, no API key | Full ASCII art + info grid + yellow "Not configured" + guidance |
 | Not configured (compact banner) | Terminal height < 30, no API key | Single-line brand + info grid + yellow "Not configured" + guidance |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[yellow bold]` | warning-yellow + bold (1.1, 2.2) | "Not configured" primary status |
-| `[dim]` | dim (2.2) | Guidance text connecting words |
-| `[bold]` | bold (2.2) | `/provider setup` and `--api-key` command references |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Banner.StatusNotConfigured` (warning yellow, bold —
+"Not configured" primary status), `Theme.Semantic.Muted` (guidance text connecting words),
+bold default weight (`/provider setup` and `--api-key` command references)
+
+**Component patterns:** Status Message (#7), Banner (#24)
 
 ## Interactive Elements
 
@@ -139,6 +144,6 @@ type `/provider setup` at the input prompt to configure a provider, or
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Status Message | Section 1 | The guidance line follows the warning-yellow pattern |
-| Banner | Section 20 | This is a state variant of the startup banner |
+| Status Message | #7 | The guidance line follows the warning-yellow pattern |
+| Banner | #24 | This is a state variant of the startup banner |
 

@@ -6,7 +6,6 @@ using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
-using Attribute = Terminal.Gui.Drawing.Attribute;
 
 #pragma warning disable CS0618 // Application.Invoke/Init/Shutdown/RequestStop - using legacy static API during Terminal.Gui migration
 
@@ -31,8 +30,6 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   private BoydCodeToplevel? _toplevel;
 
   // Modal overlay
-  private static readonly Scheme ModalBorderScheme = new(
-    new Attribute(ColorName16.Blue, global::Terminal.Gui.Drawing.Color.None));
   private Window? _modalWindow;
 
   // Streaming token batching
@@ -410,7 +407,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
       if (_toplevel is null) return;
       DismissCurrentModal();
 
-      var fullContent = content + "\n\nEsc to dismiss";
+      var fullContent = content + "\n\n" + Theme.Text.EscToDismiss;
       var lines = fullContent.Split('\n');
 
       var maxLineWidth = 0;
@@ -443,7 +440,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
         BorderStyle = LineStyle.Rounded,
       };
 
-      window.Border?.SetScheme(ModalBorderScheme);
+      window.Border?.SetScheme(Theme.Modal.BorderScheme);
 
       var textView = new TextView
       {

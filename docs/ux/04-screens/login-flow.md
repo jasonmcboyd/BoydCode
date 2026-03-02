@@ -102,45 +102,51 @@ Token exchange failed (400):
 | Token exchange HTTP error | Non-success status from token endpoint | Red: "Token exchange failed ({status}):" + error body |
 | Token exchange null | Response parsed but result is null | Red: "Failed to exchange authorization code for tokens." |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[bold]` | bold (2.2) | "Logging in to {Provider}..." |
-| `[green]` | success-green (1.1) | "Successfully logged in!" |
-| `[red]` | error-red (1.1) | All error messages (no "Error:" prefix -- see note) |
-| `[yellow]` | warning-yellow (1.1) | "This provider requires your own OAuth client credentials." |
-| `[dim]` | dim (2.2) | Browser fallback hint, GCP location hint, credential creation link |
-| `[link]` | (Spectre link) | Auth URL rendered as clickable terminal link |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
 
-**Note on error pattern**: LoginCommand does not use the standard
-`[red]Error:[/]` prefix pattern. Error messages are rendered as full red
-lines: `[red]Login timed out. Please try again.[/]`. This inconsistency is
-documented in the style tokens audit (11.7).
+**Theme constants used:** `Theme.Semantic.Default` with bold weight ("Logging in to {Provider}..."),
+`Theme.Semantic.Success` (green, "Successfully logged in!"), `Theme.Semantic.Error`
+(red, all error messages), `Theme.Semantic.Warning` (yellow, credential requirement notice),
+`Theme.Semantic.Muted` (browser fallback hint, GCP location hint, credential creation link)
+
+Auth URL is rendered as a clickable terminal hyperlink (OSC 8 escape sequence where
+supported; plain URL text as fallback).
+
+**Component patterns:** Text Prompt (#13), Status Message (#7)
+
+**Note on error pattern**: LoginCommand does not use the standard error prefix pattern.
+Error messages are rendered as full red lines: "Login timed out. Please try again."
+This inconsistency is documented in the style tokens audit (11.7).
 
 ## Interactive Elements
 
 | Element | Type | Condition |
 |---|---|---|
-| Client ID | `SpectreHelpers.PromptNonEmpty` | Provider has no built-in client ID and no stored config |
-| Client Secret | `AnsiConsole.Prompt` with `.Secret()` | Provider's OAuth config has `RequiresClientSecret` |
-| GCP Project ID | `SpectreHelpers.PromptNonEmpty` | Same as Client Secret (triggered by `RequiresClientSecret`) |
-| GCP Location | `AnsiConsole.Prompt` with `.DefaultValue("us-central1")` | Same as Client Secret |
+| Client ID | Non-empty text prompt | Provider has no built-in client ID and no stored config |
+| Client Secret | Masked text prompt (input not echoed) | Provider's OAuth config has `RequiresClientSecret` |
+| GCP Project ID | Non-empty text prompt | Same as Client Secret (triggered by `RequiresClientSecret`) |
+| GCP Location | Text prompt with default "us-central1" | Same as Client Secret |
 
-The prompts use green-highlighted field names in labels:
-- `"Enter [green]Client ID[/]:"`
-- `"Enter [green]Client Secret[/]:"` (with `.Secret()` masking)
-- `"Enter [green]GCP Project ID[/]:"`
-- `"Enter [green]GCP Location[/] [dim](default: us-central1)[/]:"`
+The prompts use `Theme.Semantic.Success` (green) for field name highlights in labels:
 
-The Client Secret prompt has a custom validation error message:
-`"[red]Client Secret cannot be empty[/]"`.
+```
+(Markup notation indicates visual intent, not implementation API)
+"Enter [green]Client ID[/]:"
+"Enter [green]Client Secret[/]:"  (input masked)
+"Enter [green]GCP Project ID[/]:"
+"Enter [green]GCP Location[/] [dim](default: us-central1)[/]:"
+```
+
+The Client Secret prompt has a validation error message in `Theme.Semantic.Error`
+(red): "Client Secret cannot be empty".
 
 ## Behavior
 
-- **Non-interactive guard**: The first check is `AnsiConsole.Profile
-  .Capabilities.Interactive`. If false, the error is shown immediately with
-  guidance to use `--api-key` or environment variables.
+- **Non-interactive guard**: The first check detects whether the terminal is
+  interactive (stdin connected to a TTY). If not interactive, the error is shown
+  immediately with guidance to use `--api-key` or environment variables.
 
 - **OAuth config resolution**: `OAuthProviderRegistry.GetConfig(Provider)`
   returns the provider's OAuth configuration. If null, the provider does not
@@ -194,8 +200,8 @@ The Client Secret prompt has a custom validation error message:
   as the auth error state.
 
 - **Token exchange returns error JSON**: The full error body is rendered in
-  red, escaped via `Markup.Escape`. The JSON structure is not parsed for
-  user-friendly extraction.
+  `Theme.Semantic.Error` (red) as plain text. The JSON structure is not parsed
+  for user-friendly extraction.
 
 - **Stored client credentials**: Once entered, client credentials are saved
   and reused on subsequent `boydcode login` calls. The user is not prompted
@@ -208,6 +214,6 @@ The Client Secret prompt has a custom validation error message:
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Text Prompt | Section 7 | Client ID, GCP Project ID, GCP Location prompts |
-| Status Message | Section 1 | Error messages (though non-standard format) |
+| Text Prompt | #13 | Client ID, GCP Project ID, GCP Location prompts |
+| Status Message | #7 | Error messages (though non-standard format) |
 

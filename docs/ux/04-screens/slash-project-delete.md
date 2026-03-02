@@ -65,15 +65,17 @@ requesting confirmation. The ambient `_default` project cannot be deleted.
 | Not found | Project does not exist | Red error with bold entity name |
 | Non-interactive, no name | No name argument, non-interactive | Yellow usage hint |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[bold]` | bold (2.2) | Project name in confirmation prompt, success/error messages, `_default` in ambient error |
-| `[green]` | success-green | Success checkmark |
-| `[red]` | error-red | "Error:" prefix |
-| `[yellow]` | warning-yellow | "Usage:" prefix |
-| `[dim]` | dim (2.2) | Bullet `-` in detail list, "No custom configuration.", "Cancelled." |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Semantic.Success` (green success checkmark),
+`Theme.Semantic.Error` (red "Error:" prefix), `Theme.Semantic.Warning` (yellow
+"Usage:" prefix), `Theme.Semantic.Muted` (dim bullet in detail list, "No custom
+configuration.", "Cancelled.").
+
+The confirmation prompt runs during Terminal.Gui suspension via
+`SpectreHelpers.Confirm`.
 
 ## Interactive Elements
 
@@ -129,7 +131,7 @@ requesting confirmation. The ambient `_default` project cannot be deleted.
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Delete Confirmation | Section 12 | Summary + confirm prompt pattern |
-| Status Message | Section 1 | Success, error, cancelled, usage messages |
-| Confirmation Prompt | Section 8 | Delete confirmation with default No |
+| Delete Confirmation | #15 | Summary + confirm prompt pattern |
+| Status Message | #7 | Success, error, cancelled, usage messages |
+| Confirmation Prompt | #14 | Delete confirmation with default No |
 

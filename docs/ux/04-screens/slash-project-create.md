@@ -2,10 +2,11 @@
 
 ## Overview
 
-Creates a new named project. In interactive mode, offers an optional
-configuration wizard that walks through directories, system prompt, and
-container settings via a multi-selection prompt. In non-interactive mode,
-creates a bare project with no configuration.
+Creates a new named project using a Multi-Step Wizard Dialog (component
+pattern #32). The wizard guides the user through project creation in 4 steps:
+(1) Name + directories, (2) System prompt, (3) Container settings, (4) Review
+and confirm. Steps 2-3 are optional and can be skipped. In non-interactive
+mode, creates a bare project with no configuration.
 
 **Screen IDs**: PROJ-02, PROJ-03, PROJ-04, PROJ-05, PROJ-06, PROJ-07, PROJ-08,
 PROJ-09, PROJ-10, PROJ-11, PROJ-12
@@ -14,175 +15,307 @@ PROJ-09, PROJ-10, PROJ-11, PROJ-12
 
 `/project create [name]`
 
-- If `name` is provided inline, the name prompt is skipped.
-- If `name` is omitted and the terminal is interactive, a text prompt appears.
+- If `name` is provided inline, the wizard opens at Step 1 with the name
+  pre-filled.
+- If `name` is omitted and the terminal is interactive, the wizard opens at
+  Step 1 with an empty name field.
 - If `name` is omitted and the terminal is non-interactive, a usage hint is
   shown and the command exits.
 
 ## Layout (80 columns)
 
-### Minimal Create (no configure)
+### Step 1: Name and Directories
 
-    Project name: my-api
-      v Project my-api created.
+```
++-- Create Project -----------------------------------------+
+|                                                            |
+|  Step 1 of 4: Name and Directories                         |
+|  --------------------------------------------------------  |
+|                                                            |
+|  Name:  [my-api                                         ]  |
+|                                                            |
+|  Directories:                                              |
+|    C:\Users\jason\source\repos\my-api          ReadWrite   |
+|    C:\Users\jason\data\fixtures                ReadOnly    |
+|                                                            |
+|                     [ Add Directory ]                      |
+|                                                            |
+|  [ Cancel ]                                    [ Next > ]  |
+|                                                            |
++------------------------------------------------------------+
+```
 
-      Tip: Use /project edit my-api to configure later.
+The Name field is required -- the Next button validates non-empty. Directories
+are optional at this step.
 
-### Full Create with Configuration Wizard
+#### Add Directory Sub-Dialog
 
-    Project name: my-api
-      v Project my-api created.
+Clicking "Add Directory" opens a nested Form Dialog (pattern #31):
 
-    Configure project settings now? [y/N] y
+```
++-- Add Directory -----------------------------------------+
+|                                                           |
+|  Path:          [C:\Users\jason\docs                   ]  |
+|                                                           |
+|  Access level:                                            |
+|    > ReadWrite                                            |
+|      ReadOnly                                             |
+|                                                           |
+|                             [ Cancel ]  [ Add ]           |
+|                                                           |
++-----------------------------------------------------------+
+```
 
-    Which settings would you like to configure?
-    > [x] Directories
-      [x] System prompt
-      [ ] Container settings
+After adding, the directory appears in the list on Step 1. Directories can be
+removed by selecting them and pressing Delete, or via a context action.
 
-    ── Directories ─────────────────────────────────────────────────────────────
-      Directory path (Enter to finish): C:\Users\jason\source\repos\my-api
-      Access level:
-    > ReadWrite
-      ReadOnly
-      v Added C:\Users\jason\source\repos\my-api (ReadWrite)
+### Step 1 -- With Validation Error
 
-      Directory path (Enter to finish):
+```
++-- Create Project -----------------------------------------+
+|                                                            |
+|  Step 1 of 4: Name and Directories                         |
+|  --------------------------------------------------------  |
+|                                                            |
+|  Name:  [                                               ]  |
+|         Name cannot be empty.                              |
+|                                                            |
+|  Directories: (none)                                       |
+|                                                            |
+|                     [ Add Directory ]                      |
+|                                                            |
+|  [ Cancel ]                                    [ Next > ]  |
+|                                                            |
++------------------------------------------------------------+
+```
 
-    ── System prompt ───────────────────────────────────────────────────────────
-      Custom system prompt (Enter for default): You are an expert API developer.
-      v System prompt set.
+### Step 1 -- Name Already Exists
 
-      v Project my-api saved.
+```
+|  Name:  [my-api                                         ]  |
+|         Project 'my-api' already exists.                   |
+```
 
-### With Container Settings
+The duplicate check runs when Next is clicked. The error message uses
+`Theme.Semantic.Error` (bright red).
 
-    ── Container settings ──────────────────────────────────────────────────────
-      Docker image (Enter to skip): python:3.12-slim
-      v Docker image set to python:3.12-slim.
-      Require container execution? [Y/n] y
-      v Require container: True.
+### Step 2: System Prompt
 
-      v Project my-api saved.
+```
++-- Create Project -----------------------------------------+
+|                                                            |
+|  Step 2 of 4: System Prompt                                |
+|  --------------------------------------------------------  |
+|                                                            |
+|  Custom system prompt (leave empty for default):           |
+|  [You are an expert API developer working on            ]  |
+|  [the my-api application.                               ]  |
+|  [                                                      ]  |
+|  [                                                      ]  |
+|                                                            |
+|                                                            |
+|  [ Cancel ]                          [ < Back ] [ Next > ] |
+|                                                            |
++------------------------------------------------------------+
+```
 
-### Name Already Exists
+The `TextView` is pre-filled with `Project.DefaultSystemPrompt` in dim text
+as a placeholder. If the user leaves it unchanged or clears it,
+`project.SystemPrompt` is set to null (meaning "use default").
 
-    Project name: my-api
-    Error: Project my-api already exists.
+### Step 3: Container Settings
+
+```
++-- Create Project -----------------------------------------+
+|                                                            |
+|  Step 3 of 4: Container Settings                           |
+|  --------------------------------------------------------  |
+|                                                            |
+|  Docker image:  [python:3.12-slim                       ]  |
+|                 (optional)                                 |
+|                                                            |
+|  Require container execution?                              |
+|                       [ No ]  [ Yes ]                      |
+|                                                            |
+|                                                            |
+|  [ Cancel ]                          [ < Back ] [ Next > ] |
+|                                                            |
++------------------------------------------------------------+
+```
+
+Both fields are optional. The Docker image field can be left empty. The
+"Require container" buttons default to No.
+
+### Step 4: Review and Confirm
+
+```
++-- Create Project -----------------------------------------+
+|                                                            |
+|  Step 4 of 4: Review                                       |
+|  --------------------------------------------------------  |
+|                                                            |
+|  Name:               my-api                                |
+|  Directories:        2 configured                          |
+|  System prompt:      custom                                |
+|  Docker image:       python:3.12-slim                      |
+|  Require container:  Yes                                   |
+|                                                            |
+|                                                            |
+|  [ Cancel ]                        [ < Back ] [ Create ]   |
+|                                                            |
++------------------------------------------------------------+
+```
+
+The review step shows a read-only summary of all entered values. The "Next"
+button is replaced with "Create" on this final step.
+
+### Step 4 -- Minimal Configuration
+
+```
+|  Name:               my-api                                |
+|  Directories:        none                                  |
+|  System prompt:      default                               |
+|  Docker image:       none                                  |
+|  Require container:  No                                    |
+```
+
+Values that were skipped or left at defaults show in `Theme.Semantic.Muted`
+(dim): "none", "default", "No".
+
+### After Create
+
+```
+  v Project my-api created.
+```
+
+The success message is rendered in the conversation view after the wizard
+dialog closes. If the user skipped all configuration:
+
+```
+  v Project my-api created.
+  Tip: Use /project edit my-api to configure later.
+```
+
+The tip uses `Theme.Semantic.Muted` (dim).
 
 ### Non-Interactive Usage Hint
 
-    Usage: /project create <name>
+```
+  Usage: /project create <name>
+```
+
+In non-interactive mode with a name argument, the project is created as a
+bare entity with no configuration wizard.
 
 ## States
 
 | State | Condition | Visual Difference |
 |---|---|---|
-| Name prompt | No name argument, interactive | TextPrompt with green highlight on "name" |
-| Already exists | Name matches existing project | Red error with bold entity name, command exits |
-| Created, no configure | User declines configure or non-interactive | Success message + dim tip |
-| Section picker | User accepts configure prompt | MultiSelectionPrompt with 3 checkboxes |
-| Directory loop | "Directories" selected | Repeating path prompt + access level selection |
-| System prompt | "System prompt" selected | Text prompt with default value |
-| Container settings | "Container settings" selected | Docker image prompt + require confirm |
-| Saved | Configuration complete | Final success message |
+| Step 1 | Wizard open | Name TextField + directory list + Add button |
+| Step 1 validation | Empty name or duplicate | Red error below Name field |
+| Step 2 | After Step 1 Next | TextView for system prompt |
+| Step 3 | After Step 2 Next | Docker image TextField + Require container buttons |
+| Step 4 | After Step 3 Next | Read-only summary, "Create" button |
+| Created | "Create" clicked | Dialog closes; success in conversation view |
 | Non-interactive, no name | Non-interactive terminal, no name arg | Yellow usage hint |
+| Non-interactive, with name | Non-interactive terminal, name arg | Bare project created, success message |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[green]` | success-green | Name prompt highlight, success checkmarks, "ReadWrite" label, "Allow" access |
-| `[red]` | error-red | "Error:" prefix |
-| `[yellow]` | warning-yellow | "Usage:" prefix, "ReadOnly" label |
-| `[bold]` | bold (2.2) | Entity name in error/success messages, "Current:" label |
-| `[dim]` | dim (2.2) | Tip text, "Enter to finish" / "Enter for default" / "Enter to skip" hints, section rule style, "Skipped" message |
-| `[dim italic]` | dim italic (2.2) | Not used directly on this screen |
-| `Color.Green` | Spectre color (1.5) | SelectionPrompt and MultiSelectionPrompt highlight style |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Modal.BorderScheme` (blue border for wizard
+dialog and sub-dialogs), `Theme.Semantic.Default` with `TextStyle.Bold` (step
+indicator text), `Theme.Semantic.Muted` (dim step separator rule, "none" /
+"default" / "No" in review, tip text, "(optional)" hints),
+`Theme.Semantic.Success` (green success checkmark, "ReadWrite" label),
+`Theme.Semantic.Warning` (yellow "ReadOnly" label, "Usage:" prefix),
+`Theme.Semantic.Error` (red validation errors and "Error:" prefix),
+`Theme.Input.Text` (white text in TextFields/TextViews),
+`Theme.Symbols.Rule` (step separator character).
+
+All interaction occurs within Terminal.Gui Dialogs. No Terminal.Gui
+suspension or Spectre prompts are needed.
 
 ## Interactive Elements
 
-| Element | Type | Label | Validation/Default |
-|---|---|---|---|
-| Project name | `SpectreHelpers.PromptNonEmpty` | `Project [green]name[/]:` | Non-empty validation |
-| Configure now? | `SpectreHelpers.Confirm` | `Configure project settings now?` | Default: No |
-| Section picker | `SpectreHelpers.MultiSelect` | `Which settings would you like to configure?` | Not required (can select none) |
-| Directory path | `SpectreHelpers.PromptOptional` | `  Directory path [dim](Enter to finish)[/]:` | Empty = stop loop |
-| Access level | `SpectreHelpers.Select<DirectoryAccessLevel>` | `  Access level:` | ReadWrite, ReadOnly |
-| System prompt | `SpectreHelpers.PromptWithDefault` | `  Custom system prompt [dim](Enter for default)[/]:` | Default: `Project.DefaultSystemPrompt` |
-| Docker image | `SpectreHelpers.PromptOptional` | `  Docker image [dim](Enter to skip)[/]:` | Empty = skip |
-| Require container | `SpectreHelpers.Confirm` | `  Require container execution?` | Default: Yes |
+| Element | Type | Context |
+|---|---|---|
+| Name | TextField in Step 1 | Required, non-empty validation |
+| Directory list | Labels in Step 1 | Showing added directories |
+| Add Directory | Nested Form Dialog (pattern #31) | Path + access level input |
+| System prompt | TextView in Step 2 | Multi-line, optional |
+| Docker image | TextField in Step 3 | Optional |
+| Require container | Yes/No buttons in Step 3 | Default: No |
+| Review summary | Labels in Step 4 | Read-only confirmation |
+
+## Keyboard
+
+| Key | Action |
+|---|---|
+| Tab | Move between fields within the current step |
+| Shift+Tab | Move to previous field or button |
+| Enter | Confirm (Next/Create when button focused) |
+| Esc | Cancel entire wizard |
+| Alt+B | Back (same as clicking Back button) |
+| Alt+N | Next (same as clicking Next button) |
 
 ## Behavior
 
-1. **Name resolution**: If the name is provided as a trailing argument
-   (`/project create my-api`), it is used directly. Multiple words are joined
-   with spaces. Otherwise, an interactive prompt appears.
+1. **Wizard structure**: The dialog progresses through 4 steps. The step
+   indicator at the top shows "Step N of 4: {title}". Back and Next buttons
+   navigate between steps. Cancel exits without creating.
 
-2. **Duplicate check**: The name is checked against existing projects via
-   `_projectRepository.LoadAsync`. If found, a red error is shown and the
-   command exits immediately.
+2. **Name validation**: Step 1's Next button validates that the name is
+   non-empty and does not match an existing project. Validation errors
+   appear inline below the field in `Theme.Semantic.Error`.
 
-3. **Bare creation**: A `Project` entity is created with the given name and
-   saved immediately. The success message renders before the configure prompt.
+3. **Directory management**: Directories are added via a nested Form Dialog.
+   Each directory entry shows the path and access level. Directories can be
+   removed from the list before creation.
 
-4. **Configure gate**: In interactive mode, a confirm prompt asks whether to
-   configure settings. Default is No. If declined, a dim tip shows the edit
-   command for later use.
+4. **System prompt**: Step 2 shows a `TextView` for multi-line input. If left
+   empty, `project.SystemPrompt` is set to null (meaning "use default").
 
-5. **Section picker**: A multi-selection prompt with three checkboxes appears.
-   Sections are processed in order: Directories, System prompt, Container
-   settings. Each selected section renders under its own section divider.
+5. **Container settings**: Step 3 has an optional Docker image field and a
+   Yes/No toggle for requiring container execution.
 
-6. **Directory loop**: Repeatedly prompts for a path until the user presses
-   Enter with an empty value. Each directory prompts for an access level
-   (ReadWrite or ReadOnly) and shows a success confirmation.
+6. **Review**: Step 4 shows a read-only summary of all values. "Create"
+   replaces the "Next" button. Clicking "Create" saves the project and
+   closes the wizard.
 
-7. **System prompt**: Shows a text prompt with the default system prompt value.
-   If the user keeps the default, `project.SystemPrompt` is set to null
-   (meaning "use default"). Otherwise, the custom prompt is saved.
+7. **Back navigation**: Back preserves all entered values. The user can
+   navigate freely between steps to revise inputs.
 
-8. **Container settings**: Prompts for a Docker image. If provided, prompts
-   for whether container execution is required. If skipped, shows a dim
-   "Skipped container configuration" message.
-
-9. **Final save**: The project is saved once more after configuration, with a
-   final success message.
+8. **Non-interactive**: If `_ui.IsInteractive` is false and no name argument
+   is provided, shows the usage hint. If a name is given, the project is
+   created as a bare entity without the wizard.
 
 ## Edge Cases
 
-- **Non-interactive terminal**: If `_ui.IsInteractive` is false and no name
-  argument is provided, shows the usage hint and returns. No prompts are
-  attempted. If a name is given, the project is created but the configure
-  prompt is skipped entirely.
+- **Name with special characters**: The name validation regex
+  `^[a-zA-Z0-9_-]+$` rejects names with spaces or special characters. The
+  validation error appears inline on Step 1.
 
-- **Reserved names**: No explicit reservation check exists in create. The
-  `_default` ambient project is pre-seeded, so creating `_default` would hit
-  the "already exists" error path.
+- **Default system prompt acceptance**: If the user leaves the system prompt
+  at the default or clears it, `project.SystemPrompt` is set to null. No
+  distinction is made between "cleared" and "never entered".
 
-- **Empty directory path**: Entering an empty path in the directory loop
-  terminates the loop. The path prompt uses `PromptOptional` which allows
-  empty input.
+- **Narrow terminal (< 80 columns)**: The wizard dialog uses `Dim.Percent(70)`
+  for width. The step indicator may wrap to two lines. Field labels and
+  TextFields adjust via `Dim.Fill`.
 
-- **Default system prompt acceptance**: If the user accepts the default prompt
-  (by pressing Enter), `project.SystemPrompt` is set to null, which means
-  "use default" in the system. No success message is shown for default
-  acceptance -- only for custom prompts.
-
-- **Narrow terminal (< 80 columns)**: The section rule lines scale to
-  terminal width via Spectre's `Rule` renderable. The multi-selection prompt
-  and text prompts adapt to terminal width automatically. The directory loop's
-  2-space indent leaves 78 columns for path text.
+- **Cancel confirmation**: If the user has entered data in any step and
+  presses Esc, a confirmation MessageBox (pattern #14) asks "Discard changes?"
+  with Yes/No buttons. If no data has been entered, the wizard closes
+  immediately.
 
 ## Component Patterns Used
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Status Message | Section 1 | Success, error, usage, dim messages |
-| Section Divider | Section 2 | "Directories", "System prompt", "Container settings" headings |
-| Text Prompt | Section 7 | Name, directory path, system prompt, Docker image |
-| Selection Prompt | Section 5 | Access level selection |
-| Multi-Selection Prompt | Section 6 | Section picker |
-| Confirmation Prompt | Section 8 | Configure now, require container |
-| Empty State | Section 13 | Not used (project is always created) |
-
+| Multi-Step Wizard | #32 | Overall wizard dialog structure |
+| Form Dialog | #31 | Add Directory sub-dialog, field layout |
+| Confirmation Prompt | #14 (MessageBox approach) | Cancel confirmation when data entered |
+| Status Message | #7 | Success, error, usage, dim messages |
+| Empty State | #21 | Not used (project is always created on confirm) |

@@ -9,6 +9,10 @@ from the new engine are available to the prompt builder). It then displays a
 before/after summary highlighting what changed. This is the mechanism for applying
 project edits (e.g., `/project edit`) to the running session without restarting.
 
+This is a non-interactive operational command -- output is rendered as Status
+Messages (pattern #7) in the conversation view. No windows or dialogs are
+opened.
+
 **Screen IDs**: REFRESH-01, REFRESH-02, REFRESH-03, REFRESH-04, REFRESH-05
 
 ## Trigger
@@ -22,7 +26,7 @@ project edits (e.g., `/project edit`) to the running session without restarting.
 
 ```
 (blank line)
-  v Session context refreshed.
+  ✓ Session context refreshed.
 (blank line)
     Directories     3 (2 git)
     Git branch      feature/exec  (was: main)
@@ -35,7 +39,7 @@ project edits (e.g., `/project edit`) to the running session without restarting.
 
 ```
 (blank line)
-  v Session context refreshed.
+  ✓ Session context refreshed.
 (blank line)
     Directories     2 (1 git)
     Git branch      main
@@ -61,7 +65,7 @@ Error: Project 'my-project' not found. It may have been deleted.
 ```
 Warning: Directory does not exist: C:\Users\jason\missing\path
 (blank line)
-  v Session context refreshed.
+  ✓ Session context refreshed.
 (blank line)
     Directories     2 (1 git)
     ...
@@ -72,7 +76,7 @@ Warning: Directory does not exist: C:\Users\jason\missing\path
 ```
 Warning: Engine refresh failed (keeping previous): Docker daemon not running.
 (blank line)
-  v Session context refreshed.
+  ✓ Session context refreshed.
 (blank line)
     Directories     2 (1 git)
     Git branch      main
@@ -83,16 +87,19 @@ Warning: Engine refresh failed (keeping previous): Docker daemon not running.
 
 ### Anatomy
 
-1. **Missing directory warnings** (0 or more) -- Yellow "Warning:" prefix
-   per directory that does not exist on disk.
+1. **Missing directory warnings** (0 or more) -- `Theme.Semantic.Warning`
+   (yellow) "Warning:" prefix per directory that does not exist on disk.
+   Rendered via Status Message pattern (#7).
 2. **Blank line**.
-3. **Success message** -- Green "v" + "Session context refreshed." via
-   `SpectreHelpers.Success()`.
+3. **Success message** -- `Theme.Semantic.Success` (green) `✓`
+   (`Theme.Symbols.Check`) + "Session context refreshed." via Status Message
+   pattern (#7).
 4. **Stale warning cleared** -- `_ui.StaleSettingsWarning` is set to null.
 5. **Blank line**.
 6. **Summary table** -- Four rows of key-value pairs at 4-space indent.
-   Each row has a dim label (left-padded to 16 chars) followed by the value.
-   Changed values use `[bold]` style; unchanged values use `[dim]` style.
+   Each row has a dim label (`Theme.Semantic.Muted`, left-padded to 16 chars)
+   followed by the value. Changed values use bold weight; unchanged values
+   use `Theme.Semantic.Muted` (dim).
 
 ### Summary Rows
 
@@ -113,15 +120,19 @@ Warning: Engine refresh failed (keeping previous): Docker daemon not running.
 | No session | Session or project name is null | Red error only |
 | Project not found | Repository returns null for project name | Red error only |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[green]✓[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
-| `[red]Error:[/]` | error-red (1.1) | Error prefix |
-| `[yellow]Warning:[/]` | warning-yellow (1.1) | Missing directory and engine failure warnings |
-| `[dim]` | dim (2.2) | Label portion of summary rows; unchanged value styling; "(was: ...)" suffix |
-| `[bold]` | bold (2.2) | Changed value styling |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:**
+
+- `Theme.Semantic.Success` with `Theme.Symbols.Check` -- green `✓` success
+  prefix
+- `Theme.Semantic.Error` -- red "Error:" prefix
+- `Theme.Semantic.Warning` -- yellow "Warning:" prefix for missing directories
+  and engine failure
+- `Theme.Semantic.Muted` -- dim label portion of summary rows, unchanged
+  value styling, "(was: ...)" suffix, "(kept previous)" annotation
 
 ## Interactive Elements
 
@@ -137,8 +148,8 @@ None. This is a non-interactive operational command.
   .LoadAsync()`. If null, the error is returned.
 
 - **Directory re-resolution**: `DirectoryResolver.Resolve()` is called on
-  the project's directories. Missing directories generate individual warnings
-  via `SpectreHelpers.Warning()`.
+  the project's directories. Missing directories generate individual
+  `Theme.Semantic.Warning` (yellow) warnings per missing path.
 
 - **Directory guard update**: `DirectoryGuard.ConfigureResolved()` is called
   with the newly resolved directories.
@@ -176,10 +187,17 @@ None. This is a non-interactive operational command.
   picked up on the next refresh.
 
 - **Non-interactive/piped terminal**: Renders normally. No prompts involved.
+  Output is plain text to stdout.
+
+## Non-TUI Fallback
+
+When running in non-interactive/piped mode, the same output is rendered as
+plain text to stdout. Success/warning/error messages use text prefixes
+(`✓`, `Warning:`, `Error:`) without color. Summary rows use string-padded
+columns.
 
 ## Component Patterns Used
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Status Message | Section 1 | Success, error, and warning messages |
-
+| Status Message | #7 | Success, error, and warning messages |

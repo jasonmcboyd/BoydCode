@@ -59,46 +59,14 @@ Domain                        → Entities, records, enums, configuration models
 - **Response envelope and agentic loop** — Every request includes a `tools` array containing the Shell tool's name, description, and JSON parameter schema. The model emits structured `tool_use` content blocks when it decides a command would help. Responses mix `TextBlock` (explanatory text) and `ToolUseBlock` (tool invocation with `Id`, `Name`, `ArgumentsJson`) content blocks. The `stop_reason` field signals intent: `"tool_use"` means there are tool calls to execute (`LlmResponse.HasToolUse`), `"end_turn"` means the turn is complete. The orchestrator runs an agentic loop: stream/render text → detect tool calls → execute via execution engine → add `ToolResultBlock` (keyed by the `tool_use` block's `Id` for correlation) → send updated conversation back to the LLM → repeat until `stop_reason` is `"end_turn"` or max rounds reached
 - **Response streaming** — `StreamChunk` discriminated union (`TextChunk`, `ToolCallChunk`, `CompletionChunk`) enables structured streaming from `ILlmProvider.StreamAsync`; `StreamAccumulator` collects chunks into `LlmResponse` for the tool execution loop; `StreamingResponseConverter` bridges MEAI `ChatResponseUpdate` to domain `StreamChunk`; orchestrator streams by default, falls back to `SendAsync` when `SupportsStreaming` is false
 
-## TUI Patterns (Presentation.Console)
+## TUI (Presentation.Console)
 
-UX design docs live in `docs/ux/`. These are prescriptive — they define what the UI SHOULD look like. All implementation must conform to these specs. **When a task intentionally changes the UX design, the docs in `docs/ux/` MUST be updated before or alongside the code changes.** Do not implement code that contradicts the current spec — update the spec first.
+BoydCode is a rich interactive TUI built on **Terminal.Gui v2** (`2.0.0-develop.5092`). Prescriptive UX design docs live in `docs/ux/` — these are the single source of truth for what the UI should look like. All implementation must conform to these specs. **When a task changes UX design, update the docs in `docs/ux/` before or alongside the code changes.**
 
-### Technology Stack
-
-**Terminal.Gui** (v2, `2.0.0-develop.5092`) owns the application shell — screen lifecycle, view hierarchy, layout, input handling, windowing. **Spectre.Console** is used for the CLI framework (`Spectre.Console.Cli`: CommandApp, AsyncCommand, CommandSettings, TypeRegistrar), interactive prompts during Terminal.Gui suspension (Select, Confirm, TextPrompt via VimAnsiConsole), stderr error output, and non-TUI/piped fallback rendering. **No Spectre `IRenderable` objects are constructed for display inside Terminal.Gui views** — Terminal.Gui v2 does not support ANSI escape sequences in views (issue #1097).
-
-### Rendering Principles
-
-- **Native drawing API**: All content inside the TUI uses Terminal.Gui primitives (`SetAttribute`, `Move`, `AddStr`) via `ConversationBlockRenderer` and `BannerRenderer`. No Spectre `IRenderable` inside Terminal.Gui views
-- **Typed content blocks**: `ConversationBlock` sealed records (`UserMessageBlock`, `AssistantTextBlock`, `ToolCallConversationBlock`, `BannerBlock`, etc.) are the content model. `ConversationBlockRenderer` draws them using Terminal.Gui's native API. `BannerRenderer` handles the startup banner with responsive tiers
-- **Data records for renderables**: Decouple renderables from domain types. Pass a flat sealed record (e.g., `BannerData`) so the renderable has zero domain dependencies and is testable by constructing the record directly
-- **Slash command output**: List views use column-aligned text via `OutputMarkup` (renders as `PlainTextBlock` in TUI, Spectre markup in non-TUI). Detail/show views use `ShowModal(title, content)` which opens a Terminal.Gui `Window` overlay. No Spectre `Table`, `Grid`, or `Panel` objects are constructed during TUI mode
-- **API reference**: `.claude/terminal-gui-v2-api.md` documents the v2 namespace map, drawing API, key handling, and established codebase patterns
-
-### Windowing Model
-
-Non-conversation content opens in Terminal.Gui windows, not the conversation view:
-- **Read-only info** (`/help`, `/agent show`, `/jea show`, `/provider show`, `/expand`) → modeless Window via `ShowModal` (agent keeps working, Esc to dismiss)
-- **Interactive workflows** (`/project create`, `/provider setup`, `/jea edit`) → modal Dialog (blocks until complete)
-- **List output** (`/agent list`, `/jea list`, `/project list`, `/provider list`, `/conversations list`) → formatted text in conversation view via `OutputMarkup`
-- **Conversation content** (user messages, assistant responses, tool badges, streaming, banner) → conversation view only
-
-### Interactive Prompts
-
-For interactive prompts during Terminal.Gui session, prefer Terminal.Gui equivalents (Dialog, ListView, TextField, MessageBox). When Spectre prompts are needed, the Terminal.Gui application must be suspended first.
-
-### TUI Architecture
-
-Terminal.Gui runs on the main thread; the orchestrator runs on a background thread. The threading model:
-- **Main thread**: `TguiApp.Init()` → `TguiApp.Run(toplevel)` (blocks) → `TguiApp.Shutdown()` — with suspend/resume loop for Spectre prompts
-- **Background thread**: `Task.Run(() => orchestrator.RunSessionAsync())` — calls `TguiApp.Invoke()` to marshal UI updates to the main thread
-
-View hierarchy (`BoydCodeToplevel` extends `Runnable`):
-- **ConversationView** — scrollable conversation history (max 2000 `ConversationBlock` records, custom `OnDrawingContent` drawing)
-- **ActivityBarView** — animated spinner + state label (Idle/Thinking/Streaming/Executing/CancelHint/Modal)
-- **ChatInputView** — event-driven text input with history, cursor, `TaskCompletionSource` for async input
-- **ChatStatusBar** — session metadata (left) + responsive key hints (right)
-- Background threads update views via `TguiApp.Invoke()` for thread safety; streaming tokens are batched to avoid UI thread saturation
+Key references:
+- **UX design system**: `docs/ux/` (screen specs, component patterns, style tokens, interaction specs, accessibility)
+- **Terminal.Gui v2 API**: `.claude/terminal-gui-v2-api.md`
+- **Theme constants**: `src/BoydCode.Presentation.Console/Terminal/Theme.cs`
 
 ## Target & Toolchain
 

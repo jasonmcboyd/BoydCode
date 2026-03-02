@@ -9,7 +9,7 @@ principles and architecture defined here.
 
 ## 1. Design Philosophy
 
-Seven principles guide every decision. They are listed in priority order -- when
+Eight principles guide every decision. They are listed in priority order -- when
 principles conflict, higher-numbered principles yield to lower-numbered ones.
 
 ### Principle 1: The Human is the Customer
@@ -96,6 +96,22 @@ that shows nothing. Every user action produces visible feedback within 100ms.
 Long operations get progress indication. The render loop targets 60fps for
 streaming content.
 
+### Principle 8: Interactive by Default
+
+List views are interactive with keyboard navigation. When users see a list of
+projects, conversations, or profiles, they can navigate to an item and act on it
+directly -- open, edit, delete, rename -- without reading output and typing
+follow-up commands. Static text output is reserved for non-actionable
+informational displays and piped/non-TUI fallback.
+
+This principle extends the conversation/tool content distinction:
+**Conversation content** (user messages, assistant responses, tool badges,
+streaming text, token usage) stays in the conversation view and becomes part of
+the permanent conversation history. **Tool content** (help, entity lists, detail
+views, context dashboards, expanded output) opens in separate windows or dialogs
+and is ephemeral -- dismissed when the user is done, never polluting the
+conversation.
+
 ---
 
 ## 2. Layout Architecture
@@ -121,6 +137,8 @@ for the entire session.
 |  ACTIVITY BAR  (1 row)                                                       |
 |  Idle: dim horizontal rule                                                   |
 |  Active: spinner + "Thinking..." / "Executing..." / "Streaming..."           |
++- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -+
+|  INPUT SEPARATOR  (1 row, dim rule)                                          |
 +------------------------------------------------------------------------------+
 |  > INPUT  (1 row)                                                            |
 |  Text input with line editing, command history, and key dispatch             |
@@ -151,6 +169,10 @@ for the entire session.
 - Cancel hint state: "Press Esc again to cancel" in yellow.
 - State transitions are instantaneous. The bar is always exactly one row.
 
+A dim horizontal rule separates the Activity Bar from the Input region.
+This is a structural element (InputSeparatorView) that provides visual
+separation without semantic content.
+
 **Input** (1 row)
 - Text input with cursor editing, command history (Up/Down), and Home/End
   navigation.
@@ -180,17 +202,21 @@ dismissed independently.
 4. User presses Esc. The window closes and the conversation view is fully
    visible again.
 
+**Which commands open interactive list windows (modeless, keyboard navigation):**
+- `/project list` -- Navigate, open, edit, delete projects (pattern #28)
+- `/provider list` -- Navigate, show, setup, remove providers (pattern #28)
+- `/conversations list` -- Navigate, open, rename, delete conversations (pattern #28)
+- `/jea list` -- Navigate, show, edit, delete profiles (pattern #28)
+- `/agent list` -- Navigate, show agent details (pattern #28)
+
 **Which commands open read-only windows (modeless, Esc to dismiss):**
 - `/help` -- Show available commands
 - `/project show` -- Display current project config
-- `/project list` -- List all projects
 - `/provider show` -- Display current provider config
-- `/provider list` -- List all providers
-- `/conversations list` -- List all sessions
 - `/conversations show <id>` -- Display session details
-- `/jea list` -- List JEA profiles
 - `/jea show <name>` -- Display profile details
 - `/jea effective` -- Show composed profile
+- `/agent show <name>` -- Display agent details
 - `/context show` -- Display context usage
 - `/expand` -- Show last tool output
 
@@ -205,6 +231,9 @@ dismissed independently.
 - `/jea delete` -- Confirmation dialog
 - `/jea assign` / `/jea unassign` -- Selection list
 - `/conversations delete` -- Confirmation dialog
+- `/conversations rename` -- Text input for new name
+- `/context summarize` -- Four-option menu
+- `/context prune` -- Confirmation of pruning boundaries
 
 **Which commands are inline (render in the conversation flow):**
 - `/conversations clear` -- Clears conversation, shows confirmation in conversation

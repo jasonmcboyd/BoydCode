@@ -3,13 +3,14 @@
 ## Overview
 
 The crash screen is the last-resort error display when an unhandled exception
-escapes all other error handling. It has two rendering layers: a Spectre.Console
-Panel with a red border and structured error information, and a plain-text
-fallback that writes directly to stderr if the Spectre rendering itself fails.
+escapes all other error handling. It has two rendering layers: a bordered panel
+with a red border and structured error information rendered directly to the
+console, and a plain-text fallback that writes directly to stderr if the panel
+rendering itself fails.
 
 The crash screen is designed to survive any failure condition, including
-corrupted console state, missing Spectre dependencies, or broken ANSI
-terminal support.
+corrupted console state or broken ANSI terminal support. It does not depend on
+Terminal.Gui being active.
 
 **Screen IDs**: SYS-01, SYS-02
 
@@ -28,7 +29,7 @@ Three exception sources can trigger the crash screen:
 In all cases, `CrashLogger.LogException(ex)` writes the full exception
 details to disk before the visual crash screen renders.
 
-## Layout (80 columns) -- Spectre Panel
+## Layout (80 columns) -- Bordered Panel
 
 ```
 (blank line)
@@ -47,34 +48,38 @@ details to disk before the visual crash screen renders.
 
 ### Anatomy
 
-1. **Blank line** -- `AnsiConsole.WriteLine()` before the panel.
-2. **Panel** -- Spectre.Console `Panel` with:
+(Markup notation indicates visual intent, not implementation API.)
+
+1. **Blank line** -- written before the panel.
+2. **Panel** -- bordered box rendered via direct console writes:
    - **Header**: `[red bold] boydcode crash [/]` (with leading/trailing
      spaces for visual padding within the header).
-   - **Border color**: `Color.Red`.
-   - **Padding**: `Padding(1, 1, 1, 1)` -- 1 character on all sides.
-   - **Content** (Markup):
+   - **Border color**: red (`Theme.Semantic.Error`).
+   - **Padding**: 1 character on all sides.
+   - **Content**:
      - Line 1: `[red bold]An unexpected error occurred.[/]`
      - Blank line.
-     - Line 2: `[red]{escaped exception message}[/]`
+     - Line 2: `[red]{exception message}[/]` (plain text, no terminal sequences)
      - Blank line.
      - Line 3: `[dim]Details have been written to:[/]`
-     - Line 4: `[cyan]{escaped log file path}[/]`
-3. **Blank line** -- `AnsiConsole.WriteLine()` after the panel.
+     - Line 4: `[cyan]{log file path}[/]`
+3. **Blank line** -- written after the panel.
 
 ### Content Sections
 
-| Section | Markup | Purpose |
+(Markup notation indicates visual intent, not implementation API.)
+
+| Section | Style | Purpose |
 |---|---|---|
-| Title | `[red bold]An unexpected error occurred.[/]` | Fixed message establishing this is a crash |
-| Error message | `[red]{Markup.Escape(ex.Message)}[/]` | The exception's `.Message` property, red, escaped |
-| Log reference label | `[dim]Details have been written to:[/]` | Points user to the detailed log |
-| Log file path | `[cyan]{Markup.Escape(CrashLogger.LogFilePath)}[/]` | Absolute path to `~/.boydcode/logs/error.log` |
+| Title | `[red bold]An unexpected error occurred.[/]` (`Theme.Semantic.Error`, bold) | Fixed message establishing this is a crash |
+| Error message | `[red]{ex.Message}[/]` (`Theme.Semantic.Error`, plain text content) | The exception's `.Message` property |
+| Log reference label | `[dim]Details have been written to:[/]` (`Theme.Semantic.Muted`) | Points user to the detailed log |
+| Log file path | `[cyan]{CrashLogger.LogFilePath}[/]` (`Theme.Semantic.Info`) | Absolute path to `~/.boydcode/logs/error.log` |
 
 ## Layout (80 columns) -- Plain-Text Fallback
 
-If the Spectre Panel rendering throws (the outer try/catch), the fallback
-writes directly to `System.Console.Error`:
+If the panel rendering throws (the outer try/catch), the fallback writes
+directly to `System.Console.Error`:
 
 ```
 Fatal error: Object reference not set to an instance of an object.
@@ -90,25 +95,25 @@ Error log: C:\Users\jason\.boydcode\logs\error.log
 
 This fallback uses `System.Console.Error` (not `System.Console.Out`) because:
 - Stderr is not affected by stdout redirection/piping.
-- Stderr typically bypasses any Spectre.Console rendering pipeline.
+- Stderr typically bypasses any TUI rendering pipeline.
 - The error is visible even when stdout is redirected to a file.
 
 ## States
 
 | State | Condition | Visual Difference |
 |---|---|---|
-| Spectre Panel | Spectre.Console is functional | Red-bordered panel with structured error, log path in cyan |
-| Plain-text fallback | Spectre.Console rendering throws | Two plain-text lines to stderr, no color, no border |
+| Bordered panel | Console rendering is functional | Red-bordered panel with structured error, log path in cyan |
+| Plain-text fallback | Panel rendering throws | Two plain-text lines to stderr, no color, no border |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[red bold]` | error-red + bold (1.1, 2.2) | Panel header " boydcode crash ", "An unexpected error occurred." |
-| `[red]` | error-red (1.1) | Exception message text |
-| `[dim]` | dim (2.2) | "Details have been written to:" label |
-| `[cyan]` | info-cyan (1.1) | Log file path |
-| `Color.Red` | Color.Red (1.5) | Panel border color |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Semantic.Error` (red border, header, title, exception message),
+`Theme.Semantic.Muted` ("Details have been written to:" label), `Theme.Semantic.Info`
+(log file path in cyan)
+
+**Component patterns:** Crash Panel (07-component-patterns.md #23)
 
 ## Interactive Elements
 
@@ -153,11 +158,11 @@ runtime terminates (from the unhandled exception handler).
 
 ## Edge Cases
 
-- **Exception message with markup characters**: `Markup.Escape(ex.Message)`
-  prevents `[` and `]` in the exception message from being interpreted as
-  Spectre markup tags.
+- **Exception message with special characters**: Exception message text is
+  treated as plain text -- `[` and `]` characters are written literally, not
+  interpreted as styling tags.
 
-- **Very long exception message**: The Panel wraps text within its content
+- **Very long exception message**: The panel wraps text within its content
   area. Long messages may extend the panel vertically but will not break
   the layout.
 
@@ -177,13 +182,13 @@ runtime terminates (from the unhandled exception handler).
   renders into whatever terminal state exists. The panel is self-contained
   and does not depend on cursor position or scroll region state.
 
-- **Non-interactive/piped terminal**: The Spectre Panel renders to stdout
-  with markup stripped. The plain-text fallback writes to stderr regardless
+- **Non-interactive/piped terminal**: The bordered panel renders to stdout
+  with styling stripped. The plain-text fallback writes to stderr regardless
   of stdout redirection.
 
 ## Component Patterns Used
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Crash Panel | Section 15 | Red-bordered error panel with structured content |
+| Crash Panel | #23 | Red-bordered error panel with structured content |
 

@@ -7,7 +7,6 @@ namespace BoydCode.Presentation.Console.Terminal;
 
 internal sealed class ConversationView : View
 {
-  private const int MaxBlocks = 2000;
 
   private readonly List<ConversationBlock> _blocks = new();
   private readonly List<int> _blockHeights = new();
@@ -215,7 +214,7 @@ internal sealed class ConversationView : View
 
   private void TrimIfNeeded()
   {
-    while (_blocks.Count > MaxBlocks)
+    while (_blocks.Count > Theme.Layout.MaxConversationBlocks)
     {
       _totalHeight -= _blockHeights[0];
       _blocks.RemoveAt(0);

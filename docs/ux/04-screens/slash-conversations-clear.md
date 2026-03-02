@@ -36,12 +36,12 @@ Error: No active session.
 | Success (empty) | Session exists but has 0 messages | Green "v" + "Cleared 0 message(s) from conversation history." |
 | No session | Session is null | Red "Error:" + "No active session." |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[green]✓[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
-| `[red]Error:[/]` | error-red (1.1) | Error prefix |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Semantic.Success` with `Theme.Symbols.Check`
+(green `✓` success prefix), `Theme.Semantic.Error` (red "Error:" prefix).
 
 ## Interactive Elements
 
@@ -78,5 +78,5 @@ None. No confirmation prompt. The operation is immediate.
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Status Message | Section 1 | Success and error messages |
+| Status Message | #7 | Success and error messages |
 

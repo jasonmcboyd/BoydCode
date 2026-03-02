@@ -4,9 +4,9 @@
 
 The execution window manages the visual lifecycle of a tool call from the moment
 the LLM decides to invoke a tool through to the collapsed result summary. It
-renders entirely within the Content region of the chat loop Layout, using
-Spectre.Console renderables updated via the Live display context. No raw ANSI
-escape sequences, no manual cursor control, no 5-line scrolling window.
+renders as `ConversationBlock` records in the conversation view's scroll buffer,
+drawn using Terminal.Gui's native drawing API. No raw ANSI escape sequences,
+no manual cursor control, no 5-line scrolling window.
 
 This spec is PRESCRIPTIVE -- it describes what the screen SHOULD look like.
 
@@ -47,13 +47,13 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess                         
 
 ### Panel Design
 
-The tool preview is a `Panel` with:
-- `BoxBorder.Rounded` border
-- `Color.Grey` border color
-- `[dim]` header text showing the tool name
-- `Padding(1, 0)` internal padding
-- `.Expand()` to fill the Content region width
-- Content is the formatted command, `Markup.Escape`d
+The tool preview is a `ToolCallConversationBlock` rendered via native drawing:
+- Bordered box using `Theme.ToolBox.Border` (muted) border color and
+  `Theme.Symbols.Box*` characters
+- Header text showing the tool name in muted styling
+- 1-space internal padding
+- Full width of the conversation view
+- Content is the formatted command (plain text, no terminal sequences injected)
 
 ### Command Formatting
 
@@ -63,20 +63,8 @@ The tool preview is a `Panel` with:
 | Shell (with known tool hints) | Tool-specific formatting based on argument structure (Read -> file path + line range, Write -> path + char count, Edit -> path + diff preview, Glob -> pattern + path, Grep -> pattern + path + glob). |
 | Unknown | Key-value pairs from JSON arguments. |
 
-### Spectre.Console Implementation
-
-```csharp
-var preview = FormatToolPreview(toolName, argumentsJson);
-var panel = new Panel(Markup.Escape(preview))
-    .Header($"[dim]{Markup.Escape(toolName)}[/]")
-    .Border(BoxBorder.Rounded)
-    .BorderColor(Color.Grey)
-    .Padding(1, 0)
-    .Expand();
-```
-
-The panel is added to the conversation view as part of the current assistant
-turn. It persists in the Content region after execution -- it does not disappear.
+The block is added to the conversation view's scroll buffer as part of the
+current assistant turn. It persists after execution -- it does not disappear.
 
 ---
 
@@ -120,8 +108,8 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess                         
 ### Indicator Bar
 
 The Indicator bar shows a braille spinner followed by `Executing... ({elapsed})`
-in `[cyan]` text. The braille character advances one frame every 100ms (8-frame
-cycle: ⠿ ⠻ ⠽ ⠾ ⠷ ⠯ ⠟ ⠾). The elapsed time updates each frame. Format:
+in `[cyan]` text. The braille character advances one frame every 100ms (10-frame
+cycle: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏). The elapsed time updates each frame. Format:
 
 | Elapsed | Display |
 |---------|---------|
@@ -221,31 +209,23 @@ No expand hint because the output is small. The full output IS visible via
   \u2717 Shell  'Get-Magic' is not recognized as a command.
 ```
 
-### Badge Markup
+### Badge Layout
 
-```csharp
-// Success with lines
-$"  [green]\u2713[/] [dim]{Markup.Escape(toolName)}  {lineCount} lines | {duration}[/]"
-
-// Error with lines
-$"  [red]\u2717[/] [dim]{Markup.Escape(toolName)}  {lineCount} lines | {duration}[/]"
-
-// Success no output
-$"  [green]\u2713[/] [dim]{Markup.Escape(toolName)}  {Markup.Escape(truncatedResult)}[/]"
-
-// Error no output
-$"  [red]\u2717[/] [dim]{Markup.Escape(toolName)}  {Markup.Escape(truncatedError)}[/]"
-
-// Expand hint (when lineCount > 5)
-$"  [dim italic]/expand to show full output[/]"
+```
+(Markup notation indicates visual intent, not implementation API)
+  [green]✓[/] [dim]{toolName}  {lineCount} lines | {duration}[/]   (success with lines)
+  [red]✗[/] [dim]{toolName}  {lineCount} lines | {duration}[/]    (error with lines)
+  [green]✓[/] [dim]{toolName}  {truncatedResult}[/]               (success no output)
+  [red]✗[/] [dim]{toolName}  {truncatedError}[/]                  (error no output)
+  [dim italic]/expand to show full output[/]                       (expand hint, when lineCount > 5)
 ```
 
-### Style Tokens
+### Style References
 
-- `[green]` + checkmark `\u2713` for success
-- `[red]` + cross `\u2717` for error
-- `[dim]` for tool name, metadata, result text
-- `[dim italic]` for expand hint
+- `Theme.Semantic.Success` (green) + `Theme.Symbols.Check` for success
+- `Theme.Semantic.Error` (bright red) + `Theme.Symbols.Cross` for error
+- `Theme.Semantic.Muted` for tool name, metadata, and result text
+- `Theme.Semantic.Muted` with italic for expand hint
 - 2-space indent
 
 ---
@@ -399,7 +379,7 @@ them. Each tool call gets its own preview panel and result badge.
   visual impact since output is not rendered during execution.
 
 - **Very long output lines**: Full lines stored in buffer. `/expand` modal
-  wraps long lines via Spectre.Console Panel word wrapping.
+  wraps long lines via the Terminal.Gui window's word wrapping.
 
 - **Buffer overflow (>10,000 lines)**: Oldest lines silently dropped. `/expand`
   shows the truncated buffer. A note could be added to the expand modal header
@@ -408,9 +388,10 @@ them. Each tool call gets its own preview panel and result badge.
 - **JSON parse failure in tool preview**: The formatter catches all exceptions
   and falls back to showing raw JSON, truncated to 200 characters.
 
-- **Non-interactive/piped environment**: No Layout. Tool preview renders as a
-  standard Panel to stdout. Output lines print to stdout with 2-space indent.
-  Result badge prints to stdout. No buffering, no collapse, no `/expand`.
+- **Non-interactive/piped environment**: No Terminal.Gui application. Tool preview
+  renders as a plain bordered box to stdout. Output lines print to stdout with
+  2-space indent. Result badge prints to stdout. No buffering, no collapse,
+  no `/expand`.
 
 - **Consecutive tool calls**: Each tool call goes through the full lifecycle.
   Only the most recent tool's output is available for `/expand`.
@@ -440,13 +421,28 @@ them. Each tool call gets its own preview panel and result badge.
 
 ---
 
+## Style References
+
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.ToolBox.Border` (muted border), `Theme.Semantic.Success`
+(checkmark), `Theme.Semantic.Error` (cross), `Theme.Semantic.Muted` (metadata, result text,
+expand hint), `Theme.Semantic.Info` (Executing state in activity bar), `Theme.Symbols.Check`,
+`Theme.Symbols.Cross`, `Theme.Symbols.Box*` (bordered box drawing), `Theme.Symbols.SpinnerFrames`,
+`Theme.Layout.SpinnerIntervalMs`
+
+**Component patterns:** Tool Call Badge (#4), Tool Result Badge (#5), Execution Progress (#6),
+Modal Overlay (#11), Cancel Hint (#20), Indicator Bar (#26)
+
+---
+
 ## Component Patterns Used
 
 | Pattern | Reference | Usage |
 |---------|-----------|-------|
-| Tool Call Badge | 07-component-patterns.md #4 | Command preview panel |
+| Tool Call Badge | 07-component-patterns.md #4 | Command preview bordered box |
 | Tool Result Badge | 07-component-patterns.md #5 | Completion summary |
-| Execution Progress | 07-component-patterns.md #6 | Indicator bar during execution |
+| Execution Progress | 07-component-patterns.md #6 | Activity bar during execution |
 | Modal Overlay | 07-component-patterns.md #11 | /expand output display |
 | Cancel Hint | 07-component-patterns.md #20 | Double-press cancellation |
 | Indicator Bar | 07-component-patterns.md #26 | Executing state display |

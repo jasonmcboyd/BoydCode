@@ -164,7 +164,7 @@ tool calls, cancellation during execution, and error paths.
   ```
     . Executing... (0.0s)
   ```
-  The spinner uses 8 braille pattern characters cycling at 100ms intervals.
+  The spinner uses 10 braille pattern characters cycling at 100ms intervals.
   The elapsed time updates continuously.
 - **User action**: Waits for execution to complete, or presses Esc/Ctrl+C
   to initiate cancellation.

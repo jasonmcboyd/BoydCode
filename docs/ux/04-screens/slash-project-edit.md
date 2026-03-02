@@ -2,14 +2,15 @@
 
 ## Overview
 
-An interactive menu loop for editing project settings. The user selects from
-a list of configuration sections (Directories, System prompt, Docker image,
-Require container), edits the selected section, and returns to the menu. The
-loop continues until the user selects "Done". Changes are saved after each
-edit action.
+An interactive Dialog for editing project settings. The Dialog uses a sidebar
+ListView of configuration sections (Name, System Prompt, Docker Image, Require
+Container, Directories, Done) and a content area that shows the appropriate
+editing widget for the selected section. Changes are saved after each field
+edit when the user clicks "Done".
 
 This is the most complex project screen -- it uses the Edit Menu Loop pattern
-with nested sub-screens for each configuration section.
+(component pattern #16, Dialog approach) with nested editing widgets for each
+configuration section.
 
 **Screen IDs**: PROJ-19, PROJ-20, PROJ-21, PROJ-22, PROJ-23, PROJ-24, PROJ-25,
 PROJ-26, PROJ-27
@@ -21,250 +22,317 @@ PROJ-26, PROJ-27
 - If `name` is provided inline, it is used directly.
 - If `name` is omitted and there is an active project, the active project is
   used.
-- If `name` is omitted and no active project exists, an `Ask<string>` prompt
-  appears.
+- If `name` is omitted and no active project exists, a Form Dialog (pattern
+  #31) prompts for the name.
 - Requires an interactive terminal. Non-interactive mode shows an error.
 
 ## Layout (80 columns)
 
-### Edit Menu
+### Edit Dialog -- Name Selected
 
-    Edit my-api:
-    > Directories          3 configured
-      System prompt        custom
-      Docker image         python:3.12-slim
-      Require container    Yes
-      Done
+```
++-- Edit my-api --------------------------------------------+
+|                                                            |
+|  Fields                | Value                             |
+|  ----------------------|-----------------------------------|
+|  > Name                | [my-api                         ] |
+|    System prompt       |                                   |
+|    Docker image        |                                   |
+|    Require container   |                                   |
+|    Directories         |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
-The menu items show padded labels (20 characters) followed by a summary of
-the current value. Summaries use dim text for defaults/empty states:
+The sidebar shows each field with a summary of its current value in
+`Theme.Semantic.Muted` (dim). The active field is highlighted with
+`Theme.List.SelectedBackground` and a `>` indicator.
 
-    Edit my-api:
-    > Directories          none
-      System prompt        default
-      Docker image         none
-      Require container    No
-      Done
+### Edit Dialog -- With Summaries
 
-### Edit Directories Sub-Screen
+```
++-- Edit my-api --------------------------------------------+
+|                                                            |
+|  Fields                | Value                             |
+|  ----------------------|-----------------------------------|
+|    Name                |                                   |
+|  > System prompt       | [You are an expert API           ]|
+|    Docker image        | [developer working on the        ]|
+|    Require container   | [my-api application.             ]|
+|    Directories         |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
-When "Directories" is selected and directories exist:
+When "System prompt" is selected, the content area shows a multi-line
+`TextView` pre-filled with the current prompt.
 
-    #   Path                                         Access
-    ────────────────────────────────────────────────────────────────────────
-    1   C:\Users\jason\source\repos\my-api           ReadWrite
-    2   C:\Users\jason\data\fixtures                 ReadOnly
+### Edit Dialog -- Docker Image Selected
 
-      Directory action:
-    > Add directory
-      Remove directory
-      Change access level
-      Back
+```
++-- Edit my-api --------------------------------------------+
+|                                                            |
+|  Fields                | Docker image:                     |
+|  ----------------------| [python:3.12-slim               ] |
+|    Name                |                                   |
+|    System prompt       | (Enter to clear)                  |
+|  > Docker image        |                                   |
+|    Require container   |                                   |
+|    Directories         |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
-When adding:
+The hint "(Enter to clear)" uses `Theme.Semantic.Muted` (dim).
 
-      Directory path: C:\Users\jason\docs
-      Access level:
-    > ReadWrite
-      ReadOnly
-      v Added C:\Users\jason\docs (ReadWrite)
+### Edit Dialog -- Require Container Selected
 
-When removing:
+```
++-- Edit my-api --------------------------------------------+
+|                                                            |
+|  Fields                | Require container execution?      |
+|  ----------------------|                                   |
+|    Name                | Current: Yes                      |
+|    System prompt       |                                   |
+|    Docker image        |    [ No ]  [ Yes ]                |
+|  > Require container   |                                   |
+|    Directories         |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
-      Select directory to remove:
-    > C:\Users\jason\data\fixtures
-      C:\Users\jason\source\repos\my-api
-      v Removed C:\Users\jason\data\fixtures
+When no Docker image is configured, a warning appears:
 
-When changing access:
+```
+|  > Require container   | Warning: No Docker image          |
+|    Directories         | configured.                       |
+```
 
-      Select directory:
-    > C:\Users\jason\source\repos\my-api
-      New access level:
-    > ReadWrite
-      ReadOnly
-      v Changed C:\Users\jason\source\repos\my-api to ReadOnly
+### Edit Dialog -- Directories Selected
+
+When directories exist:
+
+```
++-- Edit my-api --------------------------------------------+
+|                                                            |
+|  Fields                | Directories:                      |
+|  ----------------------|                                   |
+|    Name                |  C:\Users\jason\repos\my-api  RW  |
+|    System prompt       |  C:\Users\jason\data\fixtures RO  |
+|    Docker image        |                                   |
+|  > Require container   | [ Add ] [ Remove ] [ Change ]     |
+|    Directories         |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
 When no directories exist:
 
-      No directories configured.
-      Directory action:
-    > Add directory
-      ...
+```
+|  > Directories         | No directories configured.        |
+|                        |                                   |
+|                        | [ Add ]                           |
+```
 
-### Edit System Prompt Sub-Screen
+#### Add Directory Sub-Dialog
 
-    The system prompt is always prefixed with the project name.
-      Current: You are an expert API developer...
+Clicking "Add" opens a nested Form Dialog (pattern #31):
 
-      System prompt:
-    > Set new prompt
-      Reset to default
-      Back
+```
++-- Add Directory -----------------------------------------+
+|                                                           |
+|  Path:          [C:\Users\jason\docs                   ]  |
+|                                                           |
+|  Access level:                                            |
+|    > ReadWrite                                            |
+|      ReadOnly                                             |
+|                                                           |
+|                             [ Cancel ]  [ Add ]           |
+|                                                           |
++-----------------------------------------------------------+
+```
 
-After setting new prompt:
+#### Remove Directory Sub-Dialog
 
-      New system prompt: You are a security-focused code reviewer.
-      v System prompt updated.
+Clicking "Remove" opens a Selection Dialog (pattern #12):
 
-With default prompt:
+```
++-- Remove Directory --------------------------------------+
+|                                                           |
+|  > C:\Users\jason\repos\my-api                            |
+|    C:\Users\jason\data\fixtures                           |
+|                                                           |
+|                             [ Cancel ]  [ Remove ]        |
+|                                                           |
++-----------------------------------------------------------+
+```
 
-    The system prompt is always prefixed with the project name.
-      Current: (default) You are a helpful AI coding assistant...
+#### Change Access Level Sub-Dialog
 
-      System prompt:
-    > Set new prompt
-      Back
+Clicking "Change" opens a two-step selection:
 
-Note: "Reset to default" only appears when a custom prompt is set.
+```
++-- Change Access Level -----------------------------------+
+|                                                           |
+|  Directory:                                               |
+|  > C:\Users\jason\repos\my-api                            |
+|    C:\Users\jason\data\fixtures                           |
+|                                                           |
+|  New access level:                                        |
+|  > ReadWrite                                              |
+|    ReadOnly                                               |
+|                                                           |
+|                             [ Cancel ]  [ Apply ]         |
+|                                                           |
++-----------------------------------------------------------+
+```
 
-### Edit Docker Image Sub-Screen
+### After Done
 
-    Current: python:3.12-slim
+```
+  v Project my-api saved.
+```
 
-      Docker image (Enter to clear): node:20-alpine
-      v Docker image set to node:20-alpine.
-
-Clearing the image:
-
-      Current: python:3.12-slim
-
-      Docker image (Enter to clear):
-      v Docker image cleared.
-
-When not set:
-
-      Current: (not set)
-
-      Docker image (Enter to clear): python:3.12-slim
-      v Docker image set to python:3.12-slim.
-
-### Edit Require Container Sub-Screen
-
-      Current: Yes
-
-      Require container execution? [Y/n] n
-      v Require container set to False.
-
-With warning (no Docker image):
-
-      Current: No
-      Warning: No Docker image is configured.
-
-      Require container execution? [y/N] y
-      v Require container set to True.
-
-### After Each Edit Action
-
-      v Project saved.
-
-    Edit my-api:
-    > Directories          3 configured
-      ...
+The success message is rendered in the conversation view after the dialog
+closes.
 
 ### Error States
 
-    Error: Project my-api not found.
+```
+  Error: Project my-api not found.
+```
 
-    Error: /project edit requires an interactive terminal.
+```
+  Error: /project edit requires an interactive terminal.
+```
 
 ## States
 
 | State | Condition | Visual Difference |
 |---|---|---|
-| Edit menu | Main loop | SelectionPrompt with 5 choices, summaries reflect current values |
-| Directories - table | Directories exist | SimpleTable showing #, Path, Access with colored access labels |
-| Directories - empty | No directories | Dim "No directories configured" before action menu |
-| Directories - add | "Add directory" selected | Path prompt + access level selection + success |
-| Directories - remove | "Remove directory" selected | Selection of existing paths + success; or yellow "No directories to remove" |
-| Directories - change | "Change access level" selected | Path selection + level selection + success; or yellow "No directories to modify" |
-| System prompt - custom | Custom prompt set | Shows current with "Set new prompt" / "Reset to default" / "Back" |
-| System prompt - default | No custom prompt | Shows current with "(default)" prefix, no "Reset to default" option |
-| Docker image - set | Docker image configured | Shows current image, prompt to change or clear |
-| Docker image - not set | No Docker image | Shows "(not set)", prompt to set |
-| Require container | Always shown | Current value + confirm prompt; yellow warning if no Docker image |
-| Saved | After each edit | Success message + menu re-renders with updated summaries |
+| Edit dialog | Project loaded | Dialog with sidebar + content area |
+| Name field | "Name" selected | TextField pre-filled with current name |
+| System prompt field | "System prompt" selected | TextView pre-filled with current prompt (or default) |
+| Docker image field | "Docker image" selected | TextField + dim clear hint |
+| Require container | "Require container" selected | Current value label + Yes/No buttons; warning if no image |
+| Directories | "Directories" selected | Directory list + Add/Remove/Change buttons |
+| Directories empty | "Directories" selected, none exist | Dim "No directories configured" + Add button |
+| Add directory | Add button clicked | Nested Form Dialog with path + access level |
+| Remove directory | Remove button clicked | Nested Selection Dialog |
+| Change access | Change button clicked | Nested Dialog with directory + access level selection |
+| Saved | "Done" clicked | Dialog closes; success message in conversation view |
 | Not found | Project does not exist | Red error, command exits |
-| Non-interactive | Terminal is not interactive | Red error via `SpectreHelpers.Error`, command exits |
+| Non-interactive | Terminal is not interactive | Red error, command exits |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[bold]` | bold (2.2) | Project name in menu title, entity names in confirmations, "Current:" labels |
-| `[green]` | success-green | Success checkmarks, "ReadWrite" labels, "Yes" require-container value |
-| `[yellow]` | warning-yellow | "ReadOnly" labels, "Warning:" prefix, "No directories to..." messages |
-| `[red]` | error-red | "Error:" prefix |
-| `[dim]` | dim (2.2) | "none"/"default"/"No" summaries in menu choices, "No directories configured", "(default)" prefix, "(not set)" label |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Modal.BorderScheme` (blue border for all
+dialogs), `Theme.List.SelectedBackground` and `Theme.List.SelectedText`
+(highlighted sidebar row), `Theme.Semantic.Success` (green success checkmarks,
+"ReadWrite" labels, "Yes" require-container value), `Theme.Semantic.Warning`
+(yellow "ReadOnly" labels, "Warning:" prefix, empty directory messages),
+`Theme.Semantic.Error` (red "Error:" prefix), `Theme.Semantic.Muted` (dim
+hints, "No directories configured", default/empty summaries),
+`Theme.Input.Text` (white text in TextFields/TextViews).
+
+All interaction occurs within Terminal.Gui Dialogs. No Terminal.Gui
+suspension or Spectre prompts are needed.
 
 ## Interactive Elements
 
-| Element | Type | Label | Context |
-|---|---|---|---|
-| Edit menu | `SpectreHelpers.Select` | `Edit [bold]{name}[/]:` | Main loop, remembers last selection index |
-| Directory action | `SpectreHelpers.Select` | `  Directory action:` | After viewing directory table |
-| Directory path | `SpectreHelpers.PromptNonEmpty` | `  Directory path:` | Adding a directory |
-| Access level | `SpectreHelpers.Select<DirectoryAccessLevel>` | `  Access level:` / `  New access level:` | Adding or changing directory |
-| Select directory | `SpectreHelpers.Select` | `  Select directory to remove:` / `  Select directory:` | Removing or changing |
-| System prompt action | `SpectreHelpers.Select` | `  System prompt:` | System prompt sub-screen |
-| New prompt | `SpectreHelpers.PromptNonEmpty` | `  New system prompt:` | Setting custom prompt |
-| Docker image | `SpectreHelpers.PromptOptional` | `  Docker image [dim](Enter to clear)[/]:` | Docker edit sub-screen |
-| Require container | `SpectreHelpers.Confirm` | `  Require container execution?` | Container requirement edit |
+| Element | Type | Context |
+|---|---|---|
+| Edit sidebar | ListView in Dialog (pattern #16) | Left panel, persistent |
+| Name field | TextField in content area | "Name" selected |
+| System prompt | TextView in content area | "System prompt" selected |
+| Docker image | TextField in content area | "Docker image" selected |
+| Require container | Yes/No buttons in content area | "Require container" selected |
+| Directory list | Labels in content area | "Directories" selected |
+| Add directory | Nested Form Dialog (pattern #31) | "Add" button clicked |
+| Remove directory | Nested Selection Dialog (pattern #12) | "Remove" button clicked |
+| Change access level | Nested Dialog (pattern #12) | "Change" button clicked |
+
+## Keyboard
+
+| Key | Action |
+|---|---|
+| Up / Down | Navigate sidebar items |
+| Tab | Move focus between sidebar, content area, and buttons |
+| Shift+Tab | Move focus backward |
+| Enter | Confirm field value / activate button |
+| Esc | Cancel all changes and close dialog |
+| Alt+D | Click Done button (apply changes and close) |
 
 ## Behavior
 
-1. **Menu loop**: The main loop uses `SpectreHelpers.Select` with a
-   `lastIndex` variable to remember the user's last selection position. Each
-   iteration rebuilds the choice list with updated summaries.
+1. **Sidebar navigation**: The left ListView shows 5 field items (Name,
+   System Prompt, Docker Image, Require Container, Directories). When the
+   user selects a sidebar item, the content area on the right updates with
+   the appropriate editing widget. The sidebar items show current value
+   summaries in dim text.
 
-2. **Choice formatting**: `FormatEditChoice(label, summary)` pads the label to
-   20 characters then appends the summary. This creates the aligned two-column
-   appearance within the selection prompt.
+2. **Auto-save**: When "Done" is clicked, all accumulated changes are saved
+   via `_projectRepository.SaveAsync`. The dialog closes and a success message
+   appears in the conversation view.
 
-3. **Auto-save**: After each edit action, `_projectRepository.SaveAsync` is
-   called immediately. There is no explicit "save" action -- changes are
-   persisted as soon as the user makes them.
+3. **Session context refresh**: If the edited project is the active project,
+   `RefreshSessionContext` is called after save. This re-resolves directories,
+   updates the `DirectoryGuard`, and rebuilds the session's system prompt so
+   the LLM sees changes on the next turn.
 
-4. **Session context refresh**: If the edited project is the active project,
-   `RefreshSessionContext` is called after each edit. This re-resolves
-   directories, updates the `DirectoryGuard`, and rebuilds the session's system
-   prompt so the LLM sees changes on the next turn.
-
-5. **Stale settings warning**: If Docker image or require-container settings
+4. **Stale settings warning**: If Docker image or require-container settings
    are changed on the active project, `_ui.StaleSettingsWarning` is set to
    prompt the user to run `/context refresh`.
 
-6. **Sub-screen exit**: Each sub-screen returns to the main menu after its
-   action completes. The "Back" option in sub-screens exits without changes.
+5. **Nested dialogs**: Directory operations (Add, Remove, Change) open nested
+   dialogs on top of the edit dialog. These are modal -- the edit dialog is
+   not dismissable while a nested dialog is open. After the nested dialog
+   closes, the edit dialog's content area refreshes to show updated directory
+   list.
+
+6. **Cancel**: Pressing Esc or clicking Cancel closes the dialog without
+   saving any changes.
 
 ## Edge Cases
 
 - **Non-interactive terminal**: The command requires `_ui.IsInteractive`. If
   false, shows an error and exits. No fallback is provided because the edit
-  menu loop requires interactive prompts.
+  dialog requires interactive input.
 
-- **Empty directories on remove/change**: If the user selects "Remove
-  directory" or "Change access level" but no directories exist, a yellow
-  warning is shown and the action is skipped.
+- **Empty directories on remove/change**: If the user clicks "Remove" or
+  "Change" but no directories exist, the buttons are disabled (grayed out).
 
 - **Concurrent name resolution**: The name is resolved once at the start.
   If the active project name is used and the project is deleted by another
   process during the edit session, subsequent saves may recreate the project
   file.
 
-- **Long Docker image names**: The summary in the menu choice is the full
-  image name (not truncated). At 80 columns, the SelectionPrompt truncates
-  visually if the combined label + summary exceeds the available width.
+- **Long Docker image names**: The TextField in the content area allows
+  horizontal scrolling for values that exceed the visible width.
+
+- **Narrow terminal**: The Dialog uses proportional sizing (`Dim.Percent`).
+  Below 80 columns, the sidebar labels may truncate but remain navigable.
+  The content area adjusts width via `Dim.Fill`.
 
 ## Component Patterns Used
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Edit Menu Loop | Section 11 | Main edit loop with remembered index |
-| Simple Table | Section 4 | Directory listing in edit sub-screen |
-| Selection Prompt | Section 5 | Menu, directory actions, access levels |
-| Text Prompt | Section 7 | Directory path, system prompt, Docker image |
-| Confirmation Prompt | Section 8 | Require container toggle |
-| Status Message | Section 1 | Success, error, warning messages |
-| Empty State | Section 13 | "No directories configured" |
-
+| Edit Menu Loop | #16 (Dialog approach) | Main dialog with sidebar + content area |
+| Form Dialog | #31 | TextField/TextView input, Add Directory sub-dialog |
+| Selection Prompt | #12 (Dialog approach) | Remove Directory, Change Access sub-dialogs |
+| Confirmation Prompt | #14 (MessageBox approach) | Require container Yes/No |
+| Status Message | #7 | Success, error, warning messages |
+| Empty State | #21 | "No directories configured" |

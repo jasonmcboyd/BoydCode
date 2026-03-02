@@ -7,13 +7,13 @@ message, from the initial thinking indicator through token-by-token streaming to
 the final token usage display. This is the core feedback loop -- the user sends a
 message and watches the assistant's response materialize in real time.
 
-Streaming happens inside the **active-turn Live context**. The Content region of
-the active-turn Layout shows the streaming text. The Activity region shows the
-current agent state with an animated braille spinner. When streaming completes
-and the turn ends, the Live context deactivates and all content is flushed to
-stdout as scrollback.
+Streaming happens inside the **conversation view** of the persistent TUI.
+The conversation view shows the streaming text growing token by token. The
+activity bar shows the current agent state with an animated braille spinner.
+When streaming completes, the completed content blocks remain in the
+conversation view's scroll buffer.
 
-No raw ANSI escape sequences are used. All rendering through Spectre.Console.
+All rendering uses Terminal.Gui's native drawing API via `ConversationBlockRenderer`.
 
 This spec is PRESCRIPTIVE -- it describes what the screen SHOULD look like.
 
@@ -24,70 +24,51 @@ This spec is PRESCRIPTIVE -- it describes what the screen SHOULD look like.
 A complete response lifecycle follows these phases:
 
 ```
-1. User submits  -> User message echoed to stdout (Panel with grey23 background)
-                    Live context activated
+1. User submits  -> User message block added to conversation view
+                    (styled block with muted background, Theme.User.*)
+                    Activity bar set to Thinking
 
-2. Thinking      -> Activity: "{spinner} Thinking..." (yellow)
-                    Content: empty or prior turn context
+2. Thinking      -> Activity bar: "{spinner} Thinking..." (Theme.Semantic.Warning, yellow)
+                    Conversation view: unchanged
 
-3. First token   -> Activity: "{spinner} Streaming..." (cyan)
-                    Content: streaming text begins
+3. First token   -> Activity bar: "{spinner} Streaming..." (Theme.Semantic.Info, cyan)
+                    Conversation view: streaming text block begins
 
-4. Streaming     -> Activity: "{spinner} Streaming..." (cyan)
-                    Content: text grows token by token
+4. Streaming     -> Activity bar: "{spinner} Streaming..." (cyan)
+                    Conversation view: text grows token by token
 
-5. Complete      -> Live context deactivated
-                    Completed content flushed to stdout as scrollback
-                    (assistant text + token usage)
+5. Complete      -> Activity bar set to Idle (dim rule)
+                    Completed assistant text + token usage remain in scroll buffer
 
 6. Tool call     -> (if applicable) transitions to execution-window.md
-                    (Live context stays active for next round)
+                    (activity bar transitions to Executing state)
 ```
-
-### Key Difference from Old Architecture
-
-In the old architecture, all phases rendered inside a persistent Live context
-with an always-visible Indicator bar. In the new hybrid architecture:
-
-- The user message is echoed to **stdout** (scrollback) BEFORE the Live context.
-- Phases 2-4 happen inside the Live context.
-- Phase 5 **exits the Live context** and flushes content to stdout.
-- Between turns, there is no Live context -- the terminal shows scrollback.
 
 ---
 
-## Phase 1: User Message Echo (Before Live)
+## Phase 1: User Message in Conversation View
 
-When the user submits a message, it is immediately echoed to stdout as
-scrollback BEFORE the Live context activates:
+When the user submits a message, it is immediately added to the conversation
+view as a `UserMessageBlock`:
 
 ```
  > Can you add error handling to the auth module?
 ```
 
-The user message is a Panel with grey23 background tint:
-
-```csharp
-var userPanel = new Panel(new Markup($"> {Markup.Escape(userText)}"))
-    .Border(BoxBorder.None)
-    .Padding(1, 0, 1, 0)
-    .Style(new Style(background: Color.Grey23));
-AnsiConsole.Write(userPanel);
-AnsiConsole.WriteLine(); // blank line after user message
-```
-
-This ensures the user sees their message reflected immediately with no
-perceptible lag. The grey23 background provides a subtle visual distinction
-from assistant text.
+The user message renders with `Theme.User.Background` (dark grey fill),
+`Theme.User.Text` (white on that background), and `Theme.User.Prefix`
+(dim `>` prefix). This provides a subtle visual distinction from assistant
+text. The block is appended to the scroll buffer and the view refreshes
+immediately.
 
 ---
 
 ## Phase 2: Thinking (120 columns)
 
-The Live context activates. The Activity region shows the thinking state.
+The activity bar transitions to the Thinking state.
 
 ```
-  (Content region -- empty or showing prior context from this turn)
+  (Conversation view -- showing conversation history)
 
 
 
@@ -98,20 +79,12 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess                         
 
 ### Rendering
 
-The Live context is activated immediately after the user message echo:
-
-```csharp
-// Live context starts
-layout["Activity"].Update(new Markup($"[yellow]{spinnerFrame} Thinking...[/]"));
-layout["Separator"].Update(new Rule().RuleStyle("dim"));
-layout["StatusBar"].Update(BuildStatusBar());
-ctx.Refresh();
-// LLM request dispatched
-```
-
-The Activity row shows `[yellow]{spinner} Thinking...[/]` with an animated
-braille spinner (8-frame, 100ms/frame). The Content region is empty or shows
-context from earlier rounds in this turn.
+The activity bar is updated immediately after the user message is appended
+to the scroll buffer. The LLM request is then dispatched. The activity bar
+shows the animated braille spinner followed by `Thinking...` in
+`Theme.Semantic.Warning` (yellow). The spinner uses `Theme.Symbols.SpinnerFrames`
+(10-frame, 100ms/frame via `Theme.Layout.SpinnerIntervalMs`). The conversation
+view continues showing its current scroll buffer.
 
 ### Duration
 
@@ -181,40 +154,26 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess                         
 
 ### Rendering Strategy
 
-The streaming text is part of the Content region, updated via the Live context.
-On each token:
+The streaming text is accumulated into an `AssistantTextBlock` in the
+conversation view's scroll buffer. On each token:
 
-1. Append the token to a `StringBuilder` in the streaming message.
-2. Build the content view with the streaming message as the current block.
-3. `layout["Content"].Update(contentView)`.
-4. `ctx.Refresh()`.
+1. Append the token to the in-progress `AssistantTextBlock`.
+2. Signal the conversation view to redraw.
+3. The view redraws on the Terminal.Gui main thread via `TguiApp.Invoke()`.
 
 The refresh rate is capped at ~60fps (16ms minimum interval). If tokens arrive
-faster than 60fps, they batch into a single refresh.
-
-```csharp
-_streamBuffer.Append(token);
-if (_timeSinceLastRefresh.ElapsedMilliseconds >= 16)
-{
-    layout["Content"].Update(BuildTurnContentWithStream());
-    ctx.Refresh();
-    _timeSinceLastRefresh.Restart();
-}
-```
+faster than 60fps, they batch into a single redraw.
 
 ### Text Formatting
 
-During streaming, text is rendered as a `Markup` renderable with a 2-space
-indent prefix. The text is always `Markup.Escape`d before wrapping so LLM
-output cannot inject Spectre markup. Word wrapping occurs naturally at the
-terminal width via Spectre.Console's measurement system.
+During streaming, text is drawn using Terminal.Gui's native drawing API
+(`SetAttribute` / `Move` / `AddStr`) with a 2-space indent. User-provided
+content is treated as plain text — it cannot inject terminal control sequences.
+Word wrapping is handled by the `ConversationBlockRenderer` at the current
+view width.
 
-```csharp
-var streamBlock = new Markup($"  {Markup.Escape(_streamBuffer.ToString())}");
-```
-
-No markdown formatting is applied during streaming. The text is plain escaped
-text throughout the streaming phase.
+No markdown formatting is applied during streaming. The text is plain
+throughout the streaming phase.
 
 ---
 
@@ -240,15 +199,15 @@ Gemini | gemini-2.5-pro | my-project    /help
 
 ---
 
-## Phase 5: Streaming Complete -- Flush to Scrollback
+## Phase 5: Streaming Complete
 
 When all tokens have been received (CompletionChunk processed):
 
-1. The Live context deactivates (lambda exits `Live.StartAsync`).
-2. The completed turn content is flushed to stdout as scrollback.
-3. The inline input prompt `> _` appears.
+1. The in-progress `AssistantTextBlock` is finalized in the scroll buffer.
+2. The token usage `TokenUsageBlock` is appended to the scroll buffer.
+3. The activity bar transitions to Idle (dim horizontal rule).
 
-The user sees in their scrollback:
+The conversation view shows:
 
 ```
  > Can you add error handling to the auth module?
@@ -270,8 +229,8 @@ The user sees in their scrollback:
 
 ### Token Usage Display
 
-After streaming completes, the token usage line is flushed as part of the
-scrollback content:
+After streaming completes, the token usage block is appended to the
+conversation view's scroll buffer:
 
 ```
   4,521 in / 892 out / 5,413 total
@@ -286,36 +245,35 @@ culture. This is cumulative for the turn.
 
 When the provider does not support streaming (`SupportsStreaming == false`):
 
-1. Live context activates with `{spinner} Thinking...` in yellow.
-2. When the response returns, Live context deactivates.
-3. The full response is flushed to stdout as scrollback.
-4. Token usage follows.
+1. Activity bar shows `{spinner} Thinking...` in yellow (`Theme.Semantic.Warning`).
+2. When the response returns, the full text is appended to the scroll buffer at once.
+3. Token usage block appended.
+4. Activity bar transitions to Idle.
 
-The visual result is identical to the post-streaming scrollback state. The only
-difference is the user experience: they see the animated thinking spinner for
-longer, then the full text appears at once in scrollback.
+The visual result is identical to the post-streaming state. The only difference
+is the user experience: they see the animated thinking spinner for longer, then
+the full text appears at once in the conversation view.
 
 ---
 
 ## Multi-Round Agentic Turn (120 columns)
 
-When the response contains tool calls, the Live context stays active across
-rounds. The lifecycle extends:
+When the response contains tool calls, the activity bar transitions between
+states across rounds. The lifecycle extends:
 
 ```
 Round 1: Think -> Stream -> Tool call detected
-         (Live context stays active)
-         Tool preview panel renders in Content
-         Activity: "{spinner} Executing... (Ns)"
-         Tool result badge renders in Content
-Round 2: Stream again (Activity: "{spinner} Streaming...")
+         Tool preview block added to scroll buffer
+         Activity bar: "{spinner} Executing... (Ns)"
+         Tool result block added to scroll buffer
+Round 2: Stream again (Activity bar: "{spinner} Streaming...")
          ...
 Round N: Stream -> end_turn
-         Live context deactivates
-         All content flushed to stdout
+         Activity bar returns to Idle (dim rule)
+         All content already in scroll buffer
 ```
 
-The user sees in scrollback after the turn completes:
+The conversation view shows after the turn completes:
 
 ```
  > Can you add error handling to the auth module?
@@ -358,8 +316,9 @@ The user sees in scrollback after the turn completes:
    turn separator between rounds of the same agentic turn.
 4. A turn separator (blank line) only appears between the final content of one
    turn and the next user message.
-5. During the turn, all of this was rendered inside the Live context's Content
-   region. After the turn, it is flushed to scrollback.
+5. All content is accumulated in the conversation view's scroll buffer as
+   `ConversationBlock` records during the turn. No flushing is needed after
+   the turn ends -- the blocks are already in the buffer.
 
 ---
 
@@ -367,9 +326,9 @@ The user sees in scrollback after the turn completes:
 
 If an exception occurs during streaming (network failure, API error):
 
-1. The Live context deactivates.
-2. Partial text (if any) is flushed to scrollback.
-3. The error message is rendered to scrollback.
+1. The in-progress streaming block is finalized with whatever text arrived.
+2. An error block is appended to the conversation view's scroll buffer.
+3. The activity bar returns to Idle.
 
 The user sees:
 
@@ -386,7 +345,7 @@ Error: Request failed: Connection timed out (api.anthropic.com)
 
 ### Behavior
 
-1. If partial text was streamed, it is preserved in scrollback.
+1. If partial text was streamed, it is preserved in the scroll buffer.
 2. The error message renders below the partial text using the Error Display
    pattern (07-component-patterns.md #22).
 3. The user's message is removed from the conversation to allow retry.
@@ -403,26 +362,29 @@ When the context window is near capacity, a warning renders before the request:
 
  > Can you also update the tests?
 
-  (Live context activates with Thinking spinner)
+  (Activity bar shows Thinking spinner)
 ```
 
-The warning is rendered to stdout before the user message echo.
+The warning is appended to the conversation view's scroll buffer before the
+user message block.
 
 ---
 
 ## States
 
-| State | Activity Row | Content Region | Rendering Mode |
-|-------|--------------|----------------|----------------|
-| User message echo | N/A | N/A (stdout) | Scrollback |
-| Thinking | `[yellow]{spinner} Thinking...[/]` | Empty / prior context | Live |
-| Streaming (first token) | `[cyan]{spinner} Streaming...[/]` | First token appears | Live |
-| Streaming (ongoing) | `[cyan]{spinner} Streaming...[/]` | Text grows token by token | Live |
-| Tool call follows | Transitions to execution states | Text + tool badge | Live |
-| Turn complete | N/A | Content flushed to stdout | Scrollback |
-| Error during streaming | N/A | Partial text + error in stdout | Scrollback |
-| Non-streaming response | `[yellow]{spinner} Thinking...[/]` then flush | Full text in stdout | Live then Scrollback |
-| Context compaction | N/A | Warning in stdout | Scrollback |
+(Activity bar color references `Theme.Semantic.*`; markup notation indicates visual intent.)
+
+| State | Activity Bar | Conversation View |
+|-------|--------------|-------------------|
+| User message added | N/A | `UserMessageBlock` appended |
+| Thinking | `[yellow]{spinner} Thinking...[/]` (Warning) | Unchanged |
+| Streaming (first token) | `[cyan]{spinner} Streaming...[/]` (Info) | First token in `AssistantTextBlock` |
+| Streaming (ongoing) | `[cyan]{spinner} Streaming...[/]` (Info) | Text grows token by token |
+| Tool call follows | Transitions to Executing state | Text + tool badge block |
+| Turn complete | Idle (dim rule) | All turn blocks in scroll buffer |
+| Error during streaming | Idle (dim rule) | Partial text + error block |
+| Non-streaming response | `[yellow]{spinner} Thinking...[/]` then Idle | Full text appears at once |
+| Context compaction | N/A | Warning block appended |
 
 ---
 
@@ -434,24 +396,21 @@ At 60fps during streaming, each render cycle has ~16ms. The budget:
 
 | Operation | Target Time |
 |-----------|-------------|
-| Append token to StringBuilder | < 0.1ms |
-| Build content view | < 5ms |
-| Layout.Update + ctx.Refresh | < 10ms |
+| Append token to `AssistantTextBlock` | < 0.1ms |
+| `ConversationBlockRenderer` draw pass | < 5ms |
+| `TguiApp.Invoke` + view refresh | < 10ms |
 | Total per frame | < 16ms |
 
-During the active turn, only the current turn's content is rendered in the
-Content region. Previous turns are already in scrollback -- they do not need
-to be included in the renderable. This significantly reduces the rendering
-cost compared to the old architecture, which had to fit the entire visible
-conversation history into a single Content region.
+The conversation view renders only the blocks that fit in the current viewport.
+Blocks outside the viewport are not drawn. This keeps render cost proportional
+to viewport height, not total conversation length.
 
 ### Caching Strategy
 
-- The streaming message is rebuilt on every frame (it changes each frame).
-- Tool call badges and result badges are cached after construction.
-- Token usage lines are simple Markup strings -- no caching needed.
-- Previous turns are NOT rendered during the active turn -- they are in
-  scrollback. No caching needed for historical messages.
+- The in-progress streaming block is redrawn on every frame (it changes each frame).
+- Tool call and result blocks are immutable once appended -- they are not redrawn
+  unless they scroll into the viewport.
+- Token usage blocks are simple text lines rendered by the drawing API.
 
 ---
 
@@ -462,8 +421,8 @@ conversation history into a single Content region.
 - Thinking: Screen reader announces "Thinking" (static text, no animation).
 - Streaming: Tokens are buffered and announced in chunks (not character by
   character). The announcement interval matches the render rate cap.
-- Complete: When flushed to scrollback, the full response text is available
-  for sequential reading.
+- Complete: When the turn ends, the full response text is in the scroll buffer
+  and available for sequential reading.
 - Token usage: Read as "4521 in, 892 out, 5413 total" (plain text).
 
 ### NO_COLOR
@@ -475,12 +434,27 @@ their structure.
 ### Non-Interactive
 
 When piped or non-interactive:
-- No Live context at any point.
+- No Terminal.Gui application at any point.
 - Thinking writes "Thinking..." to stderr.
 - Streaming tokens write directly to stdout via `Console.Write`.
 - Token usage writes to stdout.
-- User messages echo without grey23 background (no panel styling).
+- User messages echo as plain text without background styling.
 - The output is clean text suitable for piping to another tool.
+
+---
+
+## Style References
+
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.User.Background`, `Theme.User.Text`,
+`Theme.User.Prefix`, `Theme.Semantic.Warning` (Thinking), `Theme.Semantic.Info`
+(Streaming), `Theme.Semantic.Muted` (token usage, dim rule), `Theme.Symbols.SpinnerFrames`,
+`Theme.Layout.SpinnerIntervalMs`
+
+**Component patterns:** User Message Block (#1), Streaming Text (#18),
+Activity Region (#26), Token Usage Display (#17), Tool Call Badge (#4),
+Tool Result Badge (#5), Error Display (#22), Assistant Message Block (#2)
 
 ---
 
@@ -488,11 +462,11 @@ When piped or non-interactive:
 
 | Pattern | Reference | Usage |
 |---------|-----------|-------|
-| User Message Block | 07-component-patterns.md #1 | Grey23 background Panel in scrollback |
-| Streaming Text | 07-component-patterns.md #18 | Token accumulation in Content region |
+| User Message Block | 07-component-patterns.md #1 | Muted background block for user messages |
+| Streaming Text | 07-component-patterns.md #18 | Token accumulation in conversation view |
 | Activity Region | 07-component-patterns.md #26 | Animated spinner + state label |
-| Token Usage Display | 07-component-patterns.md #17 | Post-response metrics in scrollback |
+| Token Usage Display | 07-component-patterns.md #17 | Post-response metrics in conversation view |
 | Tool Call Badge | 07-component-patterns.md #4 | Tool invocation preview |
 | Tool Result Badge | 07-component-patterns.md #5 | Tool execution result |
-| Error Display | 07-component-patterns.md #22 | Provider errors in scrollback |
-| Assistant Message Block | 07-component-patterns.md #2 | Non-streaming response in scrollback |
+| Error Display | 07-component-patterns.md #22 | Provider errors in conversation view |
+| Assistant Message Block | 07-component-patterns.md #2 | Non-streaming response in conversation view |

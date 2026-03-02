@@ -79,28 +79,30 @@ When the terminal has 30 or more rows, the full ASCII art banner is shown.
 
 The full banner has 7 visual sections.
 
+(Markup notation in this section indicates visual intent, not implementation API.)
+
 1. **Leading blank line** -- Provides breathing room at the top of the
    conversation view.
 
-2. **BOYD block** (6 rows) -- `[bold cyan]` block-letter ASCII art at 2-space
-   indent. The first 5 rows carry a dim metadata sidebar right-justified after
-   a gap. The sidebar values (Users, Revenue, Valuation, Commas, Status) are
-   static joke text -- they never change and serve purely as brand personality.
-   The 6th row has no sidebar.
+2. **BOYD block** (6 rows) -- `[bold cyan]` (`Theme.Banner.BoydArt`) block-letter
+   ASCII art at 2-space indent. The first 5 rows carry a dim metadata sidebar
+   right-justified after a gap. The sidebar values (Users, Revenue, Valuation,
+   Commas, Status) are static joke text -- they never change and serve purely as
+   brand personality. The 6th row has no sidebar.
 
-3. **CODE block** (6 rows) -- `[bold blue]` block-letter ASCII art. The block
-   is indented to start beneath the "O-Y-D" columns of the BOYD block, creating
-   a staggered two-line wordmark. No sidebar.
+3. **CODE block** (6 rows) -- `[bold blue]` (`Theme.Banner.CodeArt`) block-letter
+   ASCII art. The block is indented to start beneath the "O-Y-D" columns of the
+   BOYD block, creating a staggered two-line wordmark. No sidebar.
 
 4. **Tagline** -- `[dim]v{version}  Artificial Intelligence, Personal Edition[/]`
-   at 2-space indent. Version is the assembly version.
+   (`Theme.Banner.Version`) at 2-space indent. Version is the assembly version.
 
 5. **Rule separator** -- A dim horizontal rule spanning the full width.
    No title. Separated by blank lines above and below.
 
 6. **Info grid** -- Configuration key-value display using the Info Grid component
-   pattern (#9 in 07-component-patterns.md). Labels in `[dim]`, values in
-   `[cyan]`. Layout:
+   pattern (#9 in 07-component-patterns.md). Labels in `Theme.Banner.InfoLabel`
+   (muted), values in `Theme.Banner.InfoValue` (cyan). Layout:
    - Row 1: Provider + Project (two pairs, side by side)
    - Row 2: Model + Engine (two pairs, side by side)
    - Row 3: cwd (single value, full width)
@@ -108,11 +110,11 @@ The full banner has 7 visual sections.
    - Row 5: Git repo root + branch (only if CWD is inside a git repository)
 
 7. **Status footer** -- One of:
-   - Configured: `  [green]✓[/] [dim]Ready  {engine description}[/]`
-   - Not configured: `  [yellow bold]Not configured[/] [dim]Run[/] [bold]/provider setup[/] [dim]or pass[/] [bold]--api-key[/]`
+   - Configured: checkmark (`Theme.Banner.StatusReady`, green) + `[dim]Ready  {engine description}[/]`
+   - Not configured: `[yellow bold]Not configured[/]` (`Theme.Banner.StatusNotConfigured`) + dim guidance
 
-8. **Hint line** (only when configured) --
-   `  [dim italic]Type a message to start, or /help for available commands.[/]`
+8. **Hint line** (only when configured) -- `Theme.Semantic.Muted` with italic;
+   text from `Theme.Text.BannerHintWide` (responsive).
 
 9. **Trailing blank line** -- Provides visual separation at the end of the
    banner block.
@@ -130,9 +132,9 @@ Commas:     tres
 Status:     pre-unicorn
 ```
 
-All sidebar text uses `[dim]` styling. The sidebar is purely decorative -- it
-communicates brand personality (self-deprecating humor about a solo project).
-It contains no functional information.
+All sidebar text uses `Theme.Banner.InfoLabel` (muted) styling. The sidebar is
+purely decorative -- it communicates brand personality (self-deprecating humor
+about a solo project). It contains no functional information.
 
 **Width constraint**: The BOYD art is ~48 characters. The sidebar adds ~30
 characters. With 2-space indent and padding, the total line width is ~77
@@ -140,11 +142,11 @@ characters, fitting within 80 columns.
 
 ### Brand Color Rationale
 
-- `[bold cyan]` for BOYD: Cyan is the `info` token, which maps to "identifiers,
-  names, data values." The product name is an identifier.
-- `[bold blue]` for CODE: Blue is the `accent` token, which maps to "brand,
-  interactive elements, commands." The second word provides visual contrast
-  against the first.
+- `Theme.Banner.BoydArt` (bright cyan, bold) for BOYD: Cyan is the `info` token,
+  which maps to "identifiers, names, data values." The product name is an identifier.
+- `Theme.Banner.CodeArt` (bright blue, bold) for CODE: Blue is the `accent` token,
+  which maps to "brand, interactive elements, commands." The second word provides
+  visual contrast against the first.
 - These are the ONLY two permitted color+bold combinations for brand display
   (see 06-style-tokens.md Section 1.3).
 
@@ -174,12 +176,15 @@ brand wordmark. This saves 12 rows of vertical space.
 
 ### Compact Wordmark
 
-The compact line uses inline markup instead of block letters:
+The compact line uses inline text instead of block letters:
 
 ```
+(Markup notation indicates visual intent, not implementation API)
   [bold cyan]BOYD[/][bold blue]CODE[/]  [dim]v{version}  AI Coding Assistant[/]
 ```
 
+Styles: "BOYD" in `Theme.Banner.BoydArt` (bright cyan, bold); "CODE" in
+`Theme.Banner.CodeArt` (bright blue, bold); version/tagline in `Theme.Banner.Version` (muted).
 Two spaces separate the wordmark from the version/tagline. The tagline is
 shortened to "AI Coding Assistant" (from "Artificial Intelligence, Personal
 Edition") to respect the compact context.
@@ -334,7 +339,8 @@ art lines are approximately 77 characters wide and would wrap.
 ### Compact Width Adaptations
 
 1. **Wordmark only shows version**: The tagline is dropped entirely. The
-   wordmark is `[bold cyan]BOYD[/][bold blue]CODE[/]  [dim]v{version}[/]`.
+   wordmark is "BOYD" (`Theme.Banner.BoydArt`) + "CODE" (`Theme.Banner.CodeArt`) +
+   version string (`Theme.Banner.Version`). No tagline.
 
 2. **Info grid becomes single-column**: The paired rows (Provider/Project,
    Model/Engine) are split into individual rows. 1-space indent per
@@ -362,7 +368,8 @@ When the project is configured for Docker execution, two differences appear.
 ```
 
 The "Docker" row appears between Engine and cwd. The value is the Docker image
-name from `Project.DockerImage`. Style: label in `[dim]`, value in `[cyan]`.
+name from `Project.DockerImage`. Style: label in `Theme.Banner.InfoLabel` (muted),
+value in `Theme.Banner.InfoValue` (cyan).
 
 ### Container Status Footer
 
@@ -391,10 +398,12 @@ changes to guide the user toward configuration.
 (blank line)
 ```
 
-Markup:
+Style intent (`(Markup notation indicates visual intent, not implementation API)`):
 ```
   [yellow bold]Not configured[/]  [dim]Run[/] [bold]/provider setup[/] [dim]or pass[/] [bold]--api-key[/]
 ```
+Styles: "Not configured" in `Theme.Banner.StatusNotConfigured` (warning yellow, bold);
+connecting words in `Theme.Semantic.Muted`; command references in bold default.
 
 ### Behavior
 
@@ -424,10 +433,11 @@ hint line (or after the status footer if no hint line is shown).
 (blank line)
 ```
 
-Markup:
+Style intent (`(Markup notation indicates visual intent, not implementation API)`):
 ```
   [dim italic]Resumed session {sessionId} ({messageCount} messages from {timestamp})[/]
 ```
+Style: `Theme.Semantic.Muted` with italic weight.
 
 The session ID is truncated to 8 characters for display. The timestamp uses
 the local culture's date/time format. The message count is the total messages
@@ -503,8 +513,9 @@ If the terminal height cannot be determined, default to 24 rows (compact tier).
 ### Info Grid Layout
 
 At standard width (>= 80 columns), the info grid uses a 4-column layout with
-paired key-value rows. Labels render in `[dim]`, values in `[cyan]`. Single-value
-rows (cwd, Docker, Git) span the full width.
+paired key-value rows. Labels render in `Theme.Banner.InfoLabel` (muted), values
+in `Theme.Banner.InfoValue` (cyan). Single-value rows (cwd, Docker, Git) span
+the full width.
 
 At compact width (< 80 columns), the info grid uses a 2-column layout with each
 key-value pair on its own row.
@@ -547,9 +558,9 @@ the banner at any time during the session.
 
 - **Non-interactive/piped environment**: Terminal dimension detection may fail.
   The fallback defaults to `height = 24`, selecting the compact banner tier.
-  When output is piped, markup is stripped automatically. The ASCII art renders
-  as plain text (box-drawing characters are not markup). The info grid renders
-  as tab-separated values. The rule renders as dashes.
+  When output is piped, color and styling attributes are stripped. The ASCII art
+  renders as plain text (box-drawing characters are not styling). The info grid
+  renders as tab-separated values. The rule renders as dashes.
 
 - **No git repository**: The Git row in the info grid is omitted entirely.
   No empty state placeholder is shown -- the row simply does not exist.
@@ -590,8 +601,9 @@ the banner at any time during the session.
 
 ### NO_COLOR
 
-- The `[bold cyan]` and `[bold blue]` art loses color but retains bold weight.
-  The block characters are still visible as ASCII art.
+- The `Theme.Banner.BoydArt` (bright cyan, bold) and `Theme.Banner.CodeArt`
+  (bright blue, bold) art loses color but retains bold weight. The block
+  characters are still visible as ASCII art.
 - Info grid labels lose dim styling, values lose cyan coloring. Structure
   remains readable via the Grid layout.
 - The checkmark symbol `✓` remains visible as a text character.
@@ -660,16 +672,21 @@ a brief `Connecting...` line before the banner. This is not in v2 scope.
 
 ---
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Reference | Usage |
-|-------|-----------------|-------|
-| `[bold cyan]` | Brand primary (1.3) | "BOYD" ASCII art / wordmark |
-| `[bold blue]` | Brand secondary (1.3) | "CODE" ASCII art / wordmark |
-| `[dim]` | Muted (1.1) | Sidebar, tagline, info labels, engine desc |
-| `[cyan]` | Info (1.1) | Info grid values |
-| `[green]` + `✓` | Success (1.1) | "Ready" status |
-| `[yellow bold]` | Warning emphasis (1.3) | "Not configured" status |
-| `[bold]` | Level 1 (2.1) | "/provider setup", "--api-key" in guidance |
-| `[dim italic]` | Level 4 (2.1) | Hint line, resume notice |
-| Dim Rule | Muted (1.1) | Banner separator |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:**
+- `Theme.Banner.BoydArt` — "BOYD" ASCII art and wordmark (bright cyan, bold)
+- `Theme.Banner.CodeArt` — "CODE" ASCII art and wordmark (bright blue, bold)
+- `Theme.Banner.Version` — tagline and version string (muted)
+- `Theme.Banner.InfoLabel` — info grid labels (muted)
+- `Theme.Banner.InfoValue` — info grid values (cyan)
+- `Theme.Banner.StatusReady` — "Ready" checkmark and status (green)
+- `Theme.Banner.StatusNotConfigured` — "Not configured" status (warning yellow, bold)
+- `Theme.Semantic.Muted` — sidebar text, engine description, hint line, resume notice
+- `Theme.Symbols.Check` — checkmark symbol (`✓`)
+- `Theme.Symbols.Rule` — horizontal rule separator character
+
+**Component patterns:** Info Grid (#9), Status Message (#7), Banner (#24),
+Section Divider (#8), Empty State (#21), Error Display (#22)

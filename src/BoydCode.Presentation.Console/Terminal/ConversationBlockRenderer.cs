@@ -1,26 +1,9 @@
-using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
-using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace BoydCode.Presentation.Console.Terminal;
 
 internal static class ConversationBlockRenderer
 {
-  // Semantic color palette — Color.None inherits the terminal's default background
-  private static readonly Attribute SuccessAttr = new(ColorName16.Green, Color.None);
-  private static readonly Attribute ErrorAttr = new(ColorName16.BrightRed, Color.None);
-  private static readonly Attribute WarningAttr = new(ColorName16.Yellow, Color.None);
-  private static readonly Attribute InfoAttr = new(ColorName16.Cyan, Color.None);
-  private static readonly Attribute AccentAttr = new(ColorName16.Blue, Color.None);
-  private static readonly Attribute MutedAttr = new(ColorName16.DarkGray, Color.None);
-  private static readonly Attribute DefaultAttr = new(ColorName16.White, Color.None);
-
-  private static readonly Color UserBg = new(50, 50, 50);
-  private static readonly Attribute UserAttr = new(ColorName16.White, UserBg);
-  private static readonly Attribute UserPrefixAttr = new(ColorName16.DarkGray, UserBg);
-
-  private static readonly Attribute BoxAttr = new(ColorName16.DarkGray, Color.None);
-
   public static int MeasureHeight(ConversationBlock block, int width)
   {
     if (width <= 0)
@@ -100,17 +83,17 @@ internal static class ConversationBlockRenderer
     foreach (var line in lines)
     {
       // Fill entire row with user background
-      view.SetAttribute(UserAttr);
+      view.SetAttribute(Theme.User.Text);
       view.Move(0, y);
       view.AddStr(new string(' ', width));
 
       // Draw "> " prefix
       view.Move(0, y);
-      view.SetAttribute(UserPrefixAttr);
-      view.AddStr("> ");
+      view.SetAttribute(Theme.User.Prefix);
+      view.AddStr(Theme.Text.PromptPrefix);
 
       // Draw text
-      view.SetAttribute(UserAttr);
+      view.SetAttribute(Theme.User.Text);
       view.AddStr(Truncate(line, width - 2));
       y++;
     }
@@ -119,7 +102,7 @@ internal static class ConversationBlockRenderer
   private static void DrawAssistantText(View view, AssistantTextBlock block, int y, int width)
   {
     var lines = WordWrap(block.Text, width - 2);
-    view.SetAttribute(DefaultAttr);
+    view.SetAttribute(Theme.Semantic.Default);
     foreach (var line in lines)
     {
       view.Move(0, y);
@@ -134,15 +117,15 @@ internal static class ConversationBlockRenderer
     var innerWidth = Math.Max(width - 2, 1); // 1 char left + 1 char right border
 
     // Top border: ┌─ Shell ─────────┐
-    view.SetAttribute(BoxAttr);
+    view.SetAttribute(Theme.ToolBox.Border);
     view.Move(0, y);
-    var header = $"\u250c\u2500 {block.ToolName} ";
+    var header = $"{Theme.Symbols.BoxTopLeft}{Theme.Symbols.Rule} {block.ToolName} ";
     var remaining = width - header.Length - 1; // -1 for ┐
     if (remaining > 0)
     {
-      header += new string('\u2500', remaining);
+      header += new string(Theme.Symbols.Rule, remaining);
     }
-    header += "\u2510";
+    header += Theme.Symbols.BoxTopRight;
     view.AddStr(Truncate(header, width));
     y++;
 
@@ -150,21 +133,21 @@ internal static class ConversationBlockRenderer
     var previewLines = WordWrap(block.Preview, innerWidth - 2); // -2 for "│ " and " │" padding
     foreach (var line in previewLines)
     {
-      view.SetAttribute(BoxAttr);
+      view.SetAttribute(Theme.ToolBox.Border);
       view.Move(0, y);
-      view.AddStr("\u2502 ");
-      view.SetAttribute(DefaultAttr);
+      view.AddStr($"{Theme.Symbols.BoxVertical} ");
+      view.SetAttribute(Theme.Semantic.Default);
       var padded = line.PadRight(innerWidth - 2);
       view.AddStr(Truncate(padded, innerWidth - 2));
-      view.SetAttribute(BoxAttr);
-      view.AddStr(" \u2502");
+      view.SetAttribute(Theme.ToolBox.Border);
+      view.AddStr($" {Theme.Symbols.BoxVertical}");
       y++;
     }
 
     // Bottom border: └──────────────────┘
-    view.SetAttribute(BoxAttr);
+    view.SetAttribute(Theme.ToolBox.Border);
     view.Move(0, y);
-    var bottom = "\u2514" + new string('\u2500', Math.Max(width - 2, 0)) + "\u2518";
+    var bottom = $"{Theme.Symbols.BoxBottomLeft}" + new string(Theme.Symbols.Rule, Math.Max(width - 2, 0)) + $"{Theme.Symbols.BoxBottomRight}";
     view.AddStr(Truncate(bottom, width));
   }
 
@@ -175,19 +158,19 @@ internal static class ConversationBlockRenderer
 
     if (block.IsError)
     {
-      view.SetAttribute(ErrorAttr);
-      view.AddStr("\u2717 ");
+      view.SetAttribute(Theme.Semantic.Error);
+      view.AddStr($"{Theme.Symbols.Cross} ");
       view.AddStr(block.ToolName);
       view.AddStr(" error");
     }
     else
     {
-      view.SetAttribute(SuccessAttr);
-      view.AddStr("\u2713 ");
+      view.SetAttribute(Theme.Semantic.Success);
+      view.AddStr($"{Theme.Symbols.Check} ");
       view.AddStr(block.ToolName);
     }
 
-    view.SetAttribute(MutedAttr);
+    view.SetAttribute(Theme.Semantic.Muted);
     if (block.LineCount > 0)
     {
       view.AddStr($"  {block.LineCount} lines | {block.Duration}");
@@ -201,14 +184,14 @@ internal static class ConversationBlockRenderer
 
   private static void DrawExpandHint(View view, int y)
   {
-    view.SetAttribute(MutedAttr);
+    view.SetAttribute(Theme.Semantic.Muted);
     view.Move(0, y);
-    view.AddStr("  /expand to show full output");
+    view.AddStr($"  {Theme.Text.ExpandHint}");
   }
 
   private static void DrawTokenUsage(View view, TokenUsageBlock block, int y)
   {
-    view.SetAttribute(MutedAttr);
+    view.SetAttribute(Theme.Semantic.Muted);
     view.Move(0, y);
     var total = block.InputTokens + block.OutputTokens;
     view.AddStr($"  {block.InputTokens:N0} in / {block.OutputTokens:N0} out / {total:N0} total");
@@ -216,13 +199,13 @@ internal static class ConversationBlockRenderer
 
   private static void DrawSection(View view, SectionBlock block, int y, int width)
   {
-    view.SetAttribute(MutedAttr);
+    view.SetAttribute(Theme.Semantic.Muted);
     view.Move(0, y);
 
     var title = $" {block.Title} ";
     var sideLen = Math.Max((width - title.Length) / 2, 2);
-    var left = new string('\u2500', sideLen);
-    var right = new string('\u2500', sideLen);
+    var left = new string(Theme.Symbols.Rule, sideLen);
+    var right = new string(Theme.Symbols.Rule, sideLen);
     var rule = $"{left}{title}{right}";
     view.AddStr(Truncate(rule, width));
   }
@@ -231,11 +214,11 @@ internal static class ConversationBlockRenderer
   {
     var attr = block.Kind switch
     {
-      MessageKind.Success => SuccessAttr,
-      MessageKind.Error => ErrorAttr,
-      MessageKind.Warning => WarningAttr,
-      MessageKind.Hint => MutedAttr,
-      _ => DefaultAttr,
+      MessageKind.Success => Theme.Semantic.Success,
+      MessageKind.Error => Theme.Semantic.Error,
+      MessageKind.Warning => Theme.Semantic.Warning,
+      MessageKind.Hint => Theme.Semantic.Muted,
+      _ => Theme.Semantic.Default,
     };
 
     view.SetAttribute(attr);
@@ -251,7 +234,7 @@ internal static class ConversationBlockRenderer
 
   private static void DrawPlainText(View view, PlainTextBlock block, int y, int width)
   {
-    view.SetAttribute(DefaultAttr);
+    view.SetAttribute(Theme.Semantic.Default);
     var lines = WordWrap(block.Text, width);
     foreach (var line in lines)
     {

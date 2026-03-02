@@ -55,7 +55,7 @@ the view hierarchy.
 ```
 1. Application is active (always). User types in the input view.
 2. User presses Enter (non-empty text).
-3. User message added to the conversation view (Panel with grey23 background).
+3. User message added to the conversation view (styled block with muted background).
 4. BeginTurn: Activity bar set to Thinking, agent-busy flag set.
 5. Agent works: Thinking -> Streaming -> Executing -> Streaming -> ...
 6. Agent turn ends (end_turn or max rounds).
@@ -250,7 +250,7 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /he
 ```
 
 The activity bar shows a yellow spinner with `Thinking...` text, with an
-animated braille spinner (8-frame, 100ms/frame). The conversation view
+animated braille spinner (10-frame, 100ms/frame). The conversation view
 continues showing the conversation history viewport.
 
 ---
@@ -274,10 +274,10 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /he
 
 ### Key Observations
 
-1. The tool call badge (Panel with rounded border, grey) appears in the
+1. The tool call badge (bordered box with muted border color) appears in the
    conversation view's scroll buffer.
 2. The activity bar shows a braille spinner followed by `Executing... (1.2s)`
-   in cyan text. The spinner animates at 100ms per frame (8-frame cycle); the
+   in cyan text. The spinner animates at 100ms per frame (10-frame cycle); the
    elapsed time updates each frame.
 3. No execution output is visible in the content area during execution. Output
    is buffered and will appear as a Tool Result Badge when execution completes.
@@ -497,7 +497,7 @@ The activity bar is a single-row view that shows the current agent state.
 | Cancel hint | `Press Esc again to cancel` | yellow |
 | Modal active | `Esc to dismiss` | dim |
 
-Braille spinner frame sequence: ⠿ ⠻ ⠽ ⠾ ⠷ ⠯ ⠟ ⠾ (100ms per frame).
+Braille spinner frame sequence: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ (10 frames, 100ms per frame).
 
 **Idle state**: When no agent is active, the activity bar renders a dim
 Rule. This provides a clean visual separator between the conversation view
@@ -621,6 +621,14 @@ user scrolls or auto-pins to the bottom, all accumulated tokens become visible.
 **Scroll indicator**: When the viewport is not at the bottom, the last line
 of the conversation view shows `↓ More content below` (dim).
 
+**Scroll position indicator** (pattern #33): When the conversation content
+exceeds the viewport height and the user scrolls up, a position indicator
+appears in the bottom-right corner of the conversation view showing
+`{line}/{total}` in `Theme.Semantic.Muted` (dark gray). The indicator is
+hidden when the viewport is pinned to the bottom (offset = 0) or when all
+content fits within the viewport. It updates on each scroll event and when
+new content arrives.
+
 **Content growth while scrolled**: When new content blocks are added to the
 buffer while the user is scrolled up, the viewport offset is incremented
 to maintain the user's view position. The `↓` indicator remains visible.
@@ -631,8 +639,9 @@ Lines starting with `/` are dispatched to the slash command registry:
 
 | Category | Commands | Behavior |
 |----------|----------|----------|
-| Modal | `/help`, `/project show`, `/project list`, `/provider show`, `/provider list`, `/conversations list`, `/conversations show`, `/jea list`, `/jea show`, `/jea effective`, `/context show`, `/expand` | Open as modeless window over conversation view |
-| Interactive | `/project create`, `/project edit`, `/project delete`, `/provider setup`, `/provider remove`, `/jea create`, `/jea edit`, `/jea delete`, `/jea assign`, `/jea unassign`, `/conversations rename`, `/conversations delete`, `/context summarize` | Open modal dialog for interactive prompts |
+| Interactive List | `/project list`, `/provider list`, `/conversations list`, `/jea list`, `/agent list` | Open as Interactive List window (pattern #28) with keyboard navigation and action bar (pattern #29). Rows are navigable with Up/Down; Enter for primary action; single-letter hotkeys for secondary actions; Esc to dismiss |
+| Read-only Modal | `/help`, `/project show`, `/provider show`, `/conversations show`, `/jea show`, `/jea effective`, `/context show`, `/agent show`, `/expand` | Open as modeless window over conversation view; scrollable content; Esc to dismiss |
+| Interactive Dialog | `/project create`, `/project edit`, `/project delete`, `/provider setup`, `/provider remove`, `/jea create`, `/jea edit`, `/jea delete`, `/jea assign`, `/jea unassign`, `/conversations rename`, `/conversations delete`, `/context summarize`, `/context prune` | Open modal dialog for interactive prompts (form dialogs, wizards, confirmations) |
 | Inline | `/context refresh`, `/conversations clear` | Execute and show result in conversation view |
 | Exit | `/quit`, `/exit` | End session loop |
 
@@ -645,8 +654,8 @@ Lines starting with `/` are dispatched to the slash command registry:
 When the user submits a message (presses Enter with non-empty text):
 
 1. The submitted text is added to the conversation data model.
-2. The user message is added to the conversation scroll buffer as a Panel
-   with grey23 background.
+2. The user message is added to the conversation scroll buffer as a styled
+   block with muted background (see User Message Block pattern).
 3. BeginTurn: Activity state set to Thinking. Agent-busy flag set.
 4. The LLM request is dispatched.
 
@@ -771,7 +780,7 @@ The layout adapts automatically on the next render cycle.
 
 | Pattern | Reference | Usage |
 |---------|-----------|-------|
-| User Message Block | 07-component-patterns.md #1 | User messages (grey23 background Panel) |
+| User Message Block | 07-component-patterns.md #1 | User messages (muted background block) |
 | Assistant Message Block | 07-component-patterns.md #2 | Assistant responses |
 | Turn Separator | 07-component-patterns.md #3 | Between conversation turns |
 | Tool Call Badge | 07-component-patterns.md #4 | Tool invocation preview |
@@ -781,3 +790,6 @@ The layout adapts automatically on the next render cycle.
 | Activity Region | 07-component-patterns.md #26 | Spinner + state label / dim Rule |
 | Streaming Text | 07-component-patterns.md #18 | LLM token streaming |
 | Cancel Hint | 07-component-patterns.md #20 | Esc double-press flow |
+| Interactive List | 07-component-patterns.md #28 | List slash commands with keyboard navigation |
+| Action Bar | 07-component-patterns.md #29 | Shortcut hints in Interactive List windows |
+| Scroll Position Indicator | 07-component-patterns.md #33 | Position display when scrolled up |

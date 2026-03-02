@@ -6,7 +6,8 @@ The context show screen is the most visually complex screen in the application.
 It renders a full-width stacked bar chart showing token utilization across five
 categories, a legend with aligned columns, and three tree-style breakdowns
 (system prompt, messages, tools). The entire display is computed from in-memory
-token estimates and rendered as static output into the scrollback.
+token estimates and rendered inside a modeless Terminal.Gui `Window` overlay
+titled "Context Usage" using the native drawing API.
 
 This screen answers the question: "How much of my context window am I using,
 and where is it going?"
@@ -21,32 +22,40 @@ and where is it going?"
 ## Layout (80 columns)
 
 ```
-(blank line)
-  Gemini . gemini-2.5-pro . 12.4k/1.0M tokens (1.2%)
-(blank line)
-  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-(blank line)
-  Estimated usage by category
-    ■ System prompt        2.1k tokens  (0.2%)
-    ■ Tools                  458 tokens  (0.0%)
-    ■ Messages             9.8k tokens  (1.0%)
-    ■ Free space         887.6k tokens  (88.8%)
-    ■ Compact buffer     100.0k tokens  (10.0%)
-(blank line)
-  System prompt . 2,134 tokens
-  ├── Meta prompt           1,892 tokens
-  └── Session prompt          242 tokens
-(blank line)
-  Messages . 37 messages, 9.8k tokens
-  ├── User text             8 messages, 1.2k tokens
-  ├── Assistant text        7 messages, 3.4k tokens
-  ├── Tool calls           11 calls, 2.1k tokens
-  └── Tool results         11 results, 3.1k tokens
-(blank line)
-  Tools . 1 tool, 458 tokens
-  └── Shell                   458 tokens
-(blank line)
++-- Context Usage ---------------------------------------------------------+
+|                                                                           |
+|  Gemini . gemini-2.5-pro . 12.4k/1.0M tokens (1.2%)                      |
+|                                                                           |
+|  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  |
+|   ^                                                                       |
+|  Estimated usage by category                                              |
+|    ■ System prompt        2.1k tokens  (0.2%)                             |
+|    ■ Tools                  458 tokens  (0.0%)                             |
+|    ■ Messages             9.8k tokens  (1.0%)                             |
+|    ■ Free space         887.6k tokens  (88.8%)                            |
+|    ■ Compact buffer     100.0k tokens  (10.0%)                            |
+|                                                                           |
+|  System prompt . 2,134 tokens                                             |
+|  ├── Meta prompt           1,892 tokens                                   |
+|  └── Session prompt          242 tokens                                   |
+|                                                                           |
+|  Messages . 37 messages, 9.8k tokens                                      |
+|  ├── User text             8 messages, 1.2k tokens                        |
+|  ├── Assistant text        7 messages, 3.4k tokens                        |
+|  ├── Tool calls           11 calls, 2.1k tokens                           |
+|  └── Tool results         11 results, 3.1k tokens                        |
+|                                                                           |
+|  Tools . 1 tool, 458 tokens                                               |
+|  └── Shell                   458 tokens                                   |
+|                                                                           |
+|  Left/Right: browse segments  Esc: dismiss                            35% |
+|                                                                           |
++---------------------------------------------------------------------------+
 ```
+
+The `^` cursor beneath the bar chart indicates the currently focused segment.
+When the user presses Left/Right arrow keys, the cursor moves between segments
+and the corresponding legend row is highlighted (bold text).
 
 ## Layout (120 columns)
 
@@ -56,74 +65,95 @@ legend entries have more trailing whitespace. All content is left-aligned with
 a 2-space indent; nothing expands to fill wider terminals.
 
 ```
-(blank line)
-  Gemini . gemini-2.5-pro . 12.4k/1.0M tokens (1.2%)
-(blank line)
-  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-(blank line)
-  Estimated usage by category
-    ■ System prompt        2.1k tokens  (0.2%)
-    ■ Tools                  458 tokens  (0.0%)
-    ■ Messages             9.8k tokens  (1.0%)
-    ■ Free space         887.6k tokens  (88.8%)
-    ■ Compact buffer     100.0k tokens  (10.0%)
-(blank line)
-  System prompt . 2,134 tokens
-  ├── Meta prompt           1,892 tokens
-  └── Session prompt          242 tokens
-(blank line)
-  Messages . 37 messages, 9.8k tokens
-  ├── User text             8 messages, 1.2k tokens
-  ├── Assistant text        7 messages, 3.4k tokens
-  ├── Tool calls           11 calls, 2.1k tokens
-  └── Tool results         11 results, 3.1k tokens
-(blank line)
-  Tools . 1 tool, 458 tokens
-  └── Shell                   458 tokens
-(blank line)
++-- Context Usage -------------------------------------------------------------------------------------+
+|                                                                                                       |
+|  Gemini . gemini-2.5-pro . 12.4k/1.0M tokens (1.2%)                                                  |
+|                                                                                                       |
+|  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░                              |
+|   ^                                                                                                   |
+|  Estimated usage by category                                                                          |
+|    ■ System prompt        2.1k tokens  (0.2%)                                                         |
+|    ■ Tools                  458 tokens  (0.0%)                                                         |
+|    ■ Messages             9.8k tokens  (1.0%)                                                         |
+|    ■ Free space         887.6k tokens  (88.8%)                                                        |
+|    ■ Compact buffer     100.0k tokens  (10.0%)                                                        |
+|                                                                                                       |
+|  System prompt . 2,134 tokens                                                                         |
+|  ├── Meta prompt           1,892 tokens                                                               |
+|  └── Session prompt          242 tokens                                                               |
+|                                                                                                       |
+|  Messages . 37 messages, 9.8k tokens                                                                  |
+|  ├── User text             8 messages, 1.2k tokens                                                    |
+|  ├── Assistant text        7 messages, 3.4k tokens                                                    |
+|  ├── Tool calls           11 calls, 2.1k tokens                                                       |
+|  └── Tool results         11 results, 3.1k tokens                                                    |
+|                                                                                                       |
+|  Tools . 1 tool, 458 tokens                                                                           |
+|  └── Shell                   458 tokens                                                               |
+|                                                                                                       |
+|  Left/Right: browse segments  Esc: dismiss                                                        35% |
+|                                                                                                       |
++-------------------------------------------------------------------------------------------------------+
 ```
 
 ### Anatomy
 
-1. **Header line** -- 2-space indent, bold provider name, dim middle dot
-   separator, bold model name, dim middle dot, color-coded token usage
-   fraction and percentage.
-2. **Blank line**.
-3. **Stacked bar chart** -- 2-space indent, 72-character fixed-width bar
-   composed of five colored segments using Unicode block characters.
-4. **Blank line**.
-5. **Legend heading** -- 2-space indent, bold "Estimated usage by category".
-6. **Legend rows** (5 rows) -- 4-space indent, colored square indicator,
-   left-aligned label (18 chars), right-aligned token count (8 chars),
-   " tokens  ", parenthesized percentage.
-7. **Blank line**.
-8. **System prompt section** -- 2-space indent, blue bold "System prompt",
-   dim middle dot, token count.
-9. **System prompt tree** -- 2-space indent, tree connectors, label (20 chars
-   pad), value.
-10. **Blank line**.
-11. **Messages section** -- 2-space indent, green bold "Messages", dim middle
-    dot, message count and token count.
-12. **Messages tree** -- 4 tree lines: user text, assistant text, tool calls,
+1. **Modal window** -- A modeless Terminal.Gui `Window` titled "Context
+   Usage" with `Theme.Modal.BorderScheme` (blue border). Opened via the
+   same overlay mechanism as other modals. The agent continues working in
+   the background.
+2. **Header line** -- 2-space indent, bold provider name, dim middle dot
+   separator (`Theme.Semantic.Muted`), bold model name, dim middle dot,
+   color-coded token usage fraction and percentage.
+3. **Blank line**.
+4. **Stacked bar chart** -- 2-space indent, 72-character fixed-width bar
+   composed of five colored segments using Unicode block characters. Drawn
+   via Terminal.Gui native drawing API (`SetAttribute`, `Move`, `AddStr`)
+   with `Theme.Chart.*` tokens for segment colors.
+5. **Segment cursor** -- A `^` character drawn one row below the bar at the
+   horizontal position of the currently focused segment. Drawn with
+   `Theme.Semantic.Accent` (blue). The cursor starts on the first non-zero
+   segment.
+6. **Blank line**.
+7. **Legend heading** -- 2-space indent, bold "Estimated usage by category".
+8. **Legend rows** (5 rows) -- 4-space indent, colored square indicator
+   (`Theme.Chart.*` colors), left-aligned label (18 chars), right-aligned
+   token count (8 chars), " tokens  ", parenthesized percentage. The row
+   corresponding to the focused bar segment is drawn with bold text.
+9. **Blank line**.
+10. **System prompt section** -- 2-space indent, `Theme.Semantic.Accent`
+    (blue) bold "System prompt", dim middle dot, token count.
+11. **System prompt tree** -- 2-space indent, tree connectors
+    (`Theme.Semantic.Muted`), label (20 chars pad), value.
+12. **Blank line**.
+13. **Messages section** -- 2-space indent, `Theme.Semantic.Success` (green)
+    bold "Messages", dim middle dot, message count and token count.
+14. **Messages tree** -- 4 tree lines: user text, assistant text, tool calls,
     tool results. Each shows count and token estimate.
-13. **Blank line**.
-14. **Tools section** -- 2-space indent, mediumpurple1 bold "Tools", dim
-    middle dot, tool count and token count.
-15. **Tools tree** -- 1 tree line: "Shell" with token count.
-16. **Blank line**.
+15. **Blank line**.
+16. **Tools section** -- 2-space indent, `Theme.Chart.Tools` (purple) bold
+    "Tools", dim middle dot, tool count and token count.
+17. **Tools tree** -- 1 tree line: "Shell" with token count.
+18. **Blank line**.
+19. **Action hints** -- Bottom of content: "Left/Right: browse segments
+    Esc: dismiss" in `Theme.Semantic.Muted`.
+20. **Scroll position indicator** -- Percentage format (e.g., `35%`) in the
+    bottom-right corner when content exceeds the viewport (pattern #33).
 
 ### Stacked Bar Chart Detail
 
-The bar is exactly 72 characters wide, rendered at a 2-space indent. It uses
-five segments in this order:
+The bar is exactly 72 characters wide, rendered at a 2-space indent. Each
+segment is drawn with `SetAttribute` using the segment's `Theme.Chart.*`
+attribute, then `AddStr` with the appropriate fill character. It uses five
+segments in this order:
 
-| Segment | Color | Character | Meaning |
-|---|---|---|---|
-| System prompt | blue | U+2588 (full block) | Meta prompt + session prompt tokens |
-| Tools | mediumpurple1 | U+2588 (full block) | Tool definition schema tokens |
-| Messages | green | U+2588 (full block) | All conversation message tokens |
-| Free space | grey | U+2591 (light shade) | Available tokens before compact buffer |
-| Compact buffer | darkorange | U+2588 (full block) | Reserved headroom for auto-compaction |
+| Segment | Color Token | Attribute Token | Character | Meaning |
+|---|---|---|---|---|
+| System prompt | `Theme.Semantic.Accent` | `Theme.Semantic.Accent` | U+2588 (full block) | Meta prompt + session prompt tokens |
+| Tools | `Theme.Chart.Tools` | `Theme.Chart.ToolsAttr` | U+2588 (full block) | Tool definition schema tokens |
+| Messages | `Theme.Semantic.Success` | `Theme.Semantic.Success` | U+2588 (full block) | All conversation message tokens |
+| Free space | `Theme.Chart.FreeSpace` | `Theme.Chart.FreeSpaceAttr` | U+2591 (light shade) | Available tokens before compact buffer |
+| Compact buffer | `Theme.Chart.Buffer` | `Theme.Chart.BufferAttr` | U+2588 (full block) | Reserved headroom for auto-compaction |
 
 **Proportional sizing algorithm:**
 
@@ -138,16 +168,34 @@ five segments in this order:
 This ensures every non-zero category is visible even when it represents a
 tiny fraction of the total (e.g., 458 tokens out of 1M still gets 1 char).
 
+### Segment Cursor Interaction
+
+The `^` cursor beneath the bar provides keyboard-driven segment browsing:
+
+- **Initial position**: The cursor starts at the horizontal midpoint of the
+  first non-zero segment.
+- **Left/Right arrows**: Move the cursor to the adjacent segment (skipping
+  zero-width segments). The cursor snaps to the midpoint of the new segment.
+- **Legend highlight**: When the cursor moves, the corresponding legend row
+  is redrawn with bold text. All other legend rows are drawn in normal
+  weight.
+- **Wrapping**: The cursor does not wrap -- Left at the first segment and
+  Right at the last segment are no-ops.
+
+This interaction gives the user a way to identify individual bar segments,
+especially when segments are very narrow and their colors are hard to
+distinguish.
+
 ### Legend Alignment
 
-Each legend row is formatted with `string.Format`:
+Each legend row is drawn natively with `SetAttribute` and `AddStr`:
 
 ```
-"    [{color}]{indicator}[/] {label,-18}{tokenStr,8} tokens  ({percent})"
+    {indicator} {label,-18}{tokenStr,8} tokens  ({percent})
 ```
 
 - 4-space indent for nesting under the heading.
-- Colored square indicator (U+25A0) in the segment's color.
+- Colored square indicator (U+25A0) drawn with the segment's color attribute.
 - Label left-padded to 18 characters.
 - Token count right-padded to 8 characters (uses `FormatCompact`: e.g.,
   `2.1k`, `887.6k`, `1.0M`, or raw number for < 1000).
@@ -155,19 +203,22 @@ Each legend row is formatted with `string.Format`:
 - Percentage from `FormatPercent` (e.g., `0.2%`, `88.8%`).
 - Closing ")".
 
+The legend row for the currently focused bar segment is drawn with bold text
+(`TextStyle.Bold`) to visually link the cursor position to the legend.
+
 ### Tree Breakdown Format
 
-Each tree line is formatted with `string.Format`:
+Each tree line is drawn natively:
 
 ```
-"  [dim]{connector}[/] {label,-20}{value}"
+  {connector} {label,-20}{value}
 ```
 
 - 2-space indent.
-- Dim tree connector: `\u251c\u2500\u2500` for non-last children,
-  `\u2514\u2500\u2500` for last child.
-- Label left-padded to 20 characters (Markup-escaped).
-- Value string (Markup-escaped).
+- Dim tree connector (`Theme.Semantic.Muted`): U+251C U+2500 U+2500 for
+  non-last children, U+2514 U+2500 U+2500 for last child.
+- Label left-padded to 20 characters.
+- Value string.
 
 ### Token Estimation
 
@@ -186,9 +237,9 @@ The token usage percentage in the header line uses threshold-based coloring:
 
 | Threshold | Color | Token |
 |---|---|---|
-| < 50% | green | usage-ok |
-| 50-79% | yellow | usage-warn |
-| >= 80% | red | usage-critical |
+| < 50% | green | `Theme.Semantic.Success` (usage-ok) |
+| 50-79% | yellow | `Theme.Semantic.Warning` (usage-warn) |
+| >= 80% | red | `Theme.Semantic.Error` (usage-critical) |
 
 ## States
 
@@ -198,28 +249,50 @@ The token usage percentage in the header line uses threshold-based coloring:
 | Warning (medium usage) | 50-79% context used | Header percentage in yellow; smaller free space segment |
 | Critical (high usage) | >= 80% context used | Header percentage in red; minimal or no free space segment |
 | Empty conversation | 0 messages | Messages section shows "0 messages, 0 tokens"; tree lines show 0 for all categories; bar shows only system prompt + tools + free space |
-| No session | Session is null | Red error: "No active session." (CTX-03) |
+| No session | Session is null | Red error: "No active session." (CTX-03) -- rendered as a status message in the conversation view, not in a modal |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[bold]` | bold (2.2) | Provider name, model name, "Estimated usage by category" heading |
-| `[dim]` | dim (2.2) | Middle dot separators, tree connectors |
-| `[blue bold]` | chart-blue + bold (1.3, 2.2) | "System prompt" section heading |
-| `[green bold]` | chart-green + bold (1.3, 2.2) | "Messages" section heading |
-| `[mediumpurple1 bold]` | chart-mediumpurple1 + bold (1.3, 2.2) | "Tools" section heading |
-| `[blue]` | chart-blue (1.3) | System prompt bar segment, legend square |
-| `[mediumpurple1]` | chart-mediumpurple1 (1.3) | Tools bar segment, legend square |
-| `[green]` | chart-green (1.3) | Messages bar segment, legend square; also usage-ok header color |
-| `[grey]` | chart-grey (1.3) | Free space bar segment (light shade char), legend square |
-| `[darkorange]` | chart-darkorange (1.3) | Compact buffer bar segment, legend square |
-| `[yellow]` | usage-warn (1.4) | Header percentage when 50-79% |
-| `[red]` | usage-critical (1.4) | Header percentage when >= 80%; also error message prefix |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:**
+
+- `Theme.Modal.BorderScheme` -- blue border on the modal window
+- `Theme.Semantic.Muted` -- dim middle dot separators, tree connectors,
+  action hints, scroll indicator
+- `Theme.Semantic.Accent` -- blue "System prompt" section heading, system
+  prompt bar segment, segment cursor
+- `Theme.Semantic.Success` -- green "Messages" section heading, messages bar
+  segment, usage-ok header color
+- `Theme.Semantic.Warning` -- yellow header percentage at 50-79% usage
+- `Theme.Semantic.Error` -- red header percentage at >= 80% usage, error
+  message prefix
+- `Theme.Chart.Tools` / `Theme.Chart.ToolsAttr` -- purple tools bar segment
+  and legend indicator
+- `Theme.Chart.FreeSpace` / `Theme.Chart.FreeSpaceAttr` -- grey free space
+  bar segment and legend indicator
+- `Theme.Chart.Buffer` / `Theme.Chart.BufferAttr` -- orange compact buffer
+  bar segment and legend indicator
+
+See `06-style-tokens.md` section 1.6 (Approved Custom Colors) and section
+10.11 (Chart Colors) for the complete chart color definitions.
 
 ## Interactive Elements
 
-None. This is a purely static render. No prompts, no keyboard interaction.
+### Segment Cursor
+
+The bar chart supports keyboard-driven segment browsing via Left/Right
+arrow keys. The focused segment is indicated by a `^` cursor below the bar
+and bold text in the corresponding legend row.
+
+### Keyboard
+
+| Key | Action |
+|---|---|
+| Left | Move cursor to previous bar segment |
+| Right | Move cursor to next bar segment |
+| Up/Down | Scroll content when it exceeds viewport |
+| Esc | Dismiss the window |
 
 ## Behavior
 
@@ -228,9 +301,16 @@ None. This is a purely static render. No prompts, no keyboard interaction.
   .ContextWindowTokenLimit`. The compact buffer is `contextLimit *
   CompactionThresholdPercent / 100` subtracted from the context limit.
 
-- **Rendering**: All output is rendered via `AnsiConsole.MarkupLine` in a
-  single synchronous pass. The stacked bar is built in a `StringBuilder`
-  and emitted as one markup line. No animation, no progressive rendering.
+- **Rendering**: All content is drawn using Terminal.Gui's native drawing
+  API (`SetAttribute`, `Move`, `AddStr`) inside a custom `View`'s
+  `OnDrawingContent` override. The stacked bar segments are drawn by
+  switching `SetAttribute` for each segment color and calling `AddStr` with
+  the fill character. The legend, trees, and header use the same approach.
+  No Spectre `IRenderable` objects are used.
+
+- **Window type**: The window is modeless -- the agent continues working in
+  the background. The window is opened via the same overlay mechanism as
+  other modals (pattern #11).
 
 - **Free space calculation**: `max(0, contextLimit - totalUsed - bufferTokens)`.
   If total usage exceeds `contextLimit - buffer`, free space is 0 and the bar
@@ -243,21 +323,26 @@ None. This is a purely static render. No prompts, no keyboard interaction.
 
 ## Edge Cases
 
-- **Narrow terminal (< 72 columns)**: The stacked bar is a fixed 72
+- **Narrow terminal (< 74 columns)**: The stacked bar is a fixed 72
   characters plus 2-space indent = 74 characters minimum. At terminals
   narrower than 74 columns, the bar wraps to the next line, breaking the
   visual. The legend rows are approximately 55 characters and fit at 60+
   columns. Tree lines are approximately 45 characters and fit comfortably.
   No adaptive layout exists for narrow terminals.
 
-- **Zero context limit**: If `contextLimit <= 0`, the `RenderStackedBar`
-  method returns immediately (no bar rendered). The header line shows
-  `0/0 tokens (NaN%)` -- this is a degenerate state that should not occur
-  in normal usage.
+- **Content exceeds viewport**: When the window is shorter than the full
+  content (header + bar + legend + 3 tree sections), the view is scrollable
+  via Up/Down arrow keys. A scroll position indicator (percentage format)
+  appears in the bottom-right corner (pattern #33).
+
+- **Zero context limit**: If `contextLimit <= 0`, the bar is not rendered.
+  The header line shows `0/0 tokens (NaN%)` -- this is a degenerate state
+  that should not occur in normal usage.
 
 - **All tokens in one category**: The proportional algorithm still assigns
   1 character minimum to other non-zero categories, and adjusts the dominant
-  category to compensate. A category with 0 tokens gets 0 characters.
+  category to compensate. A category with 0 tokens gets 0 characters. The
+  segment cursor skips zero-width segments.
 
 - **Very large token counts**: `FormatCompact` handles millions (`1.0M`).
   The right-alignment in the legend accommodates up to 8 characters for the
@@ -266,15 +351,17 @@ None. This is a purely static render. No prompts, no keyboard interaction.
 - **No messages**: The message breakdown tree shows all zeros. The bar has
   no green segment. This is the expected state at session start.
 
-- **Non-interactive/piped terminal**: Renders normally. Spectre strips markup
-  when stdout is redirected, so colors are lost but the layout (spaces,
-  alignment, Unicode characters) is preserved.
+- **Non-interactive/piped terminal**: Not applicable. The modal window is
+  only shown during an active Terminal.Gui session. In non-TUI mode, the
+  context show output could be rendered via direct console writes as a
+  fallback, but this is not currently implemented.
 
 ## Component Patterns Used
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Status Message | Section 1 | Error message for no active session |
-| Token Usage Display | Section 16 | Header line token count rendering |
-| Context Tree Pattern | Composite pattern 10.6 (06-style-tokens.md) | System prompt, messages, and tools breakdowns |
-
+| Modal Overlay (Detail variant) | #11 | Terminal.Gui Window overlay for the context display |
+| Context Usage Bar | #27 | Stacked bar chart with native drawing |
+| Status Message | #7 | Error message for no active session |
+| Token Usage Display | #17 | Header line token count rendering |
+| Scroll Position Indicator | #33 | Percentage indicator when content exceeds viewport |

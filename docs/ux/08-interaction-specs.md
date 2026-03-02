@@ -118,7 +118,63 @@ after trimming.
 | `quit` | Same as `/quit` (no slash required) |
 | `exit` | Same as `/quit` (no slash required) |
 
-### 1.8 Command History
+### 1.8 List Navigation (Interactive List Windows)
+
+Active when an Interactive List window (pattern #28) is open and the
+`ListView` has focus. These keys enable keyboard-driven navigation and
+actions on list items.
+
+| Key | Action | Notes |
+|---|---|---|
+| Up Arrow / k | Move selection up one row | Wraps to bottom if at top |
+| Down Arrow / j | Move selection down one row | Wraps to top if at bottom |
+| Enter | Primary action on selected row | Open, show, or expand |
+| Home | Jump to first item | |
+| End | Jump to last item | |
+| Page Up | Scroll list up one viewport | |
+| Page Down | Scroll list down one viewport | |
+| e | Edit selected item | Opens Form Dialog (#31) or Edit Menu Loop |
+| d | Delete selected item | Opens Delete Confirmation (#15) |
+| n | New / Create | Opens Form Dialog (#31) or Multi-Step Wizard (#32) |
+| r | Rename selected item | Opens rename prompt (context-dependent) |
+| s | Setup (provider context) | Opens Multi-Step Wizard (#32) |
+| / | Focus search/filter field | If present (pattern #30); not all lists have filters |
+| Esc | Dismiss the list window | Closes window, returns focus to conversation |
+| Type-ahead | Jump to first matching item | Letters typed quickly match against the primary column; resets after 500ms of inactivity |
+
+Single-letter hotkeys are handled in the window's `OnKeyDown` override.
+They fire only when the `ListView` has focus (not when a sub-dialog is open).
+See pattern #28 (Interactive List) and pattern #29 (Action Bar).
+
+### 1.9 Dialog Navigation (Form Dialogs and Wizards)
+
+Active when a Form Dialog (pattern #31) or Multi-Step Wizard (pattern #32)
+is open. These keys navigate between fields and buttons within the dialog.
+
+| Key | Action | Notes |
+|---|---|---|
+| Tab | Move to next field or button | Follows visual top-to-bottom, left-to-right order |
+| Shift+Tab | Move to previous field or button | Reverse of Tab order |
+| Enter | Confirm / Submit | When Ok/Create/Done button is focused, or in single-field dialogs |
+| Esc | Cancel and close dialog | Returns to conversation view; no changes saved |
+| Ctrl+A | Select all text in focused TextField | Standard text selection |
+
+**Multi-Step Wizard additional keys (pattern #32):**
+
+| Key | Action | Notes |
+|---|---|---|
+| Alt+B | Back to previous step | Same as clicking Back button; disabled on step 1 |
+| Alt+N | Next step / Done | Same as clicking Next/Done button; validates before advancing |
+
+**Selection lists within dialogs:**
+
+| Key | Action | Notes |
+|---|---|---|
+| Up Arrow / k | Move selection up | Standard list navigation |
+| Down Arrow / j | Move selection down | Standard list navigation |
+| Enter | Confirm selection | Selects the highlighted item |
+
+### 1.10 Command History
 
 Managed by the input handler.
 
@@ -137,14 +193,14 @@ Managed by the input handler.
 ### 2.1 Activity Spinner (All Active States)
 
 The braille spinner appears in the **activity bar** during ALL busy states
-(Thinking, Streaming, Executing). It uses 8 braille frames cycling at 100ms
+(Thinking, Streaming, Executing). It uses 10 braille frames cycling at 100ms
 per frame.
 
 | Parameter | Value |
 |---|---|
 | Frame rate | 100ms per frame |
-| Frame count | 8 braille characters |
-| Frame sequence | &#x2BFF; &#x28BB; &#x28BD; &#x28BE; &#x28B7; &#x28AF; &#x289F; &#x28BE; |
+| Frame count | 10 braille characters |
+| Frame sequence | ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ |
 | Active states | Thinking, Streaming, Executing |
 | Display format (Thinking) | `{frame} Thinking...` (yellow) |
 | Display format (Streaming) | `{frame} Streaming...` (cyan) |

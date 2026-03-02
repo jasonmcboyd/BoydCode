@@ -149,7 +149,7 @@ internal static class SpectreHelpers
   // ──────────────────────────────────────────────
 
   public static void Success(string message) =>
-    OutputMarkup($"  [green]\u2713[/] {Markup.Escape(message)}");
+    OutputMarkup($"  [green]{Theme.Symbols.Check}[/] {Markup.Escape(message)}");
 
   public static void Error(string message) =>
     OutputMarkup($"[red bold]Error:[/] [red]{Markup.Escape(message)}[/]");

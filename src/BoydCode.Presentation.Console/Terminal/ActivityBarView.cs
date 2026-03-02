@@ -20,13 +20,6 @@ internal enum ActivityState
 
 internal sealed class ActivityBarView : View
 {
-  private static readonly char[] SpinnerFrames =
-    ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
-  private static readonly Attribute IdleAttr = new(ColorName16.DarkGray, Color.None);
-  private static readonly Attribute CyanAttr = new(ColorName16.Cyan, Color.None);
-  private static readonly Attribute YellowAttr = new(ColorName16.Yellow, Color.None);
-
   private ActivityState _state = ActivityState.Idle;
   private int _spinnerFrame;
   private object? _timerToken;
@@ -65,7 +58,7 @@ internal sealed class ActivityBarView : View
     }
 
     // Clear the row
-    SetAttribute(IdleAttr);
+    SetAttribute(Theme.Semantic.Muted);
     Move(0, 0);
     AddStr(new string(' ', width));
 
@@ -73,32 +66,32 @@ internal sealed class ActivityBarView : View
     {
       case ActivityState.Idle:
         Move(0, 0);
-        SetAttribute(IdleAttr);
-        AddStr(new string('\u2500', width)); // ─ dim horizontal rule
+        SetAttribute(Theme.Semantic.Muted);
+        AddStr(new string(Theme.Symbols.Rule, width));
         break;
 
       case ActivityState.Thinking:
-        DrawSpinnerWithLabel(width, YellowAttr, "Thinking...");
+        DrawSpinnerWithLabel(width, Theme.Semantic.Warning, Theme.Text.ThinkingLabel);
         break;
 
       case ActivityState.Streaming:
-        DrawSpinnerWithLabel(width, CyanAttr, "Streaming...");
+        DrawSpinnerWithLabel(width, Theme.Semantic.Info, Theme.Text.StreamingLabel);
         break;
 
       case ActivityState.Executing:
-        DrawSpinnerWithLabel(width, CyanAttr, "Executing...");
+        DrawSpinnerWithLabel(width, Theme.Semantic.Info, Theme.Text.ExecutingLabel);
         break;
 
       case ActivityState.CancelHint:
         Move(1, 0);
-        SetAttribute(YellowAttr);
-        AddStr(Truncate("Press Esc again to cancel", width - 1));
+        SetAttribute(Theme.Semantic.Warning);
+        AddStr(Truncate(Theme.Text.CancelHint, width - 1));
         break;
 
       case ActivityState.Modal:
         Move(1, 0);
-        SetAttribute(IdleAttr);
-        AddStr(Truncate("Esc to dismiss", width - 1));
+        SetAttribute(Theme.Semantic.Muted);
+        AddStr(Truncate(Theme.Text.EscToDismiss, width - 1));
         break;
     }
 
@@ -109,7 +102,7 @@ internal sealed class ActivityBarView : View
   {
     Move(1, 0);
     SetAttribute(attr);
-    var spinner = SpinnerFrames[_spinnerFrame % SpinnerFrames.Length];
+    var spinner = Theme.Symbols.SpinnerFrames[_spinnerFrame % Theme.Symbols.SpinnerFrames.Length];
     AddStr($"{spinner} ");
     AddStr(Truncate(label, width - 3)); // 1 left pad + spinner char + space
   }
@@ -123,10 +116,10 @@ internal sealed class ActivityBarView : View
 
     _spinnerFrame = 0;
     _timerToken = TguiApp.AddTimeout(
-      TimeSpan.FromMilliseconds(100),
+      TimeSpan.FromMilliseconds(Theme.Layout.SpinnerIntervalMs),
       () =>
       {
-        _spinnerFrame = (_spinnerFrame + 1) % SpinnerFrames.Length;
+        _spinnerFrame = (_spinnerFrame + 1) % Theme.Symbols.SpinnerFrames.Length;
         SetNeedsDraw();
         return _timerToken is not null; // continue if timer is still active
       });

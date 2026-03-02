@@ -2,10 +2,11 @@
 
 ## Overview
 
-An interactive menu loop for editing an existing JEA profile. The user can
-change the language mode, add/remove commands, toggle command deny status,
-and add/remove modules. Changes are accumulated in memory and saved when the
-user selects "Done".
+An interactive Dialog for editing an existing JEA profile. The user sees a
+sidebar listing editable fields (Name, Description, Add Command, Remove
+Command, Add Module, Remove Module) and a content area showing the appropriate
+editing widget for the selected field. Changes are accumulated in memory and
+saved when the user clicks "Done".
 
 **Screen IDs**: JEA-14, JEA-15, JEA-16, JEA-17, JEA-18, JEA-19, JEA-20,
 JEA-21, JEA-22
@@ -15,182 +16,299 @@ JEA-21, JEA-22
 `/jea edit [name]`
 
 - If `name` is provided inline, it is used directly.
-- If `name` is omitted, a selection prompt lists all profiles.
+- If `name` is omitted, a selection Dialog lists all profiles (component
+  pattern #12 Selection Prompt, Dialog approach).
 
 ## Layout (80 columns)
 
-### Edit Menu
+### Profile Selection (when name omitted)
 
-    Edit _global:
-    > Change language mode
-      Add command
-      Remove command
-      Toggle command deny
-      Add module
-      Remove module
-      Done
+```
++-- Select Profile ----------------------------------------+
+|                                                           |
+|    _global                                                |
+|  > security                                               |
+|    network-ops                                            |
+|                                                           |
+|                             [ Cancel ]  [ Ok ]            |
+|                                                           |
++-----------------------------------------------------------+
+```
 
-### Change Language Mode
+### Edit Dialog -- Name Selected
 
-      Language mode:
-    > FullLanguage
-      ConstrainedLanguage
-      RestrictedLanguage
-      NoLanguage
-      v Language mode set to FullLanguage.
+```
++-- Edit _global -------------------------------------------+
+|                                                            |
+|  Actions               | Value                             |
+|  ----------------------|-----------------------------------|
+|  > Name                | [_global                        ] |
+|    Description         |                                   |
+|    Add command         |                                   |
+|    Remove command      |                                   |
+|    Add module          |                                   |
+|    Remove module       |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
-### Add Command
+### Edit Dialog -- Description Selected
 
-      Command name: Invoke-WebRequest
-      Action:
-    > Allow
-      Deny
-      v Allow Invoke-WebRequest
+```
++-- Edit _global -------------------------------------------+
+|                                                            |
+|  Actions               | Value                             |
+|  ----------------------|-----------------------------------|
+|    Name                |                                   |
+|  > Description         | [Default security profile       ] |
+|    Add command         |                                   |
+|    Remove command      |                                   |
+|    Add module          |                                   |
+|    Remove module       |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
-### Remove Command
+### Edit Dialog -- Add Command Selected
 
-      Select command to remove:
-    > Get-Process
-      Stop-Service
-      Invoke-WebRequest
-      v Removed Get-Process.
+When "Add command" is selected, the content area shows a TextField for the
+command name and a ListView for Allow/Deny:
 
-### Toggle Command Deny
+```
++-- Edit _global -------------------------------------------+
+|                                                            |
+|  Actions               | Command name:                     |
+|  ----------------------| [Invoke-WebRequest              ] |
+|    Name                |                                   |
+|    Description         | Action:                           |
+|  > Add command         |   Allow                           |
+|    Remove command      | > Deny                            |
+|    Add module          |                                   |
+|    Remove module       |              [ Add ]              |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
-      Select command to toggle:
-    > Get-Process  Allow
-      Stop-Service  Deny
-      Invoke-WebRequest  Allow
-      v Stop-Service set to Allow.
+After clicking "Add", a success message appears briefly in the content area:
 
-### Add Module
+```
+|  > Add command         | v Allow Invoke-WebRequest         |
+```
 
-      Module name: Az
-      v Module Az added.
+### Edit Dialog -- Remove Command Selected
 
-### Remove Module
+When "Remove command" is selected and commands exist, the content area shows
+a ListView of current commands:
 
-      Select module to remove:
-    > PSScriptAnalyzer
-      Az
-      v Removed module PSScriptAnalyzer.
+```
++-- Edit _global -------------------------------------------+
+|                                                            |
+|  Actions               | Select command to remove:         |
+|  ----------------------|                                   |
+|    Name                |   Get-Process        Allow        |
+|    Description         | > Stop-Service       Deny         |
+|    Add command         |   Invoke-WebRequest  Allow        |
+|  > Remove command      |                                   |
+|    Add module          |          [ Remove ]               |
+|    Remove module       |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
 
-### Empty State Warnings
+### Edit Dialog -- Remove Command Empty
 
-      No commands to remove.
+When no commands exist:
 
-      No commands to toggle.
+```
+|  > Remove command      | No commands to remove.            |
+```
 
-      No modules to remove.
+The message uses `Theme.Semantic.Warning` (yellow).
+
+### Edit Dialog -- Add Module Selected
+
+```
++-- Edit _global -------------------------------------------+
+|                                                            |
+|  Actions               | Module name:                      |
+|  ----------------------| [Az                             ] |
+|    Name                |                                   |
+|    Description         |              [ Add ]              |
+|  > Add module          |                                   |
+|    Remove command      |                                   |
+|    Add module          |                                   |
+|    Remove module       |                                   |
+|                        |                                   |
+|                              [ Cancel ]  [ Done ]          |
+|                                                            |
++------------------------------------------------------------+
+```
+
+### Edit Dialog -- Remove Module Selected
+
+When modules exist:
+
+```
+|  > Remove module       | Select module to remove:          |
+|                        |   PSScriptAnalyzer                |
+|                        | > Az                              |
+|                        |          [ Remove ]               |
+```
+
+When no modules exist:
+
+```
+|  > Remove module       | No modules to remove.             |
+```
 
 ### Save and Exit
 
-      v Profile _global saved.
-    File: C:\Users\jason\.boydcode\jea\_global.profile
+After clicking "Done", changes are saved:
+
+```
+  v Profile _global saved.
+  File: C:\Users\jason\.boydcode\jea\_global.profile
+```
+
+The success message is rendered in the conversation view (not in the dialog).
+The file path uses `Theme.Semantic.Muted` (dim).
 
 ### Not Found
 
-    Error: Profile _global not found.
+```
+  Error: Profile _global not found.
+```
 
 ## States
 
 | State | Condition | Visual Difference |
 |---|---|---|
-| Profile selection | No name argument | SelectionPrompt listing all profiles |
-| Edit menu | Main loop | SelectionPrompt with 7 choices |
-| Change language mode | Selected from menu | Language mode SelectionPrompt + success |
-| Add command | Selected from menu | Name prompt + Allow/Deny + colored confirmation |
-| Remove command | Selected from menu, commands exist | Command SelectionPrompt + success |
-| Remove command empty | Selected from menu, no commands | Yellow "No commands to remove" |
-| Toggle deny | Selected from menu, commands exist | Command SelectionPrompt showing current status + success |
-| Toggle deny empty | Selected from menu, no commands | Yellow "No commands to toggle" |
-| Add module | Selected from menu | Name prompt + success |
-| Remove module | Selected from menu, modules exist | Module SelectionPrompt + success |
-| Remove module empty | Selected from menu, no modules | Yellow "No modules to remove" |
-| Saved | "Done" selected | Green success + dim file path |
-| Not found | Profile does not exist | Red error with bold entity name |
+| Profile selection | No name argument | Dialog with ListView of all profiles |
+| Edit dialog | Profile loaded | Dialog with sidebar + content area |
+| Name field | "Name" selected in sidebar | TextField pre-filled with current name |
+| Description field | "Description" selected in sidebar | TextField pre-filled with current description |
+| Add command | "Add command" selected | TextField + Allow/Deny ListView + Add button |
+| Remove command | "Remove command" selected, commands exist | ListView of commands + Remove button |
+| Remove command empty | "Remove command" selected, no commands | Yellow "No commands to remove" |
+| Add module | "Add module" selected | TextField + Add button |
+| Remove module | "Remove module" selected, modules exist | ListView of modules + Remove button |
+| Remove module empty | "Remove module" selected, no modules | Yellow "No modules to remove" |
+| Saved | "Done" clicked | Dialog closes; success + file path in conversation view |
+| Not found | Profile does not exist | Red error, command exits |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[bold]` | bold (2.2) | Profile name in menu title, entity names in confirmations, language mode value |
-| `[green]` | success-green | Success checkmarks, "Allow" markers |
-| `[red]` | error-red | "Error:" prefix, "Deny" markers |
-| `[yellow]` | warning-yellow | "No commands/modules to..." empty state messages |
-| `[dim]` | dim (2.2) | File path after save |
-| `Color.Green` | Spectre color (1.5) | SelectionPrompt highlight style |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Modal.BorderScheme` (blue border for the
+dialog), `Theme.List.SelectedBackground` and `Theme.List.SelectedText`
+(highlighted sidebar row), `Theme.Semantic.Success` (green success checkmarks
+and "Allow" markers), `Theme.Semantic.Error` (red "Error:" prefix and "Deny"
+markers), `Theme.Semantic.Warning` (yellow empty state warnings),
+`Theme.Semantic.Muted` (dim file path after save), `Theme.Input.Text`
+(white text in TextFields).
+
+All interaction occurs within Terminal.Gui Dialogs. No Terminal.Gui
+suspension or Spectre prompts are needed.
 
 ## Interactive Elements
 
-| Element | Type | Label | Context |
-|---|---|---|---|
-| Profile selection | `PromptProfileSelectionAsync` | `Select profile:` | No name argument |
-| Edit menu | `SpectreHelpers.Select` | `Edit [bold]{name}[/]:` | Main loop, remembers last index |
-| Language mode | `SpectreHelpers.Select` | `  Language mode:` | Change language mode |
-| Command name | `SpectreHelpers.PromptNonEmpty` | `  Command name:` | Add command |
-| Allow/Deny | `SpectreHelpers.Select` | `  Action:` | Add command |
-| Command to remove | `SpectreHelpers.Select` | `  Select command to remove:` | Remove command |
-| Command to toggle | `SpectreHelpers.Select` | `  Select command to toggle:` | Toggle deny |
-| Module name | `SpectreHelpers.PromptNonEmpty` | `  Module name:` | Add module |
-| Module to remove | `SpectreHelpers.Select` | `  Select module to remove:` | Remove module |
+| Element | Type | Context |
+|---|---|---|
+| Profile selection | Dialog + ListView (pattern #12) | No name argument |
+| Edit sidebar | ListView in Dialog (pattern #16) | Left panel, persistent |
+| Name field | TextField in content area | "Name" selected |
+| Description field | TextField in content area | "Description" selected |
+| Command name | TextField in content area | "Add command" selected |
+| Allow/Deny | ListView in content area | "Add command" selected |
+| Command to remove | ListView in content area | "Remove command" selected |
+| Module name | TextField in content area | "Add module" selected |
+| Module to remove | ListView in content area | "Remove module" selected |
+
+## Keyboard
+
+| Key | Action |
+|---|---|
+| Up / Down | Navigate sidebar items |
+| Tab | Move focus from sidebar to content area |
+| Shift+Tab | Move focus from content area to sidebar |
+| Enter | Confirm field value / activate Add or Remove button |
+| Esc | Cancel all changes and close dialog |
+| Alt+D | Click Done button (apply changes and close) |
 
 ## Behavior
 
 1. **Profile loading**: The profile is loaded once at the start. Its entries
    and modules are copied into mutable lists for editing.
 
-2. **Menu loop**: The main loop uses `SpectreHelpers.Select` with a
-   `lastIndex` variable to remember the user's last selection. The menu has
-   7 fixed choices (not dynamically generated).
+2. **Sidebar navigation**: The left ListView shows 6 fixed action items (Name,
+   Description, Add Command, Remove Command, Add Module, Remove Module). When
+   the user selects a sidebar item, the content area on the right updates with
+   the appropriate editing widget.
 
 3. **In-memory editing**: All changes are accumulated in the `entries` and
-   `modules` lists and the `languageMode` variable. Nothing is saved until
-   the user selects "Done".
+   `modules` lists, the `name`, and `description` variables. Nothing is saved
+   until the user clicks "Done".
 
-4. **Toggle deny display**: The toggle command list shows each command name
-   followed by double-space separation and a colored status: `[green]Allow[/]`
-   or `[red]Deny[/]`. The selected entry is parsed by splitting on double-space
-   to extract the command name.
+4. **Add command flow**: The content area shows a TextField for the command
+   name and a 2-item ListView for Allow/Deny. An "Add" button confirms the
+   entry. After adding, the content area shows a brief success message, then
+   resets for the next command.
 
-5. **Profile save**: When "Done" is selected, a new `JeaProfile` record is
-   created from the edited state and saved via `_store.SaveAsync`. The file
-   path is displayed in dim.
+5. **Remove command flow**: The content area shows a ListView of current
+   commands with their Allow/Deny status. A "Remove" button removes the
+   selected command. If no commands exist, a yellow warning is shown instead.
 
-6. **Profile selection helper**: `PromptProfileSelectionAsync` is a shared
-   helper that lists all profile names and returns the selected one, or null
-   if no profiles exist.
+6. **Profile save**: When "Done" is clicked, a new `JeaProfile` record is
+   created from the edited state and saved via `_store.SaveAsync`. The dialog
+   closes and a success message with the file path is rendered in the
+   conversation view.
+
+7. **Cancel**: Pressing Esc or clicking Cancel closes the dialog without
+   saving. No confirmation prompt is shown (changes are discarded silently).
+
+8. **Profile selection**: When no name argument is provided,
+   `PromptProfileSelectionAsync` opens a Dialog with a ListView of all profile
+   names and returns the selected one, or null if cancelled / no profiles exist.
 
 ## Edge Cases
 
 - **Editing `_global`**: The global profile can be edited freely. There is no
   special protection. Changes take effect on the next session.
 
-- **Empty actions**: "Remove command", "Toggle command deny", and "Remove
-  module" show a yellow warning if the respective list is empty and return to
-  the menu without modification.
+- **Empty actions**: "Remove command" and "Remove module" show a yellow warning
+  in the content area if the respective list is empty. The sidebar remains
+  navigable.
 
 - **Duplicate commands**: The same command name can be added multiple times.
   No deduplication check is performed during editing.
 
-- **Toggle parsing**: The toggle command parses the selected string by
-  splitting on double-space (`"  "`). If a command name contains double-space
-  characters, the parsing may fail. This is unlikely in practice.
-
 - **No profiles for selection**: If `PromptProfileSelectionAsync` finds no
-  profiles, it shows "No JEA profiles found" with a dim hint and returns null.
-  The edit flow exits gracefully.
+  profiles, it renders "No JEA profiles found" in the conversation view and
+  returns null. The edit flow exits gracefully.
 
-- **Unsaved changes on cancellation**: If the user force-quits during the edit
-  loop (Ctrl+C), changes are lost since they are only saved on "Done".
+- **Unsaved changes on cancel**: If the user presses Esc or clicks Cancel,
+  changes are lost since they are only saved on "Done". No confirmation
+  dialog is shown because the edit dialog itself is the confirmation context.
+
+- **Narrow terminal**: The Dialog uses `Dim.Percent(80)` for width and
+  `Dim.Percent(70)` for height. The sidebar and content area use proportional
+  widths. Below 80 columns, the content area may truncate long command names.
 
 ## Component Patterns Used
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Edit Menu Loop | Section 11 | Main edit loop with remembered index |
-| Selection Prompt | Section 5 | Menu, language mode, command/module selections |
-| Text Prompt | Section 7 | Command name, module name |
-| Status Message | Section 1 | Success, error, warning, dim messages |
-| Empty State | Section 13 | Yellow warnings for empty lists |
-
+| Edit Menu Loop | #16 (Dialog approach) | Main dialog with sidebar + content area |
+| Selection Prompt | #12 (Dialog approach) | Profile selection, Allow/Deny, command/module lists |
+| Form Dialog | #31 | TextField input for name, description, command, module |
+| Status Message | #7 | Success, error, warning messages |
+| Empty State | #21 | Yellow warnings for empty lists |

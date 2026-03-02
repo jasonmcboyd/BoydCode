@@ -1,9 +1,7 @@
 using System.Text;
-using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using TguiApp = Terminal.Gui.App.Application;
-using Attribute = Terminal.Gui.Drawing.Attribute;
 
 #pragma warning disable CS0618 // Application.AddTimeout/RemoveTimeout - using legacy static API during Terminal.Gui migration
 #pragma warning disable IDE0060 // Remove unused parameter - context is required by the override signature
@@ -12,16 +10,6 @@ namespace BoydCode.Presentation.Console.Terminal;
 
 internal sealed class ChatInputView : View
 {
-  private const int MaxHistoryEntries = 100;
-  private const int CancelWindowMs = 1000;
-
-  private static readonly Attribute PromptAttr = new(ColorName16.Blue, Color.None, TextStyle.Bold);
-  private static readonly Attribute TextAttr = new(ColorName16.White, Color.None);
-  private static readonly Attribute CursorAttr = new(ColorName16.White, Color.None, TextStyle.Underline);
-  private static readonly Attribute CursorDimAttr = new(ColorName16.DarkGray, Color.None, TextStyle.Underline);
-  private static readonly Attribute DisabledAttr = new(ColorName16.DarkGray, Color.None);
-  private static readonly Attribute ClearAttr = new(ColorName16.White, Color.None);
-  private static readonly Attribute ScrollIndicatorAttr = new(ColorName16.DarkGray, Color.None);
 
   private readonly StringBuilder _buffer = new();
   private int _cursorPos;
@@ -44,7 +32,7 @@ internal sealed class ChatInputView : View
   private bool _cancelHintShown;
   private object? _cancelHintTimerToken;
 
-  public string Prompt { get; set; } = "> ";
+  public string Prompt { get; set; } = Theme.Text.PromptPrefix;
 
   public new bool Enabled
   {
@@ -235,7 +223,7 @@ internal sealed class ChatInputView : View
     }
 
     // Clear the row
-    SetAttribute(ClearAttr);
+    SetAttribute(Theme.Input.Clear);
     Move(0, 0);
     AddStr(new string(' ', width));
 
@@ -245,7 +233,7 @@ internal sealed class ChatInputView : View
     if (!_enabled)
     {
       // Disabled: draw entire line (prompt + text) in dim
-      SetAttribute(DisabledAttr);
+      SetAttribute(Theme.Input.Disabled);
       Move(0, 0);
       AddStr(Truncate(Prompt + text, width));
       return true;
@@ -253,7 +241,7 @@ internal sealed class ChatInputView : View
 
     // Draw prompt prefix (bold blue)
     Move(0, 0);
-    SetAttribute(PromptAttr);
+    SetAttribute(Theme.Input.Prompt);
     AddStr(Truncate(Prompt, width));
 
     // Draw buffer text with cursor
@@ -293,20 +281,20 @@ internal sealed class ChatInputView : View
 
     // Draw before cursor
     Move(promptLen, 0);
-    SetAttribute(TextAttr);
+    SetAttribute(Theme.Input.Text);
     AddStr(beforeCursor);
 
     // Draw cursor character with underline style (blink alternates bright/dim)
     if (cursorInVisible >= 0 && cursorInVisible <= visibleText.Length)
     {
       Move(promptLen + cursorInVisible, 0);
-      SetAttribute(_cursorVisible ? CursorAttr : CursorDimAttr);
+      SetAttribute(_cursorVisible ? Theme.Input.Cursor : Theme.Input.CursorDim);
       AddStr(cursorChar);
 
       // Draw after cursor
       if (afterCursor.Length > 0)
       {
-        SetAttribute(TextAttr);
+        SetAttribute(Theme.Input.Text);
         AddStr(afterCursor);
       }
     }
@@ -315,15 +303,15 @@ internal sealed class ChatInputView : View
     if (hasOverflowLeft)
     {
       Move(promptLen, 0);
-      SetAttribute(ScrollIndicatorAttr);
-      AddStr("\u2190"); // ←
+      SetAttribute(Theme.Input.ScrollIndicator);
+      AddStr(Theme.Symbols.ArrowLeft.ToString());
     }
 
     if (hasOverflowRight)
     {
       Move(width - 1, 0);
-      SetAttribute(ScrollIndicatorAttr);
-      AddStr("\u2192"); // →
+      SetAttribute(Theme.Input.ScrollIndicator);
+      AddStr(Theme.Symbols.ArrowRight.ToString());
     }
 
     return true;
@@ -561,7 +549,7 @@ internal sealed class ChatInputView : View
 
     _history.Add(trimmed);
 
-    if (_history.Count > MaxHistoryEntries)
+    if (_history.Count > Theme.Layout.MaxInputHistory)
     {
       _history.RemoveAt(0);
     }
@@ -579,7 +567,7 @@ internal sealed class ChatInputView : View
   {
     var now = DateTime.UtcNow;
 
-    if (_cancelHintShown && (now - _lastEscPress).TotalMilliseconds <= CancelWindowMs)
+    if (_cancelHintShown && (now - _lastEscPress).TotalMilliseconds <= Theme.Layout.CancelWindowMs)
     {
       // Second press within window: fire cancel
       ResetCancelState();
@@ -595,7 +583,7 @@ internal sealed class ChatInputView : View
     // Start auto-clear timer: revert cancel hint after 1 second if no second press
     StopCancelHintTimer();
     _cancelHintTimerToken = TguiApp.AddTimeout(
-      TimeSpan.FromMilliseconds(CancelWindowMs),
+      TimeSpan.FromMilliseconds(Theme.Layout.CancelWindowMs),
       () =>
       {
         ResetCancelState();
@@ -631,7 +619,7 @@ internal sealed class ChatInputView : View
 
     _cursorVisible = true;
     _blinkTimerToken = TguiApp.AddTimeout(
-      TimeSpan.FromMilliseconds(500),
+      TimeSpan.FromMilliseconds(Theme.Layout.CursorBlinkMs),
       () =>
       {
         _cursorVisible = !_cursorVisible;

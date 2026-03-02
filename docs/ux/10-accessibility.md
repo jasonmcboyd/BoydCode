@@ -234,9 +234,81 @@ decorative purposes.
 
 ---
 
-## 5. Recommendations
+## 5. Interactive Component Accessibility
 
-### 5.1 High Priority
+### 5.1 ListView Navigation (Interactive List Windows, Pattern #28)
+
+When an Interactive List window is open, screen readers must announce
+navigation and selection state clearly.
+
+| Event | Screen Reader Announcement |
+|---|---|
+| Row focus changes (Up/Down) | Announce all visible column values for the selected row, plus position: "my-project, 3 directories, InProcess -- item 2 of 5" |
+| Enter pressed (primary action) | Announce the action taken: "Opening my-project" |
+| Single-letter hotkey pressed | Announce the action: "Editing my-project" or "Deleting my-project" |
+| Window opens | Announce the window title and item count: "Projects -- 5 items" |
+| Window closes (Esc) | Announce dismissal: "Projects window closed" |
+| Empty list | Announce the empty state message: "No projects configured" |
+| Scroll changes (Page Up/Down) | Announce new position: "Showing items 6 through 10 of 42" |
+
+**Implementation notes:**
+
+- Each row should be constructed as a single readable string with field
+  values separated by commas, avoiding decorative characters that screen
+  readers would announce individually (em dashes, arrows).
+- The `ListView` item count is announced when the window opens. Position
+  within the list ("item 3 of 12") is announced on each selection change.
+- The Action Bar (pattern #29) is announced once when the window opens:
+  "Actions: Enter equals Open, e equals Edit, d equals Delete, n equals
+  New, Esc equals Close."
+- In accessible mode (`BOYDCODE_ACCESSIBLE=1`), the Interactive List
+  renders as a numbered text list (see pattern #28 accessibility section).
+
+### 5.2 Dialog Accessibility (Form Dialog, Pattern #31)
+
+Dialogs must follow standard form accessibility conventions for screen
+readers.
+
+| Requirement | Detail |
+|---|---|
+| **Field labels** | Each `TextField` and `TextView` has a `Label` associated by Tab order. Screen readers announce the label when the field gains focus: "Name, text field" |
+| **Button labels** | Buttons are announced with their text: "Create button", "Cancel button". The default button (Enter) is identified: "Create button, default" |
+| **Focus order** | Tab order matches visual top-to-bottom, left-to-right layout. Screen readers follow the same traversal |
+| **Validation errors** | When a validation error appears below a field, it is announced immediately: "Error: Name cannot be empty." Focus remains on the invalid field |
+| **Dialog title** | Announced when the dialog opens: "Create Project dialog" |
+| **Optional fields** | The "(optional)" hint after a label is read as part of the label: "Docker image, optional, text field" |
+| **Secret fields** | `TextField` with `Secret = true` is announced as "API key, password field" -- typed characters are not spoken |
+
+### 5.3 Multi-Step Wizard Accessibility (Pattern #32)
+
+Wizards extend dialog accessibility with step-level announcements.
+
+| Event | Screen Reader Announcement |
+|---|---|
+| Wizard opens | "Provider Setup dialog, Step 1 of 3, Choose Provider" |
+| Step transition (Next) | "Step 2 of 3, Authentication" -- focus moves to the first field in the new step |
+| Step transition (Back) | "Step 1 of 3, Choose Provider" -- focus returns to the first field, preserving previous values |
+| Final step (Done) | "Step 3 of 3, Confirm" -- announces the summary content sequentially |
+| Cancel from any step | "Provider Setup canceled" |
+| Alt+B / Alt+N | Screen reader announces "Back button pressed" or "Next button pressed" before the step transition announcement |
+
+### 5.4 Interactive List Accessibility Summary
+
+The following table summarizes the screen reader contract for all
+interactive components:
+
+| Component | Opens With | Navigated By | Position Announcement | Actions Announced |
+|---|---|---|---|---|
+| Interactive List (#28) | Title + item count | Up/Down, Home/End, Page | "item N of M" | Action Bar read once on open |
+| Form Dialog (#31) | Title + "dialog" | Tab/Shift+Tab | Field label on focus | Button labels on focus |
+| Multi-Step Wizard (#32) | Title + step indicator | Tab within step, Alt+B/N between steps | Step N of M + step title | Next/Back/Cancel/Done |
+| Search/Filter (#30) | "Filter, text field" | Type to filter, Esc to clear | "Showing N of M items" | -- |
+
+---
+
+## 6. Recommendations
+
+### 6.1 High Priority
 
 | # | Recommendation | Effort | Impact |
 |---|---|---|---|
@@ -244,7 +316,7 @@ decorative purposes.
 | 2 | **Route all errors to stderr.** Ensure all error output goes through the user interface error rendering pipeline, which should write to stderr. This ensures errors are visible when stdout is piped and follows Unix conventions. | Medium | High |
 | 3 | **Disable spinner in non-ANSI terminals.** When ANSI capabilities are not available, skip the spinner entirely and show a single "Executing..." line. In-place overwrites produce garbage when ANSI is not supported. | Low | High |
 
-### 5.2 Medium Priority
+### 6.2 Medium Priority
 
 | # | Recommendation | Effort | Impact |
 |---|---|---|---|
@@ -254,7 +326,7 @@ decorative purposes.
 | 7 | **Add `--plain` output mode.** When set, strip all Spectre markup and render plain text only. Useful for piping, logging, and accessibility tools. This would affect all output paths. | High | Medium |
 | 8 | **Add text-only fallback for context chart.** When color is unavailable, render the stacked bar as labeled segments: `[System: 15%][Tools: 5%][Messages: 30%][Free: 50%]`. | Low | Medium |
 
-### 5.3 Low Priority
+### 6.3 Low Priority
 
 | # | Recommendation | Effort | Impact |
 |---|---|---|---|
@@ -265,9 +337,9 @@ decorative purposes.
 
 ---
 
-## 6. Platform-Specific Concerns
+## 7. Platform-Specific Concerns
 
-### 6.1 Windows Terminal
+### 7.1 Windows Terminal
 
 | Aspect | Status | Notes |
 |---|---|---|
@@ -280,7 +352,7 @@ decorative purposes.
 | `Console.CancelKeyPress` | Works | Ctrl+C correctly intercepted |
 | Vim key remapping | Works | `Console.ReadKey(intercept: true)` returns correct key info |
 
-### 6.2 Legacy Windows Console Host (conhost.exe)
+### 7.2 Legacy Windows Console Host (conhost.exe)
 
 | Aspect | Status | Notes |
 |---|---|---|
@@ -291,7 +363,7 @@ decorative purposes.
 | Scrollback on resize | May lose content | conhost has a fixed-size buffer |
 | Recommendation | Use Windows Terminal | Legacy conhost is not a supported target |
 
-### 6.3 macOS Terminal.app
+### 7.3 macOS Terminal.app
 
 | Aspect | Status | Notes |
 |---|---|---|
@@ -302,7 +374,7 @@ decorative purposes.
 | Resize detection | Works via `Console.WindowHeight/Width` | .NET reads `TIOCGWINSZ` ioctl |
 | `Console.CancelKeyPress` | Works | Standard .NET behavior on macOS |
 
-### 6.4 iTerm2 (macOS)
+### 7.4 iTerm2 (macOS)
 
 | Aspect | Status | Notes |
 |---|---|---|
@@ -311,7 +383,7 @@ decorative purposes.
 | Scrollback | Unlimited (configurable) | No content loss on resize |
 | Accessibility | iTerm2 has its own screen reader integration | Better than Terminal.app for VoiceOver |
 
-### 6.5 Linux Terminal Emulators
+### 7.5 Linux Terminal Emulators
 
 #### GNOME Terminal / Tilix / Terminator
 
@@ -339,7 +411,7 @@ decorative purposes.
 | Scroll regions | Not supported | Layout mode would fail; fallback to inline |
 | Recommendation | Not a supported target | Use a graphical terminal emulator |
 
-### 6.6 SSH Sessions
+### 7.6 SSH Sessions
 
 | Aspect | Status | Notes |
 |---|---|---|
@@ -349,7 +421,7 @@ decorative purposes.
 | Latency | May affect spinner appearance | High-latency connections may see jerky spinner updates |
 | `Console.CancelKeyPress` | Works | SSH forwards Ctrl+C correctly |
 
-### 6.7 Platform Summary
+### 7.7 Platform Summary
 
 | Platform | Layout Mode | Spinner | Unicode | Color | Overall |
 |---|---|---|---|---|---|

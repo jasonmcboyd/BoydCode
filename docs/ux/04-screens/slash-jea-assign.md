@@ -98,15 +98,16 @@ appears.
 | Project not found | Active project does not exist | Red error with bold project name |
 | No profiles assigned | Project has no assigned profiles | Plain text with bold project name |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[green]` | success-green | Success checkmark |
-| `[red]` | error-red | "Error:" prefix |
-| `[bold]` | bold (2.2) | Profile name and project name in all messages, `/project create` and `--project` in guidance |
-| `[dim]` | dim (2.2) | Hint for creating profiles |
-| `Color.Green` | Spectre color (1.5) | SelectionPrompt highlight style |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Semantic.Success` (green success checkmark),
+`Theme.Semantic.Error` (red "Error:" prefix), `Theme.Semantic.Muted` (dim
+hint for creating profiles).
+
+Interactive selection prompts run during Terminal.Gui suspension via
+`SpectreHelpers.Select`.
 
 ## Interactive Elements
 
@@ -187,7 +188,7 @@ appears.
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Selection Prompt | Section 5 | Profile selection for assign and unassign |
-| Status Message | Section 1 | Success, error messages |
-| Empty State | Section 13 | "No profiles available/assigned" messages |
+| Selection Prompt | #12 | Profile selection for assign and unassign |
+| Status Message | #7 | Success, error messages |
+| Empty State | #21 | "No profiles available/assigned" messages |
 

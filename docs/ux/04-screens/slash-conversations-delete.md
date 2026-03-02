@@ -3,9 +3,10 @@
 ## Overview
 
 The conversations delete screen provides a confirmation-gated deletion flow for
-saved conversations. It shows the session's key metadata (ID, message count,
-project) and asks for explicit confirmation before deleting. The active session
-cannot be deleted.
+saved conversations. It uses a `MessageBox.Query` (component pattern #15, Dialog
+approach) showing the session's key metadata (ID, message count, project) and
+asks for explicit confirmation before deleting. The active session cannot be
+deleted.
 
 **Screen IDs**: SESS-07, SESS-08, SESS-09, SESS-10, SESS-11, SESS-12
 
@@ -16,70 +17,127 @@ cannot be deleted.
 
 ## Layout (80 columns)
 
-### Confirmation Prompt
+### Confirmation MessageBox
 
 ```
-  Delete session abc12345 (24 messages, project: my-project)?
-  Delete? [y/N]
++-- Delete Conversation ------------------------------------+
+|                                                            |
+|  Delete conversation 'abc12345'?                           |
+|                                                            |
+|    * Messages: 24                                          |
+|    * Project: my-project                                   |
+|                                                            |
+|                            [ Cancel ]  [ Delete ]          |
+|                                                            |
++------------------------------------------------------------+
+```
+
+The "Cancel" button is pre-focused (safe default). The "Delete" button uses
+`Theme.Semantic.Error` (bright red) styling to indicate a destructive action.
+The session ID is drawn bold. Detail bullets use the `*` character.
+
+### Confirmation -- No Project
+
+```
+|    * Messages: 24                                          |
+|    * Project: (none)                                       |
+```
+
+When the session has no associated project, "(none)" is shown in
+`Theme.Semantic.Muted` (dim).
+
+### Confirmation -- With Name
+
+When the session has a user-assigned name:
+
+```
++-- Delete Conversation ------------------------------------+
+|                                                            |
+|  Delete conversation 'Auth work' (abc12345)?               |
+|                                                            |
+|    * Messages: 24                                          |
+|    * Project: my-project                                   |
+|                                                            |
+|                            [ Cancel ]  [ Delete ]          |
+|                                                            |
++------------------------------------------------------------+
 ```
 
 ### Success
 
+After confirming deletion, the MessageBox closes and a success message is
+rendered in the conversation view:
+
 ```
-v Session abc12345 deleted.
+  v Session abc12345 deleted.
 ```
 
 ### Cancelled
 
+After clicking Cancel or pressing Esc, the MessageBox closes:
+
 ```
-Cancelled.
+  Cancelled.
 ```
 
 ### Active Session Error
 
 ```
-Error: Cannot delete the current active session.
+  Error: Cannot delete the current active session.
 ```
 
 ### Not Found
 
 ```
-Error: Session abc12345 not found.
+  Error: Session abc12345 not found.
 ```
 
 ### Usage (no ID)
 
 ```
-Usage: /conversations delete <id>
+  Usage: /conversations delete <id>
 ```
 
 ## States
 
 | State | Condition | Visual Difference |
 |---|---|---|
-| Confirmation | Session found, not active, interactive | Detail summary + confirm prompt (default: No) |
-| Success | User confirms deletion | Green "v" + "Session {id} deleted." |
-| Cancelled | User declines confirmation | Dim "Cancelled." |
-| Active session error | Attempting to delete the current session | Red error: "Cannot delete the current active session." |
+| Confirmation | Session found, not active, interactive | MessageBox with detail + Cancel/Delete buttons |
+| Success | User clicks Delete | MessageBox closes; green checkmark + message in conversation |
+| Cancelled | User clicks Cancel or presses Esc | MessageBox closes; dim "Cancelled." in conversation |
+| Active session error | Attempting to delete the current session | Red error in conversation, no MessageBox |
 | Not found | Session ID doesn't match any saved session | Red error with bold session ID |
 | Usage | No ID argument provided | Yellow "Usage:" hint |
 | Non-interactive bypass | Non-interactive terminal | Skips confirmation, deletes directly |
 
-## Markup Tokens Used
+## Style References
 
-| Token | Style Token (06-style-tokens.md) | Usage on This Screen |
-|---|---|---|
-| `[bold]` | bold (2.2) | Session ID in confirmation message and error messages |
-| `[green]✓[/]` | success-green + success indicator (1.1, 3.1) | Success prefix |
-| `[red]Error:[/]` | error-red (1.1) | Error prefix for active session and not-found |
-| `[dim]Cancelled.[/]` | dim (2.2) | Cancellation message |
-| `[yellow]Usage:[/]` | warning-yellow (1.1) | Usage hint prefix |
+See [06-style-tokens.md](../06-style-tokens.md) for the complete visual language.
+
+**Theme constants used:** `Theme.Modal.BorderScheme` (blue border for the
+MessageBox dialog), `Theme.Semantic.Error` (bright red "Delete" button and
+"Error:" prefix), `Theme.Semantic.Default` with `TextStyle.Bold` (bold
+session ID in confirmation message), `Theme.Semantic.Success` with
+`Theme.Symbols.Check` (green checkmark success prefix),
+`Theme.Semantic.Muted` (dim "Cancelled." message, "(none)" project label),
+`Theme.Semantic.Warning` (yellow "Usage:" prefix).
+
+All interaction occurs within a Terminal.Gui MessageBox. No Terminal.Gui
+suspension or Spectre prompts are needed.
 
 ## Interactive Elements
 
 | Element | Type | Default | Condition |
 |---|---|---|---|
-| Delete confirmation | `SpectreHelpers.Confirm` | No (`false`) | Only shown when `_ui.IsInteractive` is true |
+| Delete confirmation | MessageBox.Query (pattern #15) | Cancel (pre-focused) | Only shown when `_ui.IsInteractive` is true |
+
+## Keyboard
+
+| Key | Action |
+|---|---|
+| Enter | Confirm focused button (Cancel by default) |
+| Tab | Switch between Cancel and Delete buttons |
+| Esc | Cancel (same as clicking Cancel) |
 
 ## Behavior
 
@@ -88,26 +146,27 @@ Usage: /conversations delete <id>
   is returned immediately without loading from the repository.
 
 - **Session loading**: The session is loaded from `ISessionRepository.LoadAsync()`
-  to verify existence and display metadata in the confirmation.
+  to verify existence and display metadata in the confirmation MessageBox.
 
-- **Confirmation flow**: In interactive mode, the confirmation message shows
-  the session ID (bold), message count, and project name (or "(none)").
-  The confirm prompt defaults to "No" to prevent accidental deletion.
+- **Confirmation flow**: In interactive mode, a `MessageBox.Query` is shown
+  with the title "Delete Conversation" and a detail message showing the
+  session ID (bold), message count, and project name (or "(none)").
+  The "Cancel" button is pre-focused to prevent accidental deletion.
 
 - **Non-interactive bypass**: When `_ui.IsInteractive` is false, the
-  confirmation prompt is skipped and deletion proceeds directly. This
+  confirmation MessageBox is skipped and deletion proceeds directly. This
   enables scripted/CI usage.
 
 - **Deletion**: Delegates to `ISessionRepository.DeleteAsync()`. The
   repository handles file removal.
 
-- **Success message**: Uses `SpectreHelpers.Success()`. The session ID is
-  escaped with `Markup.Escape()` before being embedded in the message.
+- **Success message**: Rendered in the conversation view. The session ID is
+  escaped before being embedded in the message.
 
 ## Edge Cases
 
-- **Session ID with special characters**: The ID is `Markup.Escape`d in all
-  rendered contexts (confirmation message, success message, error message).
+- **Session ID with special characters**: The ID is escaped in all rendered
+  contexts (confirmation message, success message, error message).
 
 - **Concurrent deletion**: If the session is deleted by another process
   between the `LoadAsync` and `DeleteAsync` calls, `DeleteAsync` may silently
@@ -120,6 +179,5 @@ Usage: /conversations delete <id>
 
 | Pattern | Reference (07-component-patterns.md) | Usage |
 |---|---|---|
-| Confirmation Prompt | Section 8 | Delete confirmation with default No |
-| Status Message | Section 1 | Success, error, cancelled, and usage messages |
-
+| Delete Confirmation | #15 (Dialog approach) | MessageBox with Cancel/Delete, Cancel pre-focused |
+| Status Message | #7 | Success, error, cancelled, and usage messages |

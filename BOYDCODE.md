@@ -28,7 +28,7 @@ dotnet run --project src/BoydCode.Presentation.Console
 Clean Architecture with strict layer separation. Domain has zero external dependencies.
 
 ```
-Presentation.Console          → Spectre.Console CLI, DI host, ChatCommand
+Presentation.Console          → Terminal.Gui v2 TUI + native drawing, DI host, ChatCommand
 Application                   → AgentOrchestrator, interfaces
 Infrastructure.LLM            → MEAI adapter, multi-provider (Anthropic/Gemini/OpenAI/Ollama)
 Infrastructure.PowerShell     → ConstrainedRunspaceEngine (JEA isolation, in-process mode)
@@ -59,40 +59,46 @@ Domain                        → Entities, records, enums, configuration models
 - **Response envelope and agentic loop** — Every request includes a `tools` array containing the Shell tool's name, description, and JSON parameter schema. The model emits structured `tool_use` content blocks when it decides a command would help. Responses mix `TextBlock` (explanatory text) and `ToolUseBlock` (tool invocation with `Id`, `Name`, `ArgumentsJson`) content blocks. The `stop_reason` field signals intent: `"tool_use"` means there are tool calls to execute (`LlmResponse.HasToolUse`), `"end_turn"` means the turn is complete. The orchestrator runs an agentic loop: stream/render text → detect tool calls → execute via execution engine → add `ToolResultBlock` (keyed by the `tool_use` block's `Id` for correlation) → send updated conversation back to the LLM → repeat until `stop_reason` is `"end_turn"` or max rounds reached
 - **Response streaming** — `StreamChunk` discriminated union (`TextChunk`, `ToolCallChunk`, `CompletionChunk`) enables structured streaming from `ILlmProvider.StreamAsync`; `StreamAccumulator` collects chunks into `LlmResponse` for the tool execution loop; `StreamingResponseConverter` bridges MEAI `ChatResponseUpdate` to domain `StreamChunk`; orchestrator streams by default, falls back to `SendAsync` when `SupportsStreaming` is false
 
-## Spectre.Console Patterns (Presentation.Console)
+## TUI Patterns (Presentation.Console)
 
-UX design docs live in `docs/ux/`. These are prescriptive — they define what the UI SHOULD look like. All implementation must conform to these specs.
+UX design docs live in `docs/ux/`. These are prescriptive — they define what the UI SHOULD look like. All implementation must conform to these specs. **When a task intentionally changes the UX design, the docs in `docs/ux/` MUST be updated before or alongside the code changes.** Do not implement code that contradicts the current spec — update the spec first.
+
+### Technology Stack
+
+**Terminal.Gui** (v2, `2.0.0-develop.5092`) owns the application shell — screen lifecycle, view hierarchy, layout, input handling, windowing. **Spectre.Console** is used for the CLI framework (`Spectre.Console.Cli`: CommandApp, AsyncCommand, CommandSettings, TypeRegistrar), interactive prompts during Terminal.Gui suspension (Select, Confirm, TextPrompt via VimAnsiConsole), stderr error output, and non-TUI/piped fallback rendering. **No Spectre `IRenderable` objects are constructed for display inside Terminal.Gui views** — Terminal.Gui v2 does not support ANSI escape sequences in views (issue #1097).
 
 ### Rendering Principles
 
-- **Compose, don't splat**: Build `IRenderable` trees from Spectre widgets (`Rows`, `Grid`, `Markup`, `Text`, `Rule`, `Panel`). Never emit output line-by-line with repeated `OutputMarkup`/`MarkupLine` calls — that produces fragmented content blocks in the TuiLayout and bypasses Spectre's measurement system
-- **Factory methods returning `IRenderable`**: Follow the `ConversationRenderables` pattern — static factory methods that return composed renderables. Callers do `SpectreHelpers.OutputRenderable(thing)`, not 15 imperative write calls
+- **Native drawing API**: All content inside the TUI uses Terminal.Gui primitives (`SetAttribute`, `Move`, `AddStr`) via `ConversationBlockRenderer` and `BannerRenderer`. No Spectre `IRenderable` inside Terminal.Gui views
+- **Typed content blocks**: `ConversationBlock` sealed records (`UserMessageBlock`, `AssistantTextBlock`, `ToolCallConversationBlock`, `BannerBlock`, etc.) are the content model. `ConversationBlockRenderer` draws them using Terminal.Gui's native API. `BannerRenderer` handles the startup banner with responsive tiers
 - **Data records for renderables**: Decouple renderables from domain types. Pass a flat sealed record (e.g., `BannerData`) so the renderable has zero domain dependencies and is testable by constructing the record directly
-- **Grid for column alignment**: Use `Grid` with `NoWrap()` for fixed-width content alongside variable content. Grid handles padding and vertical alignment — never hand-calculate padding with `new string(' ', n)`
-- **Rows for vertical stacking**: Use `Rows(...)` to compose multiple renderables into a single unit. This is how a banner, conversation turn, or modal overlay should be structured — one `IRenderable` containing children
-- **Let Spectre measure**: Don't read `Console.WindowWidth` inside render methods. Pass terminal dimensions to factory methods; let Spectre's `Measure()` handle available width within layout regions
+- **Slash command output**: List views use column-aligned text via `OutputMarkup` (renders as `PlainTextBlock` in TUI, Spectre markup in non-TUI). Detail/show views use `ShowModal(title, content)` which opens a Terminal.Gui `Window` overlay. No Spectre `Table`, `Grid`, or `Panel` objects are constructed during TUI mode
+- **API reference**: `.claude/terminal-gui-v2-api.md` documents the v2 namespace map, drawing API, key handling, and established codebase patterns
 
-### Layout-Aware Output
+### Windowing Model
 
-All console output in `Presentation.Console` must go through layout-aware methods:
-- `SpectreHelpers.OutputMarkup(markup)` — routes to `TuiLayout.AddContentMarkup` when layout active, `AnsiConsole.MarkupLine` otherwise
-- `SpectreHelpers.OutputLine(text)` — routes to `TuiLayout.AddContentLine` when layout active, `AnsiConsole.WriteLine` otherwise
-- `SpectreHelpers.OutputRenderable(renderable)` — routes to `TuiLayout.AddContent` when layout active, `AnsiConsole.Write` otherwise
-- **Never call `AnsiConsole.MarkupLine`/`AnsiConsole.Write`/`Console.WriteLine` directly** from slash commands or UI rendering code — the Live context will overwrite it on the next frame
+Non-conversation content opens in Terminal.Gui windows, not the conversation view:
+- **Read-only info** (`/help`, `/agent show`, `/jea show`, `/provider show`, `/expand`) → modeless Window via `ShowModal` (agent keeps working, Esc to dismiss)
+- **Interactive workflows** (`/project create`, `/provider setup`, `/jea edit`) → modal Dialog (blocks until complete)
+- **List output** (`/agent list`, `/jea list`, `/project list`, `/provider list`, `/conversations list`) → formatted text in conversation view via `OutputMarkup`
+- **Conversation content** (user messages, assistant responses, tool badges, streaming, banner) → conversation view only
 
 ### Interactive Prompts
 
-Wrap all interactive prompts (`SelectionPrompt`, `TextPrompt`, `Confirm`, etc.) with `SuspendLayout()`/`ResumeLayout()`. Use the `SpectreHelpers` prompt wrappers which handle this automatically. Suspend/Resume is re-entrant (safe to nest).
+For interactive prompts during Terminal.Gui session, prefer Terminal.Gui equivalents (Dialog, ListView, TextField, MessageBox). When Spectre prompts are needed, the Terminal.Gui application must be suspended first.
 
 ### TUI Architecture
 
-The TUI uses a 4-region `Layout` inside `AnsiConsole.Live()`:
-- **Content** (Ratio 1) — conversation history, tool results, banners, slash command output
-- **Indicator** (Size 1) — `Rule` with embedded status text (Thinking/Streaming/Executing/CancelHint)
-- **Input** (Size 1) — rendered input line with cursor
-- **StatusBar** (Size 1) — session metadata
+Terminal.Gui runs on the main thread; the orchestrator runs on a background thread. The threading model:
+- **Main thread**: `TguiApp.Init()` → `TguiApp.Run(toplevel)` (blocks) → `TguiApp.Shutdown()` — with suspend/resume loop for Spectre prompts
+- **Background thread**: `Task.Run(() => orchestrator.RunSessionAsync())` — calls `TguiApp.Invoke()` to marshal UI updates to the main thread
 
-The render loop runs at ~60fps. Worker threads update shared state; the render loop reads it. No direct console writes during Live — everything goes through the content model.
+View hierarchy (`BoydCodeToplevel` extends `Runnable`):
+- **ConversationView** — scrollable conversation history (max 2000 `ConversationBlock` records, custom `OnDrawingContent` drawing)
+- **ActivityBarView** — animated spinner + state label (Idle/Thinking/Streaming/Executing/CancelHint/Modal)
+- **ChatInputView** — event-driven text input with history, cursor, `TaskCompletionSource` for async input
+- **ChatStatusBar** — session metadata (left) + responsive key hints (right)
+- Background threads update views via `TguiApp.Invoke()` for thread safety; streaming tokens are batched to avoid UI thread saturation
 
 ## Target & Toolchain
 

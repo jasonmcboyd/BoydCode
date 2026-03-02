@@ -8,7 +8,7 @@ level.
 The UI uses a **persistent always-on TUI** architecture:
 - The application starts once at session begin and stays active for the entire
   session. All content accumulates in a scrollable conversation view. The
-  four-view hierarchy (ConversationView, ActivityBar, InputView, StatusBar)
+  five-view hierarchy (ConversationView, ActivityBar, InputView, Separator, StatusBar)
   is always visible; there is no mode switching between idle and active states.
 - **Between turns**: Idle state. The activity bar shows a dim Rule. Input via
   the input view at a `> _` prompt. The user can scroll through conversation
@@ -34,6 +34,10 @@ Active between turns when the application is in idle state.
 | Delete | Delete character at cursor | Cursor position < buffer length | No-op at end of buffer |
 | Left Arrow | Move cursor left one position | Cursor position > 0 | No-op at position 0 |
 | Right Arrow | Move cursor right one position | Cursor position < buffer length | No-op at end of buffer |
+| Ctrl+Left Arrow | Move cursor to previous word boundary | Cursor position > 0 | Skips whitespace then word chars |
+| Ctrl+Right Arrow | Move cursor to next word boundary | Cursor position < buffer length | Skips word chars then whitespace |
+| Ctrl+Backspace | Delete from cursor to previous word boundary | Cursor position > 0 | Removes whitespace then word chars |
+| Ctrl+Delete | Delete from cursor to next word boundary | Cursor position < buffer length | Removes word chars then whitespace |
 | Home | Move cursor to position 0 | None | Always succeeds |
 | End | Move cursor to end of buffer | None | Always succeeds |
 | Up Arrow | Navigate to previous history entry | History count > 0 | Saves current buffer on first press; stops at oldest entry |
@@ -384,7 +388,7 @@ There is no per-turn activation or deactivation of the application itself.
     [NotStarted]                (before session initialization)
       |
       | Application starts, view hierarchy created
-      | (ConversationView + ActivityBar + InputView + StatusBar)
+      | (ConversationView + ActivityBar + InputView + Separator + StatusBar)
       v
     [Active]                    (render loop running, views accepting updates)
       |              |

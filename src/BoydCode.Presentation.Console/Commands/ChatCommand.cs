@@ -312,11 +312,14 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
         while (!orchestratorDone)
         {
           TguiApp.IsMouseDisabled = true;
+          // Use Windows console driver to avoid ANSI escape sequence parsing delays
+          // that cause ~1s first-keypress lag (ANSI parser holds input while probing).
+          // Windows driver uses blocking ReadConsoleInput which is more responsive.
+          TguiApp.ForceDriver = "Windows";
+          // Run the main loop at 60 Hz (16ms) instead of the default ~25 Hz (40ms)
+          // to reduce input-to-display latency from ~40ms to ~16ms.
+          TguiApp.MaximumIterationsPerSecond = 60;
           TguiApp.Init();
-          // Disable mouse reporting at the terminal level so text selection works.
-          // IsMouseDisabled prevents Terminal.Gui from processing mouse events;
-          // WriteRaw sends ANSI sequences to tell the terminal to stop sending them.
-          TguiApp.Driver?.WriteRaw("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
           TguiApp.Run(sui.Toplevel);
           TguiApp.Shutdown();
 

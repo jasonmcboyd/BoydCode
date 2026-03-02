@@ -9,6 +9,7 @@ internal sealed class BoydCodeToplevel : Runnable
   public ConversationView ConversationView { get; }
   public ActivityBarView ActivityBar { get; }
   public ChatInputView InputView { get; }
+  public InputSeparatorView Separator { get; }
   public ChatStatusBar StatusBar { get; }
 
   public BoydCodeToplevel()
@@ -21,10 +22,18 @@ internal sealed class BoydCodeToplevel : Runnable
       Height = 1,
     };
 
-    // Input above status bar (1 row)
+    // Separator above status bar (1 row)
+    Separator = new InputSeparatorView
+    {
+      Y = Pos.AnchorEnd(2), // 1 for status + 1 for separator
+      Width = Dim.Fill(),
+      Height = 1,
+    };
+
+    // Input above separator (1 row)
     InputView = new ChatInputView
     {
-      Y = Pos.AnchorEnd(2), // 1 for status + 1 for input
+      Y = Pos.AnchorEnd(3), // 1 for status + 1 for separator + 1 for input
       Width = Dim.Fill(),
       Height = 1,
       CanFocus = true,
@@ -43,10 +52,10 @@ internal sealed class BoydCodeToplevel : Runnable
     {
       Y = 0,
       Width = Dim.Fill(),
-      Height = Dim.Fill(3), // Reserve 3 rows: activity + input + status
+      Height = Dim.Fill(4), // Reserve 4 rows: activity + input + separator + status
     };
 
-    Add(ConversationView, ActivityBar, InputView, StatusBar);
+    Add(ConversationView, ActivityBar, InputView, Separator, StatusBar);
   }
 
   // Global key routing - forward scroll keys to ConversationView

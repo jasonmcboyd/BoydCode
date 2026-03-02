@@ -18,6 +18,7 @@ internal sealed class ChatInputView : View
   private static readonly Attribute PromptAttr = new(ColorName16.Blue, Color.None, TextStyle.Bold);
   private static readonly Attribute TextAttr = new(ColorName16.White, Color.None);
   private static readonly Attribute CursorAttr = new(ColorName16.White, Color.None, TextStyle.Underline);
+  private static readonly Attribute CursorDimAttr = new(ColorName16.DarkGray, Color.None, TextStyle.Underline);
   private static readonly Attribute DisabledAttr = new(ColorName16.DarkGray, Color.None);
   private static readonly Attribute ClearAttr = new(ColorName16.White, Color.None);
   private static readonly Attribute ScrollIndicatorAttr = new(ColorName16.DarkGray, Color.None);
@@ -30,6 +31,12 @@ internal sealed class ChatInputView : View
 
   private TaskCompletionSource<string>? _inputTcs;
   private bool _enabled = true;
+
+  // Cursor blink state — periodic redraw prevents Windows Terminal from
+  // throttling rendering for idle tabs, which causes multi-second lag
+  // on the first keypress after idle.
+  private bool _cursorVisible = true;
+  private object? _blinkTimerToken;
 
   // Cancellation state
   private Action? _onCancelRequested;
@@ -45,6 +52,14 @@ internal sealed class ChatInputView : View
     set
     {
       _enabled = value;
+      if (_enabled)
+      {
+        StartBlinkTimer();
+      }
+      else
+      {
+        StopBlinkTimer();
+      }
       SetNeedsDraw();
     }
   }
@@ -99,6 +114,13 @@ internal sealed class ChatInputView : View
       return true;
     }
 
+    // Ctrl+Backspace: delete word before cursor
+    if (key == Key.Backspace.WithCtrl)
+    {
+      HandleDeleteWordLeft();
+      return true;
+    }
+
     // Backspace: delete char before cursor
     if (key == Key.Backspace)
     {
@@ -106,10 +128,31 @@ internal sealed class ChatInputView : View
       return true;
     }
 
+    // Ctrl+Delete: delete word at cursor
+    if (key == Key.Delete.WithCtrl)
+    {
+      HandleDeleteWordRight();
+      return true;
+    }
+
     // Delete: delete char at cursor
     if (key == Key.Delete)
     {
       HandleDelete();
+      return true;
+    }
+
+    // Ctrl+Left Arrow: move cursor to previous word boundary
+    if (key == Key.CursorLeft.WithCtrl)
+    {
+      MoveCursorWordLeft();
+      return true;
+    }
+
+    // Ctrl+Right Arrow: move cursor to next word boundary
+    if (key == Key.CursorRight.WithCtrl)
+    {
+      MoveCursorWordRight();
       return true;
     }
 
@@ -253,11 +296,11 @@ internal sealed class ChatInputView : View
     SetAttribute(TextAttr);
     AddStr(beforeCursor);
 
-    // Draw cursor character with underline style
+    // Draw cursor character with underline style (blink alternates bright/dim)
     if (cursorInVisible >= 0 && cursorInVisible <= visibleText.Length)
     {
       Move(promptLen + cursorInVisible, 0);
-      SetAttribute(CursorAttr);
+      SetAttribute(_cursorVisible ? CursorAttr : CursorDimAttr);
       AddStr(cursorChar);
 
       // Draw after cursor
@@ -339,6 +382,111 @@ internal sealed class ChatInputView : View
     }
 
     _buffer.Remove(_cursorPos, 1);
+    ResetHistoryNavigation();
+    SetNeedsDraw();
+  }
+
+  // ----- Word navigation -----
+
+  private void MoveCursorWordLeft()
+  {
+    if (_cursorPos <= 0)
+    {
+      return;
+    }
+
+    var pos = _cursorPos;
+
+    // Skip whitespace to the left
+    while (pos > 0 && char.IsWhiteSpace(_buffer[pos - 1]))
+    {
+      pos--;
+    }
+
+    // Skip word characters to the left
+    while (pos > 0 && !char.IsWhiteSpace(_buffer[pos - 1]))
+    {
+      pos--;
+    }
+
+    _cursorPos = pos;
+    SetNeedsDraw();
+  }
+
+  private void MoveCursorWordRight()
+  {
+    if (_cursorPos >= _buffer.Length)
+    {
+      return;
+    }
+
+    var pos = _cursorPos;
+
+    // Skip word characters to the right
+    while (pos < _buffer.Length && !char.IsWhiteSpace(_buffer[pos]))
+    {
+      pos++;
+    }
+
+    // Skip whitespace to the right
+    while (pos < _buffer.Length && char.IsWhiteSpace(_buffer[pos]))
+    {
+      pos++;
+    }
+
+    _cursorPos = pos;
+    SetNeedsDraw();
+  }
+
+  private void HandleDeleteWordLeft()
+  {
+    if (_cursorPos <= 0)
+    {
+      return;
+    }
+
+    var start = _cursorPos;
+
+    // Skip whitespace to the left
+    while (start > 0 && char.IsWhiteSpace(_buffer[start - 1]))
+    {
+      start--;
+    }
+
+    // Skip word characters to the left
+    while (start > 0 && !char.IsWhiteSpace(_buffer[start - 1]))
+    {
+      start--;
+    }
+
+    _buffer.Remove(start, _cursorPos - start);
+    _cursorPos = start;
+    ResetHistoryNavigation();
+    SetNeedsDraw();
+  }
+
+  private void HandleDeleteWordRight()
+  {
+    if (_cursorPos >= _buffer.Length)
+    {
+      return;
+    }
+
+    var end = _cursorPos;
+
+    // Skip word characters to the right
+    while (end < _buffer.Length && !char.IsWhiteSpace(_buffer[end]))
+    {
+      end++;
+    }
+
+    // Skip whitespace to the right
+    while (end < _buffer.Length && char.IsWhiteSpace(_buffer[end]))
+    {
+      end++;
+    }
+
+    _buffer.Remove(_cursorPos, end - _cursorPos);
     ResetHistoryNavigation();
     SetNeedsDraw();
   }
@@ -470,6 +618,36 @@ internal sealed class ChatInputView : View
       TguiApp.RemoveTimeout(_cancelHintTimerToken);
       _cancelHintTimerToken = null;
     }
+  }
+
+  // ----- Cursor blink -----
+
+  private void StartBlinkTimer()
+  {
+    if (_blinkTimerToken is not null)
+    {
+      return;
+    }
+
+    _cursorVisible = true;
+    _blinkTimerToken = TguiApp.AddTimeout(
+      TimeSpan.FromMilliseconds(500),
+      () =>
+      {
+        _cursorVisible = !_cursorVisible;
+        SetNeedsDraw();
+        return _blinkTimerToken is not null;
+      });
+  }
+
+  private void StopBlinkTimer()
+  {
+    if (_blinkTimerToken is not null)
+    {
+      TguiApp.RemoveTimeout(_blinkTimerToken);
+      _blinkTimerToken = null;
+    }
+    _cursorVisible = true;
   }
 
   private static string Truncate(string text, int maxWidth)

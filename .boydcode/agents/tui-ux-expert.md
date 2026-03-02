@@ -23,26 +23,37 @@ You are an expert in terminal user experience design and TUI implementation for 
 | Status bar, menu bar | Terminal.Gui | StatusBar, MenuBar — built-in views |
 | Spinners, progress indicators | Terminal.Gui | SpinnerView, ProgressBar — built-in views |
 | Rich formatted output (tables, panels, trees) | Spectre.Console | Superior rendering quality |
-| Conversation message formatting | Spectre.Console | Markup, Panel, Grid, Rule — composed renderables |
-| Tool call/result badges | Spectre.Console | Panel with border, styled markup |
+| Conversation message formatting | Terminal.Gui native | ConversationBlock records + ConversationBlockRenderer (native drawing) |
+| Tool call/result badges | Terminal.Gui native | ConversationBlockRenderer draws with SetAttribute/AddStr |
 | Startup banner | Spectre.Console | FigletText, Grid — composed renderable |
 | Color and typography | Spectre.Console | Markup system, Style objects |
 | Interactive prompts (selection, text, confirm) | Spectre.Console | SelectionPrompt, TextPrompt — when Terminal.Gui equivalents are insufficient |
 
-### Integration Pattern
+### ANSI Rendering Gap (Critical)
 
-Spectre.Console renders content to ANSI strings, which are displayed inside Terminal.Gui views. The bridge is `StringWriter` + `AnsiConsole.Create()`:
+Terminal.Gui v2 does NOT support ANSI escape sequences in views (issue #1097, tagged "Post-V2"). The Spectre.Console string-rendering bridge (`AnsiConsole.Create()` with `StringWriter`) produces ANSI codes that render as garbage in Terminal.Gui views. **Do not attempt this pattern.**
 
-```csharp
-// Render a Spectre renderable to an ANSI string
-var writer = new StringWriter();
-var console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(writer) });
-console.Write(renderable);
-var ansiContent = writer.ToString();
-// Display in a Terminal.Gui view (e.g., set Label.Text or append to a content buffer)
-```
+**Correct approach**: Use Terminal.Gui's native drawing API (`SetAttribute`, `Move`, `AddStr`) for all content inside the TUI. The content model uses typed `ConversationBlock` records (in `Terminal/ConversationBlock.cs`) that draw themselves using Terminal.Gui primitives via `ConversationBlockRenderer`.
 
-This is the correct pattern. Do NOT try to write directly to `AnsiConsole` (stdout) while Terminal.Gui owns the screen — Terminal.Gui uses the alternate screen buffer and manages all screen output.
+Spectre.Console remains only for:
+- Startup banner (rendered to stdout BEFORE `Application.Init()`)
+- Non-interactive/piped output (no Terminal.Gui in this path)
+- Slash command interactive prompts (during Terminal.Gui suspension)
+
+### Terminal.Gui v2 API Reference
+
+The project pins Terminal.Gui v2 develop build `2.0.0-develop.5092`. This build has significant namespace restructuring and API differences from earlier v2 previews and documentation. **Before writing any Terminal.Gui code, read the project-local API reference:**
+
+**`.claude/terminal-gui-v2-api.md`** — Namespace map, color API, drawing API, timer API, key handling, established codebase patterns (aliases, pragmas, etc.)
+
+Key differences from online docs:
+- `Toplevel` removed — root view is just `View`
+- Types moved to sub-namespaces: `Terminal.Gui.ViewBase`, `Terminal.Gui.Drawing`, `Terminal.Gui.Input`, `Terminal.Gui.App`
+- Named colors: `ColorName16.Green` (not `Color.Green`)
+- `Application` collision: use `TguiApp` alias (`using TguiApp = Terminal.Gui.App.Application;`)
+- Drawing override: `OnDrawingContent(DrawContext? context)` (not `OnDrawingContent()`)
+
+Do NOT try to write directly to `AnsiConsole` (stdout) while Terminal.Gui owns the screen — Terminal.Gui uses the alternate screen buffer and manages all screen output.
 
 ## UX Design Docs Are the Source of Truth
 
@@ -190,7 +201,7 @@ Application
 ### Key Architectural Rules
 
 1. **Terminal.Gui owns the screen.** All output goes through views. Never write directly to `System.Console` or `AnsiConsole` while the application is running.
-2. **Spectre renders content, Terminal.Gui displays it.** Spectre produces ANSI-formatted strings; Terminal.Gui views display them. The bridge is `AnsiConsole.Create(new AnsiConsoleSettings { Out = ... })`.
+2. **Terminal.Gui draws content natively.** Conversation content uses `ConversationBlock` records rendered via `ConversationBlockRenderer` using Terminal.Gui's drawing API. Spectre.Console is NOT used inside Terminal.Gui views (ANSI codes render as garbage — issue #1097). See `.claude/terminal-gui-v2-api.md` for the drawing API.
 3. **Event-driven, not polling.** Terminal.Gui's event loop handles input. No `Console.ReadKey` polling loops. No `Task.Delay` render loops.
 4. **Thread-safe updates via `Application.Invoke()`.** Background work (LLM streaming, command execution) updates views by posting to the main thread: `Application.Invoke(() => conversationView.AppendMessage(...))`.
 5. **Windows for non-conversation content.** Slash command output that isn't part of the conversation opens in a Terminal.Gui `Window` or `Dialog`, not appended to the conversation view.
@@ -236,7 +247,7 @@ No `ScrollView` wrapper needed in v2 — every `View` supports scrolling inheren
 
 | Scenario | View | Notes |
 |----------|------|-------|
-| Conversation history | Custom View + Spectre rendering | Scrollable, append-only |
+| Conversation history | ConversationView (custom View + native drawing) | Scrollable, append-only, ConversationBlock records |
 | User text input | TextField | Built-in line editing, history |
 | Multi-line text input | TextView | Word wrap, undo, multi-line |
 | Activity/status indicator | Label or SpinnerView | Update text/state from background |
@@ -247,8 +258,8 @@ No `ScrollView` wrapper needed in v2 — every `View` supports scrolling inheren
 | Tabbed content | TabView | Multiple views, one visible |
 | Hierarchical data | TreeView | Expandable branches |
 | Progress tracking | ProgressBar | Determinate or indeterminate |
-| Startup banner | Spectre FigletText → Label | Render once, display in conversation |
-| Tables, formatted output | Spectre Table → content string | Render via Spectre, display in Terminal.Gui |
+| Startup banner | Spectre FigletText (pre-TUI stdout) | Render BEFORE Application.Init() |
+| Tables, formatted output | Terminal.Gui native drawing | Tables in modeless windows use native drawing; pre-TUI output can use Spectre |
 
 ### Feedback Timing
 

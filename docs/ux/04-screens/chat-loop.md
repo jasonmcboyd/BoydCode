@@ -71,9 +71,9 @@ they do not affect the application lifecycle.
 
 ## View Hierarchy
 
-### Four Views
+### Five Views
 
-The screen is composed of four views arranged vertically:
+The screen is composed of five views arranged vertically:
 
 ```
 +==============================================================================+
@@ -96,6 +96,9 @@ The screen is composed of four views arranged vertically:
 |  INPUT VIEW  (1+ rows, dynamic height)                                       |
 |  > User types here                                                           |
 +------------------------------------------------------------------------------+
+|  SEPARATOR  (1 row)                                                          |
+|  Dim horizontal rule                                                         |
++------------------------------------------------------------------------------+
 |  STATUS BAR  (1 row)                                                         |
 |  Provider | Model | Project | Branch | Engine    Esc: cancel  /help: commands |
 +==============================================================================+
@@ -108,6 +111,7 @@ The screen is composed of four views arranged vertically:
 | Conversation     | All remaining    | Scrollable conversation history (viewport)    |
 | Activity Bar     | 1 row            | Spinner + state label; dim Rule when idle      |
 | Input            | 1-10 rows        | User text with cursor, grows with wrapping     |
+| Separator        | 1 row            | Dim horizontal rule (static, never changes)    |
 | Status Bar       | 1 row            | Provider, model, project, engine, key hints    |
 
 ### Conversation View Height Calculation
@@ -115,10 +119,10 @@ The screen is composed of four views arranged vertically:
 The conversation view absorbs all remaining vertical space:
 
 ```
-conversationHeight = termHeight - 1 (activity) - inputHeight - 1 (status bar)
+conversationHeight = termHeight - 1 (activity) - inputHeight - 1 (separator) - 1 (status bar)
 ```
 
-Fixed overhead: Activity Bar (1) + Status Bar (1) = 2 rows.
+Fixed overhead: Activity Bar (1) + Separator (1) + Status Bar (1) = 3 rows.
 Input height is dynamic (see Dynamic Input Height below).
 
 ### Dynamic Input Height
@@ -151,6 +155,7 @@ The user sees the conversation history and types in the input view.
 
 ──────────────────────────────────────────────────────────────────────────────────────────── Activity Bar
 > _                                                                                        Input
+──────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands  Status Bar
 ```
 
@@ -189,6 +194,7 @@ Right: `Esc: cancel  /help: commands` (dim).
 
 ──────────────────────────────────────────────────────────────── Activity Bar
 > _                                                             Input
+──────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project      /help                 Status Bar
 ```
 
@@ -213,6 +219,7 @@ only the activity bar and conversation view update.
 
 ⠿ Streaming...                                                                                Activity Bar
 > _                                                                                            Input
+────────────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands   Status Bar
 ```
 
@@ -238,6 +245,7 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /he
 
 ⠿ Thinking...                                                                                 Activity Bar
 > _                                                                                            Input
+────────────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands   Status Bar
 ```
 
@@ -260,6 +268,7 @@ continues showing the conversation history viewport.
 
 ⠿ Executing... (1.2s)                                                                         Activity Bar
 > _                                                                                            Input
+────────────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands   Status Bar
 ```
 
@@ -288,6 +297,7 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /he
 
 ⠿ Streaming...                                                                                Activity Bar
 > _                                                                                            Input
+────────────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands   Status Bar
 ```
 
@@ -308,6 +318,7 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /he
 
 Press Esc again to cancel                                                                      Activity Bar
 > _                                                                                            Input
+────────────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands   Status Bar
 ```
 
@@ -337,6 +348,7 @@ shifts and a "more content below" indicator appears.
 ↓ More content below                                                                           Conversation
 ──────────────────────────────────────────────────────────────────────────────────────────────── Activity Bar
 > _                                                                                            Input
+────────────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands   Status Bar
 ```
 
@@ -364,6 +376,7 @@ When the user types a long message that wraps, the input view grows.
 > I'd like you to refactor the authentication module to use the new IAuthProvider interface.    Input
   Please update all three methods -- AuthenticateAsync, ValidateTokenAsync, and                    (3 lines)
   RefreshCredentialsAsync -- to use dependency injection instead of direct instantiation._
+────────────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands   Status Bar
 ```
 
@@ -372,7 +385,7 @@ Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /he
 1. The input view size grows from 1 to `min(10, termHeight/4)` as the
    user types text that wraps.
 2. The conversation view shrinks correspondingly (maintaining the height
-   invariant: `conversationHeight = termHeight - 2 - inputHeight`).
+   invariant: `conversationHeight = termHeight - 3 - inputHeight`).
 3. When the user submits (Enter), the input view returns to 1 line and
    the conversation view expands.
 4. The activity bar always maintains its position between the conversation
@@ -431,6 +444,7 @@ over the conversation view. The layout structure is unchanged underneath.
 +----------------------------------------------------------------------------------------------------------+
 Esc to dismiss                                                                                 Activity Bar
 > _                                                                                            Input
+────────────────────────────────────────────────────────────────────────────────────────────────── Separator
 Gemini | gemini-2.5-pro | my-project | main | InProcess         Esc: cancel  /help: commands   Status Bar
 ```
 
@@ -542,6 +556,9 @@ When the user has submitted messages during an active turn, a yellow
 | Backspace | Delete character before cursor |
 | Delete | Delete character at cursor |
 | Left / Right Arrow | Move cursor within line |
+| Ctrl+Left / Right Arrow | Move cursor by word |
+| Ctrl+Backspace | Delete word before cursor |
+| Ctrl+Delete | Delete word at cursor |
 | Home / End | Jump to start / end of line |
 | Up / Down Arrow | Navigate command history |
 | PageUp | Scroll conversation view up 5 blocks |

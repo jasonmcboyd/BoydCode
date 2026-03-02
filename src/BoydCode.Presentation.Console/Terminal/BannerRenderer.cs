@@ -421,7 +421,7 @@ internal static class BannerRenderer
   {
     view.SetAttribute(DimAttr);
     view.Move(0, y);
-    view.AddStr(new string('\u2500', Math.Min(width, 120)));
+    view.AddStr(new string('\u2500', width));
   }
 
   // -----------------------------------------------

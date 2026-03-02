@@ -605,7 +605,7 @@ public sealed class ContextSlashCommand : ISlashCommand
       string summaryText;
       try
       {
-        TuiLayout.Current?.SetActivity(ActivityState.Thinking);
+        SetActivityState(ActivityState.Thinking);
         try
         {
           var response = await _activeProvider.Provider!.SendAsync(request, ct);
@@ -613,7 +613,7 @@ public sealed class ContextSlashCommand : ISlashCommand
         }
         finally
         {
-          TuiLayout.Current?.SetActivity(ActivityState.Idle);
+          SetActivityState(ActivityState.Idle);
         }
       }
       catch (Exception ex) when (ex is not OperationCanceledException)
@@ -629,7 +629,7 @@ public sealed class ContextSlashCommand : ISlashCommand
         return;
       }
 
-      // Render preview panel and token savings
+      // Render preview inline and token savings
       var afterTokens = summaryText.Length / 4;
 
       if (afterTokens > availableTokens)
@@ -637,14 +637,13 @@ public sealed class ContextSlashCommand : ISlashCommand
         SpectreHelpers.Warning($"Summary exceeds budget ({afterTokens:N0} > {availableTokens:N0} tokens). Applying it may leave limited space for new conversation turns.");
       }
 
-      var previewPanel = new Panel(new Text(summaryText))
-          .Header("[bold]Summary Preview[/]")
-          .Border(BoxBorder.Rounded)
-          .BorderColor(Color.Grey)
-          .Padding(2, 1)
-          .Expand();
-
-      SpectreHelpers.OutputRenderable(previewPanel);
+      SpectreHelpers.OutputLine();
+      SpectreHelpers.OutputMarkup("[bold]Summary Preview[/]");
+      SpectreHelpers.OutputLine();
+      foreach (var line in summaryText.Split('\n'))
+      {
+        SpectreHelpers.OutputMarkup($"  {Markup.Escape(line)}");
+      }
       SpectreHelpers.OutputMarkup(string.Format(
           CultureInfo.InvariantCulture,
           "  [dim]{0} messages \u2192 1 summary message (estimated {1:N0} \u2192 {2:N0} tokens)[/]",
@@ -798,14 +797,14 @@ public sealed class ContextSlashCommand : ISlashCommand
     Conversation compacted;
     try
     {
-      TuiLayout.Current?.SetActivity(ActivityState.Thinking);
+      SetActivityState(ActivityState.Thinking);
       try
       {
         compacted = await _contextCompactor.CompactAsync(conversation, targetTokens, ct);
       }
       finally
       {
-        TuiLayout.Current?.SetActivity(ActivityState.Idle);
+        SetActivityState(ActivityState.Idle);
       }
     }
     catch (Exception ex) when (ex is not OperationCanceledException)
@@ -872,7 +871,7 @@ public sealed class ContextSlashCommand : ISlashCommand
     string autoName;
     try
     {
-      TuiLayout.Current?.SetActivity(ActivityState.Thinking);
+      SetActivityState(ActivityState.Thinking);
       try
       {
         var nameRequest = new LlmRequest
@@ -894,7 +893,7 @@ public sealed class ContextSlashCommand : ISlashCommand
       }
       finally
       {
-        TuiLayout.Current?.SetActivity(ActivityState.Idle);
+        SetActivityState(ActivityState.Idle);
       }
     }
     catch (Exception ex) when (ex is not OperationCanceledException)
@@ -937,6 +936,17 @@ public sealed class ContextSlashCommand : ISlashCommand
   // ──────────────────────────────────────────────
   //  HELPERS
   // ──────────────────────────────────────────────
+
+#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
+  private static void SetActivityState(ActivityState state)
+  {
+    var ui = SpectreUserInterface.Current;
+    if (ui?.Toplevel is not null)
+    {
+      global::Terminal.Gui.App.Application.Invoke(() => ui.Toplevel.ActivityBar.SetState(state));
+    }
+  }
+#pragma warning restore CS0618
 
   internal static List<ConversationMessage> ExtractRecentExchange(IReadOnlyList<ConversationMessage> messages)
   {

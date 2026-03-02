@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using TguiApp = Terminal.Gui.App.Application;
 
 // Ensure UTF-8 output encoding so Spectre.Console detects Unicode capability correctly.
 // Windows terminals (Windows Terminal, ConPTY) render Unicode fine, but .NET defaults to
@@ -45,6 +46,11 @@ AppDomain.CurrentDomain.ProcessExit += (_, _) =>
 {
   try
   {
+    // Shutdown Terminal.Gui if running
+#pragma warning disable CS0618 // Using legacy static Application API
+    try { TguiApp.Shutdown(); } catch { /* best effort */ }
+#pragma warning restore CS0618
+
     // Dispose UI first (tears down layout, stops input reader)
     var ui = host?.Services.GetService<IUserInterface>();
     if (ui is IDisposable disposableUi)

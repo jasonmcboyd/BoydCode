@@ -168,8 +168,9 @@ public sealed class ProjectSlashCommand : ISlashCommand
       return;
     }
 
-    var table = SpectreHelpers.SimpleTable("Name", "Dirs", "Docker", "Last used");
-    table.Columns[1].RightAligned();
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup($"{"Name",-22}{"Dirs",6}  {"Docker",-28}{"Last used"}");
+    SpectreHelpers.OutputMarkup(new string('\u2500', 75));
 
     foreach (var name in names)
     {
@@ -187,25 +188,23 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
       var execLabel = project.DockerImage is not null
           ? project.RequireContainer
-              ? $"{Markup.Escape(project.DockerImage)} [dim](required)[/]"
-              : Markup.Escape(project.DockerImage)
-          : "[dim]--[/]";
+              ? $"{project.DockerImage} (required)"
+              : project.DockerImage
+          : "--";
 
       var lastUsed = project.LastAccessedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
       var isAmbient = name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase);
-      var displayName = isAmbient
-          ? $"{Markup.Escape(name)} [dim](ambient)[/]"
-          : Markup.Escape(name);
+      var displayName = isAmbient ? $"{name} (ambient)" : name;
 
-      table.AddRow(
-          displayName,
-          dirCount,
-          execLabel,
-          lastUsed);
+      SpectreHelpers.OutputMarkup(
+        $"{Markup.Escape(displayName),-22}" +
+        $"{dirCount,6}  " +
+        $"{Markup.Escape(execLabel),-28}" +
+        $"{lastUsed}");
     }
 
-    SpectreHelpers.OutputRenderable(table);
+    SpectreHelpers.OutputLine();
   }
 
   // ──────────────────────────────────────────────
@@ -239,40 +238,29 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
     SpectreHelpers.OutputLine();
 
-    // Grid section
-    var grid = SpectreHelpers.InfoGrid();
-
+    // Info rows
     var isAmbient = name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase);
     var displayName = isAmbient ? $"{project.Name} (ambient)" : project.Name;
-    SpectreHelpers.AddInfoRow(grid, "Project", displayName);
-
-    SpectreHelpers.AddInfoRow(grid,
-        "Created", project.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-        "Last used", project.LastAccessedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
+    SpectreHelpers.OutputMarkup($"  [dim]{"Project",-14}[/][cyan]{Markup.Escape(displayName)}[/]");
+    SpectreHelpers.OutputMarkup(
+      $"  [dim]{"Created",-14}[/][cyan]{project.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}[/]" +
+      $"    [dim]{"Last used",-12}[/][cyan]{project.LastAccessedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}[/]");
 
     if (project.Execution is not null)
     {
-      SpectreHelpers.AddInfoRow(grid, "Engine", project.Execution.Mode.ToString());
+      SpectreHelpers.OutputMarkup($"  [dim]{"Engine",-14}[/][cyan]{Markup.Escape(project.Execution.Mode.ToString())}[/]");
     }
 
     if (project.DockerImage is not null)
     {
-      SpectreHelpers.AddInfoRow(grid, "Docker", project.DockerImage);
+      SpectreHelpers.OutputMarkup($"  [dim]{"Docker",-14}[/][cyan]{Markup.Escape(project.DockerImage)}[/]");
     }
 
     if (project.DockerImage is not null || project.RequireContainer)
     {
-      var containerMarkup = project.RequireContainer
-          ? new Markup("[green]Required[/]")
-          : new Markup("[yellow]Optional[/]");
-      grid.AddRow(
-          new Markup("[dim]Container[/]"),
-          containerMarkup,
-          new Markup(""),
-          new Markup(""));
+      var containerStatus = project.RequireContainer ? "Required" : "Optional";
+      SpectreHelpers.OutputMarkup($"  [dim]{"Container",-14}[/]{containerStatus}");
     }
-
-    SpectreHelpers.OutputRenderable(grid);
 
     // Directories
     if (project.Directories.Count > 0)
@@ -282,31 +270,22 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
       var resolvedDirs = _directoryResolver.Resolve(project.Directories);
 
-      var dirTable = new Table()
-          .Border(TableBorder.None)
-          .HideHeaders()
-          .AddColumn(new TableColumn("Path"))
-          .AddColumn(new TableColumn("Access").RightAligned())
-          .AddColumn(new TableColumn("Git"));
-
       foreach (var dir in resolvedDirs)
       {
-        var accessStyle = dir.AccessLevel == DirectoryAccessLevel.ReadOnly
-            ? "[yellow]ReadOnly[/]"
-            : "[green]ReadWrite[/]";
+        var accessLabel = dir.AccessLevel == DirectoryAccessLevel.ReadOnly
+            ? "ReadOnly"
+            : "ReadWrite";
 
         var gitInfo = dir switch
         {
-          { Exists: false } => "[red]missing[/]",
-          { IsGitRepository: true, GitBranch: not null } => $"[cyan]{Markup.Escape(dir.GitBranch)}[/]",
-          { IsGitRepository: true } => "[dim]git[/]",
-          _ => "[dim]--[/]",
+          { Exists: false } => "missing",
+          { IsGitRepository: true, GitBranch: not null } => dir.GitBranch,
+          { IsGitRepository: true } => "git",
+          _ => "--",
         };
 
-        dirTable.AddRow($"- {Markup.Escape(dir.Path)}", accessStyle, gitInfo);
+        SpectreHelpers.OutputMarkup($"    - {Markup.Escape(dir.Path),-40} {accessLabel,-12} {gitInfo}");
       }
-
-      SpectreHelpers.OutputRenderable(new Padder(dirTable).PadLeft(4));
     }
 
     // Meta prompt
@@ -611,22 +590,20 @@ public sealed class ProjectSlashCommand : ISlashCommand
     if (project.Directories.Count > 0)
     {
       SpectreHelpers.OutputLine();
-      var dirTable = SpectreHelpers.SimpleTable("#", "Path", "Access");
-      dirTable.Columns[0].RightAligned();
+      SpectreHelpers.OutputMarkup($"  {"#",3}  {"Path",-40}  {"Access"}");
+      SpectreHelpers.OutputMarkup($"  {new string('\u2500', 55)}");
 
       for (var i = 0; i < project.Directories.Count; i++)
       {
         var dir = project.Directories[i];
-        var accessStyle = dir.AccessLevel == DirectoryAccessLevel.ReadOnly
-            ? "[yellow]ReadOnly[/]"
-            : "[green]ReadWrite[/]";
-        dirTable.AddRow(
-            (i + 1).ToString(CultureInfo.InvariantCulture),
-            Markup.Escape(dir.Path),
-            accessStyle);
+        var accessLabel = dir.AccessLevel == DirectoryAccessLevel.ReadOnly
+            ? "ReadOnly"
+            : "ReadWrite";
+        SpectreHelpers.OutputMarkup(
+          $"  {(i + 1).ToString(CultureInfo.InvariantCulture),3}  {Markup.Escape(dir.Path),-40}  {accessLabel}");
       }
 
-      SpectreHelpers.OutputRenderable(dirTable);
+      SpectreHelpers.OutputLine();
     }
     else
     {

@@ -6,9 +6,13 @@ using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
 using BoydCode.Domain.LlmRequests;
 using BoydCode.Presentation.Console.Renderables;
+using BoydCode.Presentation.Console.Terminal;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Invoke/Init/Shutdown/RequestStop - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -231,7 +235,7 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
           ToolNames, llmConfig.Model, llmConfig.ProviderType);
     }
 
-    // Render the banner BEFORE layout activation so it writes directly to the terminal
+    // Render the banner to stdout BEFORE Terminal.Gui takes over
     int termHeight;
     try { termHeight = System.Console.WindowHeight; } catch { termHeight = 24; }
     var termWidth = AnsiConsole.Profile.Width;
@@ -260,28 +264,88 @@ public sealed class ChatCommand : AsyncCommand<ChatCommand.Settings>
       ResumeTimestamp = !string.IsNullOrEmpty(settings.ResumeSessionId) ? session.CreatedAt : null,
     };
 
-    var bannerRenderable = BannerRenderable.Build(bannerData);
-
-    // Activate persistent layout first, then add banner as first content block
+    // Activate layout (creates Terminal.Gui views)
     _ui.ActivateLayout();
-    SpectreHelpers.OutputRenderable(bannerRenderable);
 
+    // Add banner as first conversation content (inside Terminal.Gui, not stdout)
+    if (_ui is SpectreUserInterface sui2 && sui2.Toplevel is not null)
+    {
+      sui2.Toplevel.ConversationView.AddBlock(new BannerBlock(bannerData));
+      sui2.Toplevel.ConversationView.AddBlock(new SeparatorBlock());
+    }
+
+    Exception? orchestratorException = null;
+    var orchestratorDone = false;
+
+    // Run the orchestrator on a background thread
+    var orchestratorTask = Task.Run(async () =>
+    {
+      try
+      {
+        await _orchestrator.RunSessionAsync(session);
+        await _conversationLogger.LogSessionEndAsync("quit");
+      }
+      catch (Exception ex)
+      {
+        orchestratorException = ex;
+        if (ex is not OperationCanceledException)
+        {
+          await _conversationLogger.LogSessionEndAsync("error");
+        }
+        else
+        {
+          await _conversationLogger.LogSessionEndAsync("cancel");
+        }
+      }
+      finally
+      {
+        orchestratorDone = true;
+        TguiApp.Invoke(() => TguiApp.RequestStop());
+      }
+    });
+
+    // Main thread: run Terminal.Gui event loop with suspend/resume support
     try
     {
-      await _orchestrator.RunSessionAsync(session);
-      await _conversationLogger.LogSessionEndAsync("quit");
-    }
-    catch (OperationCanceledException)
-    {
-      await _conversationLogger.LogSessionEndAsync("cancel");
-      // User cancelled (Ctrl+C) — exit gracefully
-      return (int)ExitCode.UserCancelled;
-    }
-    catch (Exception ex)
-    {
-      await _conversationLogger.LogSessionEndAsync("error");
-      _ui.RenderError($"Fatal error: {ex.Message}\n  Suggestion: The session has ended. Please restart boydcode.");
-      return (int)ExitCode.GeneralError;
+      if (_ui is SpectreUserInterface sui && sui.Toplevel is not null)
+      {
+        while (!orchestratorDone)
+        {
+          TguiApp.IsMouseDisabled = true;
+          TguiApp.Init();
+          // Disable mouse reporting at the terminal level so text selection works.
+          // IsMouseDisabled prevents Terminal.Gui from processing mouse events;
+          // WriteRaw sends ANSI sequences to tell the terminal to stop sending them.
+          TguiApp.Driver?.WriteRaw("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
+          TguiApp.Run(sui.Toplevel);
+          TguiApp.Shutdown();
+
+          if (sui.IsSuspendRequested)
+          {
+            sui.SignalSuspended();
+            sui.WaitForResume();
+            sui.SignalResumed();
+          }
+        }
+      }
+      else
+      {
+        // Non-interactive fallback: just await the orchestrator directly
+        await orchestratorTask;
+      }
+
+      await orchestratorTask;
+
+      if (orchestratorException is OperationCanceledException)
+      {
+        return (int)ExitCode.UserCancelled;
+      }
+
+      if (orchestratorException is not null)
+      {
+        _ui.RenderError($"Fatal error: {orchestratorException.Message}\n  Suggestion: The session has ended. Please restart boydcode.");
+        return (int)ExitCode.GeneralError;
+      }
     }
     finally
     {

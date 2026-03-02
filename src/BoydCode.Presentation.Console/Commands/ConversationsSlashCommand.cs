@@ -88,23 +88,19 @@ public sealed class ConversationsSlashCommand : ISlashCommand
         .Take(20)
         .ToList();
 
-    var table = SpectreHelpers.SimpleTable("ID", "Name", "Project", "Messages", "Last accessed", "Preview");
-    table.Columns[3].RightAligned();
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup($"{"ID",-12}{"Name",-18}{"Project",-14}{"Msgs",5}  {"Last accessed",-18}{"Preview"}");
+    SpectreHelpers.OutputMarkup(new string('\u2500', 90));
 
     foreach (var session in sorted)
     {
       var isCurrent = _activeSession.Session?.Id == session.Id;
       var idDisplay = isCurrent
-          ? $"[green]{Markup.Escape(session.Id)}[/] [dim]*[/]"
-          : Markup.Escape(session.Id);
+          ? $"{session.Id} *"
+          : session.Id;
 
-      var nameDisplay = session.Name is not null
-          ? Markup.Escape(session.Name)
-          : "[dim]--[/]";
-
-      var projectDisplay = session.ProjectName is not null
-          ? Markup.Escape(session.ProjectName)
-          : "[dim]--[/]";
+      var nameDisplay = session.Name ?? "--";
+      var projectDisplay = session.ProjectName ?? "--";
 
       var messageCount = session.Conversation.Messages.Count
           .ToString(CultureInfo.InvariantCulture);
@@ -113,19 +109,25 @@ public sealed class ConversationsSlashCommand : ISlashCommand
           .ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
       var preview = session.Name is not null
-          ? "[dim]--[/]"
-          : GetFirstMessagePreview(session, 60);
+          ? "--"
+          : GetFirstMessagePreviewPlain(session, 30);
 
-      table.AddRow(idDisplay, nameDisplay, projectDisplay, messageCount, lastAccessed, preview);
+      SpectreHelpers.OutputMarkup(
+        $"{Markup.Escape(idDisplay),-12}" +
+        $"{Markup.Escape(nameDisplay),-18}" +
+        $"{Markup.Escape(projectDisplay),-14}" +
+        $"{messageCount,5}  " +
+        $"{lastAccessed,-18}" +
+        $"{Markup.Escape(preview)}");
     }
-
-    SpectreHelpers.OutputRenderable(table);
 
     if (_activeSession.Session is not null)
     {
       SpectreHelpers.OutputLine();
       SpectreHelpers.Dim("  * = current session");
     }
+
+    SpectreHelpers.OutputLine();
   }
 
   private async Task HandleShowAsync(string[] tokens, CancellationToken ct)
@@ -147,20 +149,19 @@ public sealed class ConversationsSlashCommand : ISlashCommand
 
     SpectreHelpers.OutputLine();
 
-    var grid = SpectreHelpers.InfoGrid();
-    SpectreHelpers.AddInfoRow(grid, "Session", session.Id);
+    // Info rows
+    SpectreHelpers.OutputMarkup($"  [dim]{"Session",-14}[/][cyan]{Markup.Escape(session.Id)}[/]");
     if (session.Name is not null)
     {
-      SpectreHelpers.AddInfoRow(grid, "Name", session.Name);
+      SpectreHelpers.OutputMarkup($"  [dim]{"Name",-14}[/][cyan]{Markup.Escape(session.Name)}[/]");
     }
-    SpectreHelpers.AddInfoRow(grid,
-        "Created", session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-        "Last used", session.LastAccessedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
-    SpectreHelpers.AddInfoRow(grid,
-        "Project", session.ProjectName ?? "(none)",
-        "Messages", session.Conversation.Messages.Count.ToString(CultureInfo.InvariantCulture));
-    SpectreHelpers.AddInfoRow(grid, "Directory", session.WorkingDirectory);
-    SpectreHelpers.OutputRenderable(grid);
+    SpectreHelpers.OutputMarkup(
+      $"  [dim]{"Created",-14}[/][cyan]{session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}[/]" +
+      $"    [dim]{"Last used",-12}[/][cyan]{session.LastAccessedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}[/]");
+    SpectreHelpers.OutputMarkup(
+      $"  [dim]{"Project",-14}[/][cyan]{Markup.Escape(session.ProjectName ?? "(none)")}[/]" +
+      $"    [dim]{"Messages",-12}[/][cyan]{session.Conversation.Messages.Count.ToString(CultureInfo.InvariantCulture)}[/]");
+    SpectreHelpers.OutputMarkup($"  [dim]{"Directory",-14}[/][cyan]{Markup.Escape(session.WorkingDirectory)}[/]");
 
     // Show first 5 messages as preview
     var messages = session.Conversation.Messages;
@@ -291,18 +292,17 @@ public sealed class ConversationsSlashCommand : ISlashCommand
     SpectreHelpers.Success($"Cleared {count} message(s) from conversation history.");
   }
 
-  private static string GetFirstMessagePreview(Domain.Entities.Session session, int maxLength)
+  private static string GetFirstMessagePreviewPlain(Domain.Entities.Session session, int maxLength)
   {
     var firstUserMessage = session.Conversation.Messages
         .FirstOrDefault(m => m.Role == MessageRole.User);
 
     if (firstUserMessage is null)
     {
-      return "[dim]--[/]";
+      return "--";
     }
 
-    var text = GetMessageText(firstUserMessage, maxLength);
-    return $"[dim]{Markup.Escape(text)}[/]";
+    return GetMessageText(firstUserMessage, maxLength);
   }
 
   private static string GetMessageText(Domain.Entities.ConversationMessage message, int maxLength)

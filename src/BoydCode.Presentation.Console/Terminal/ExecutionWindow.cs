@@ -1,7 +1,4 @@
 using System.Diagnostics;
-using BoydCode.Presentation.Console.Renderables;
-using Spectre.Console;
-using Spectre.Console.Rendering;
 
 namespace BoydCode.Presentation.Console.Terminal;
 
@@ -9,7 +6,6 @@ internal sealed class ExecutionWindow
 {
   private const int MaxBufferLines = 10_000;
 
-  private readonly TuiLayout? _layout;
   private readonly Stopwatch _stopwatch = new();
   private readonly Queue<string> _outputBuffer = new();
 
@@ -17,10 +13,11 @@ internal sealed class ExecutionWindow
   private List<string>? _lastOutputBuffer;
   private bool _lastOutputExpanded;
 
-  public ExecutionWindow(TuiLayout? layout = null)
-  {
-    _layout = layout;
-  }
+  /// <summary>
+  /// Callback to add a conversation block to the UI. Set by SpectreUserInterface
+  /// when the Terminal.Gui toplevel is available.
+  /// </summary>
+  internal Action<ConversationBlock>? AddBlock { get; set; }
 
   public int OutputLineCount => _outputBuffer.Count;
 
@@ -28,7 +25,6 @@ internal sealed class ExecutionWindow
   {
     _outputBuffer.Clear();
     _stopwatch.Restart();
-    _layout?.SetActivity(ActivityState.Executing);
   }
 
   public void AddOutputLine(string line)
@@ -43,7 +39,6 @@ internal sealed class ExecutionWindow
   public TimeSpan Stop()
   {
     _stopwatch.Stop();
-    _layout?.SetActivity(ActivityState.Idle);
     return _stopwatch.Elapsed;
   }
 
@@ -60,34 +55,32 @@ internal sealed class ExecutionWindow
     if (lineCount > 5)
     {
       // Collapsed view with /expand hint
-      var badge = isError
-        ? ConversationRenderables.ToolResultError(toolName, lineCount, duration)
-        : ConversationRenderables.ToolResultSuccess(toolName, lineCount, duration);
-      _layout?.AddContent(badge);
-      _layout?.AddContent(ConversationRenderables.ExpandHint());
+      var badge = new ToolResultConversationBlock(toolName, lineCount, duration, isError);
+      AddBlock?.Invoke(badge);
+      AddBlock?.Invoke(new ExpandHintBlock());
     }
     else if (lineCount > 0)
     {
       // Show the lines inline, then summary
       foreach (var line in _lastOutputBuffer)
       {
-        _layout?.AddContentLine($"  {line}");
+        AddBlock?.Invoke(new PlainTextBlock($"  {line}"));
       }
-      var badge = isError
-        ? ConversationRenderables.ToolResultError(toolName, lineCount, duration)
-        : ConversationRenderables.ToolResultSuccess(toolName, lineCount, duration);
-      _layout?.AddContent(badge);
+      var badge = new ToolResultConversationBlock(toolName, lineCount, duration, isError);
+      AddBlock?.Invoke(badge);
     }
     else
     {
-      // No output — show summary or error message
+      // No output -- show summary or error message
       if (isError)
       {
-        _layout?.AddContent(ConversationRenderables.ToolResultErrorWithMessage(toolName, Truncate(result, 500)));
+        var msg = Truncate(result, 500);
+        AddBlock?.Invoke(new ToolResultConversationBlock(toolName, 0, msg, IsError: true));
       }
       else
       {
-        _layout?.AddContent(ConversationRenderables.ToolResultSuccessWithSummary(toolName, Truncate(result, 200)));
+        var msg = Truncate(result, 200);
+        AddBlock?.Invoke(new ToolResultConversationBlock(toolName, 0, msg, IsError: false));
       }
     }
   }

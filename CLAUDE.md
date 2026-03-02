@@ -28,7 +28,7 @@ dotnet run --project src/BoydCode.Presentation.Console
 Clean Architecture with strict layer separation. Domain has zero external dependencies.
 
 ```
-Presentation.Console          → Terminal.Gui TUI + Spectre.Console rendering, DI host, ChatCommand
+Presentation.Console          → Terminal.Gui v2 TUI + native drawing, DI host, ChatCommand
 Application                   → AgentOrchestrator, interfaces
 Infrastructure.LLM            → MEAI adapter, multi-provider (Anthropic/Gemini/OpenAI/Ollama)
 Infrastructure.PowerShell     → ConstrainedRunspaceEngine (JEA isolation, in-process mode)
@@ -65,20 +65,23 @@ UX design docs live in `docs/ux/`. These are prescriptive — they define what t
 
 ### Technology Stack
 
-**Terminal.Gui** (v2) owns the application shell — screen lifecycle, view hierarchy, layout, input handling, windowing. **Spectre.Console** renders rich content (tables, panels, rules, markup) into Terminal.Gui views via string rendering. They are complementary.
+**Terminal.Gui** (v2, `2.0.0-develop.5092`) owns the application shell — screen lifecycle, view hierarchy, layout, input handling, windowing. **Spectre.Console** is used for the CLI framework (`Spectre.Console.Cli`: CommandApp, AsyncCommand, CommandSettings, TypeRegistrar), interactive prompts during Terminal.Gui suspension (Select, Confirm, TextPrompt via VimAnsiConsole), stderr error output, and non-TUI/piped fallback rendering. **No Spectre `IRenderable` objects are constructed for display inside Terminal.Gui views** — Terminal.Gui v2 does not support ANSI escape sequences in views (issue #1097).
 
 ### Rendering Principles
 
-- **Compose, don't splat**: Build `IRenderable` trees from Spectre widgets (`Rows`, `Grid`, `Markup`, `Text`, `Rule`, `Panel`). Render to string via `AnsiConsole.Create()` with `StringWriter`, then display in Terminal.Gui views
-- **Factory methods returning `IRenderable`**: Follow the `ConversationRenderables` pattern — static factory methods that return composed renderables
+- **Native drawing API**: All content inside the TUI uses Terminal.Gui primitives (`SetAttribute`, `Move`, `AddStr`) via `ConversationBlockRenderer` and `BannerRenderer`. No Spectre `IRenderable` inside Terminal.Gui views
+- **Typed content blocks**: `ConversationBlock` sealed records (`UserMessageBlock`, `AssistantTextBlock`, `ToolCallConversationBlock`, `BannerBlock`, etc.) are the content model. `ConversationBlockRenderer` draws them using Terminal.Gui's native API. `BannerRenderer` handles the startup banner with responsive tiers
 - **Data records for renderables**: Decouple renderables from domain types. Pass a flat sealed record (e.g., `BannerData`) so the renderable has zero domain dependencies and is testable by constructing the record directly
+- **Slash command output**: List views use column-aligned text via `OutputMarkup` (renders as `PlainTextBlock` in TUI, Spectre markup in non-TUI). Detail/show views use `ShowModal(title, content)` which opens a Terminal.Gui `Window` overlay. No Spectre `Table`, `Grid`, or `Panel` objects are constructed during TUI mode
+- **API reference**: `.claude/terminal-gui-v2-api.md` documents the v2 namespace map, drawing API, key handling, and established codebase patterns
 
 ### Windowing Model
 
 Non-conversation content opens in Terminal.Gui windows, not the conversation view:
-- **Read-only info** (`/help`, `/agent list`, `/jea show`, `/expand`) → modeless Window (agent keeps working, Esc to dismiss)
+- **Read-only info** (`/help`, `/agent show`, `/jea show`, `/provider show`, `/expand`) → modeless Window via `ShowModal` (agent keeps working, Esc to dismiss)
 - **Interactive workflows** (`/project create`, `/provider setup`, `/jea edit`) → modal Dialog (blocks until complete)
-- **Conversation content** (user messages, assistant responses, tool badges, streaming) → conversation view only
+- **List output** (`/agent list`, `/jea list`, `/project list`, `/provider list`, `/conversations list`) → formatted text in conversation view via `OutputMarkup`
+- **Conversation content** (user messages, assistant responses, tool badges, streaming, banner) → conversation view only
 
 ### Interactive Prompts
 
@@ -86,12 +89,16 @@ For interactive prompts during Terminal.Gui session, prefer Terminal.Gui equival
 
 ### TUI Architecture
 
-Terminal.Gui `Application` runs for the entire session. The view hierarchy:
-- **ConversationView** — scrollable conversation history (messages, tool output, streaming)
-- **ActivityBar** — spinner + state label (Thinking/Streaming/Executing)
-- **InputView** — user text input with line editing
-- **StatusBar** — session metadata + key hints
-- Background threads update views via `Application.Invoke()` for thread safety
+Terminal.Gui runs on the main thread; the orchestrator runs on a background thread. The threading model:
+- **Main thread**: `TguiApp.Init()` → `TguiApp.Run(toplevel)` (blocks) → `TguiApp.Shutdown()` — with suspend/resume loop for Spectre prompts
+- **Background thread**: `Task.Run(() => orchestrator.RunSessionAsync())` — calls `TguiApp.Invoke()` to marshal UI updates to the main thread
+
+View hierarchy (`BoydCodeToplevel` extends `Runnable`):
+- **ConversationView** — scrollable conversation history (max 2000 `ConversationBlock` records, custom `OnDrawingContent` drawing)
+- **ActivityBarView** — animated spinner + state label (Idle/Thinking/Streaming/Executing/CancelHint/Modal)
+- **ChatInputView** — event-driven text input with history, cursor, `TaskCompletionSource` for async input
+- **ChatStatusBar** — session metadata (left) + responsive key hints (right)
+- Background threads update views via `TguiApp.Invoke()` for thread safety; streaming tokens are batched to avoid UI thread saturation
 
 ## Target & Toolchain
 

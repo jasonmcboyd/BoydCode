@@ -8,10 +8,12 @@ namespace BoydCode.Presentation.Console.Commands;
 public sealed class AgentSlashCommand : ISlashCommand
 {
   private readonly IAgentRegistry _agentRegistry;
+  private readonly IUserInterface _ui;
 
-  public AgentSlashCommand(IAgentRegistry agentRegistry)
+  public AgentSlashCommand(IAgentRegistry agentRegistry, IUserInterface ui)
   {
     _agentRegistry = agentRegistry;
+    _ui = ui;
   }
 
   public SlashCommandDescriptor Descriptor { get; } = new(
@@ -61,23 +63,21 @@ public sealed class AgentSlashCommand : ISlashCommand
       return;
     }
 
-    var table = new Table()
-        .Border(TableBorder.Rounded)
-        .AddColumn("Name")
-        .AddColumn("Description")
-        .AddColumn("Scope")
-        .AddColumn("Model");
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup($"{"Name",-16}{"Description",-25}{"Scope",-10}{"Model"}");
+    SpectreHelpers.OutputMarkup(new string('\u2500', 60));
 
     foreach (var agent in agents)
     {
-      table.AddRow(
-          Markup.Escape(agent.Name),
-          Markup.Escape(agent.Description),
-          agent.Scope.ToString(),
-          agent.ModelOverride ?? "[dim]default[/]");
+      var model = agent.ModelOverride ?? "-";
+      SpectreHelpers.OutputMarkup(
+        $"{Markup.Escape(agent.Name),-16}" +
+        $"{Markup.Escape(agent.Description),-25}" +
+        $"{agent.Scope,-10}" +
+        $"{Markup.Escape(model)}");
     }
 
-    SpectreHelpers.OutputRenderable(table);
+    SpectreHelpers.OutputLine();
   }
 
   private void HandleShow(string? name)
@@ -99,19 +99,15 @@ public sealed class AgentSlashCommand : ISlashCommand
         ? string.Concat(agent.Instructions.AsSpan(0, 500), "...")
         : agent.Instructions;
 
-    var grid = new Grid().AddColumn().AddColumn();
-    grid.AddRow("[bold]Name[/]", Markup.Escape(agent.Name));
-    grid.AddRow("[bold]Description[/]", Markup.Escape(agent.Description));
-    grid.AddRow("[bold]Scope[/]", agent.Scope.ToString());
-    grid.AddRow("[bold]Model[/]", agent.ModelOverride ?? "default");
-    grid.AddRow("[bold]Max Turns[/]", agent.MaxTurns?.ToString(CultureInfo.InvariantCulture) ?? "default (25)");
-    grid.AddRow("[bold]Source[/]", Markup.Escape(agent.SourcePath));
-    grid.AddRow("[bold]Instructions[/]", Markup.Escape(instructions));
+    var content =
+      $"Name:         {agent.Name}\n" +
+      $"Description:  {agent.Description}\n" +
+      $"Scope:        {agent.Scope}\n" +
+      $"Model:        {agent.ModelOverride ?? "default"}\n" +
+      $"Max Turns:    {agent.MaxTurns?.ToString(CultureInfo.InvariantCulture) ?? "default (25)"}\n" +
+      $"Source:       {agent.SourcePath}\n\n" +
+      $"Instructions:\n{instructions}";
 
-    var panel = new Panel(grid)
-        .Header($"[bold]Agent: {Markup.Escape(agent.Name)}[/]")
-        .Border(BoxBorder.Rounded);
-
-    SpectreHelpers.OutputRenderable(panel);
+    _ui.ShowModal($"Agent: {agent.Name}", content);
   }
 }

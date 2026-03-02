@@ -3,6 +3,9 @@ using System.Globalization;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 using Spectre.Console.Rendering;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console;
 
@@ -103,9 +106,9 @@ internal static class SpectreHelpers
   //  LAYOUT SUSPEND/RESUME HELPERS
   // ──────────────────────────────────────────────
 
-  private static void SuspendLayout() => TuiLayout.Current?.Suspend();
+  private static void SuspendLayout() => SpectreUserInterface.Current?.SuspendLayout();
 
-  private static void ResumeLayout() => TuiLayout.Current?.Resume();
+  private static void ResumeLayout() => SpectreUserInterface.Current?.ResumeLayout();
 
   // ──────────────────────────────────────────────
   //  LAYOUT-AWARE OUTPUT
@@ -113,9 +116,11 @@ internal static class SpectreHelpers
 
   internal static void OutputMarkup(string markup)
   {
-    if (TuiLayout.Current is { IsActive: true } layout)
+    var ui = SpectreUserInterface.Current;
+    if (ui is { IsSessionActive: true, Toplevel: not null })
     {
-      layout.AddContentMarkup(markup);
+      var text = StripMarkup(markup);
+      TguiApp.Invoke(() => ui.Toplevel?.ConversationView.AddBlock(new PlainTextBlock(text)));
     }
     else
     {
@@ -125,9 +130,10 @@ internal static class SpectreHelpers
 
   internal static void OutputLine(string text = "")
   {
-    if (TuiLayout.Current is { IsActive: true } layout)
+    var ui = SpectreUserInterface.Current;
+    if (ui is { IsSessionActive: true, Toplevel: not null })
     {
-      layout.AddContentLine(text);
+      TguiApp.Invoke(() => ui.Toplevel?.ConversationView.AddBlock(new SeparatorBlock()));
     }
     else
     {
@@ -135,19 +141,6 @@ internal static class SpectreHelpers
         AnsiConsole.WriteLine(text);
       else
         AnsiConsole.WriteLine();
-    }
-  }
-
-  internal static void OutputRenderable(IRenderable renderable)
-  {
-    if (TuiLayout.Current is { IsActive: true } layout)
-    {
-      layout.AddContent(renderable);
-    }
-    else
-    {
-      AnsiConsole.Write(renderable);
-      AnsiConsole.WriteLine();
     }
   }
 
@@ -179,8 +172,20 @@ internal static class SpectreHelpers
 
   public static void Section(string title)
   {
-    OutputLine();
-    OutputRenderable(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
+    var ui = SpectreUserInterface.Current;
+    if (ui is { IsSessionActive: true, Toplevel: not null })
+    {
+      TguiApp.Invoke(() =>
+      {
+        ui.Toplevel?.ConversationView.AddBlock(new SeparatorBlock());
+        ui.Toplevel?.ConversationView.AddBlock(new SectionBlock(title));
+      });
+    }
+    else
+    {
+      AnsiConsole.WriteLine();
+      AnsiConsole.Write(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -342,64 +347,6 @@ internal static class SpectreHelpers
   }
 
   // ──────────────────────────────────────────────
-  //  TABLE FACTORY
-  // ──────────────────────────────────────────────
-
-  public static Table SimpleTable(params string[] headers)
-  {
-    var table = new Table().Border(TableBorder.Simple);
-    foreach (var header in headers)
-    {
-      table.AddColumn(new TableColumn($"[bold]{Markup.Escape(header)}[/]"));
-    }
-
-    return table;
-  }
-
-  internal static Grid InfoGrid()
-  {
-    var grid = new Grid();
-    grid.AddColumn(new GridColumn().PadLeft(2).PadRight(1).NoWrap());
-    grid.AddColumn(new GridColumn().PadRight(4));
-    grid.AddColumn(new GridColumn().PadRight(1).NoWrap());
-    grid.AddColumn(new GridColumn());
-    return grid;
-  }
-
-  internal static void AddInfoRow(Grid grid, string label, string value)
-  {
-    grid.AddRow(
-        new Markup($"[dim]{Markup.Escape(label)}[/]"),
-        new Markup($"[cyan]{Markup.Escape(value)}[/]"),
-        new Markup(""),
-        new Markup(""));
-  }
-
-  internal static void AddInfoRow(Grid grid, string label1, string value1, string label2, string value2)
-  {
-    grid.AddRow(
-        new Markup($"[dim]{Markup.Escape(label1)}[/]"),
-        new Markup($"[cyan]{Markup.Escape(value1)}[/]"),
-        new Markup($"[dim]{Markup.Escape(label2)}[/]"),
-        new Markup($"[cyan]{Markup.Escape(value2)}[/]"));
-  }
-
-  internal static Grid CompactInfoGrid()
-  {
-    var grid = new Grid();
-    grid.AddColumn(new GridColumn().PadLeft(1).PadRight(1).NoWrap());
-    grid.AddColumn(new GridColumn());
-    return grid;
-  }
-
-  internal static void AddCompactInfoRow(Grid grid, string label, string value)
-  {
-    grid.AddRow(
-        new Markup($"[dim]{Markup.Escape(label)}[/]"),
-        new Markup($"[cyan]{Markup.Escape(value)}[/]"));
-  }
-
-  // ──────────────────────────────────────────────
   //  COMPACT FORMATTING
   // ──────────────────────────────────────────────
 
@@ -415,4 +362,19 @@ internal static class SpectreHelpers
 
   internal static string FormatPercent(double value) =>
     $"{value:F1}%";
+
+  // ──────────────────────────────────────────────
+  //  TEXT HELPERS
+  // ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Strip Spectre.Console markup tags from a string, returning plain text.
+  /// </summary>
+  private static string StripMarkup(string markup)
+  {
+    // Simple tag-stripping: remove [color], [/], [bold], etc.
+    var result = System.Text.RegularExpressions.Regex.Replace(markup, @"\[/?[^\]]*\]", "");
+    return result;
+  }
+
 }

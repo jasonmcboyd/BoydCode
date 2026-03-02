@@ -29,17 +29,20 @@ public sealed partial class JeaSlashCommand : ISlashCommand
   private readonly JeaProfileComposer _composer;
   private readonly ActiveProject _activeProject;
   private readonly IProjectRepository _projectRepository;
+  private readonly IUserInterface _ui;
 
   public JeaSlashCommand(
       IJeaProfileStore store,
       JeaProfileComposer composer,
       ActiveProject activeProject,
-      IProjectRepository projectRepository)
+      IProjectRepository projectRepository,
+      IUserInterface ui)
   {
     _store = store;
     _composer = composer;
     _activeProject = activeProject;
     _projectRepository = projectRepository;
+    _ui = ui;
   }
 
   public SlashCommandDescriptor Descriptor { get; } = new(
@@ -138,9 +141,9 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       return;
     }
 
-    var table = SpectreHelpers.SimpleTable("Name", "Language Mode", "Commands", "Modules");
-    table.Columns[2].RightAligned();
-    table.Columns[3].RightAligned();
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup($"{"Name",-22}{"Language Mode",-22}{"Commands",8}  {"Modules",7}");
+    SpectreHelpers.OutputMarkup(new string('\u2500', 65));
 
     foreach (var name in names)
     {
@@ -151,18 +154,16 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       }
 
       var isGlobal = name.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase);
-      var displayName = isGlobal
-          ? $"{Markup.Escape(name)} [dim](global)[/]"
-          : Markup.Escape(name);
+      var displayName = isGlobal ? $"{name} (global)" : name;
 
-      table.AddRow(
-          displayName,
-          profile.LanguageMode.ToString(),
-          profile.Entries.Count.ToString(CultureInfo.InvariantCulture),
-          profile.Modules.Count.ToString(CultureInfo.InvariantCulture));
+      SpectreHelpers.OutputMarkup(
+        $"{Markup.Escape(displayName),-22}" +
+        $"{profile.LanguageMode,-22}" +
+        $"{profile.Entries.Count.ToString(CultureInfo.InvariantCulture),8}  " +
+        $"{profile.Modules.Count.ToString(CultureInfo.InvariantCulture),7}");
     }
 
-    SpectreHelpers.OutputRenderable(table);
+    SpectreHelpers.OutputLine();
   }
 
   // ──────────────────────────────────────────────
@@ -188,15 +189,9 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     }
 
     var filePath = GetProfileFilePath(name);
+    var content = BuildProfileDetailText(profile, filePath);
 
-    var panel = new Panel(BuildProfileDetail(profile, filePath))
-        .Header($"[bold]{Markup.Escape(profile.Name)}[/]")
-        .Border(BoxBorder.Rounded)
-        .Padding(1, 0);
-
-    SpectreHelpers.OutputLine();
-    SpectreHelpers.OutputRenderable(panel);
-    SpectreHelpers.OutputLine();
+    _ui.ShowModal(profile.Name, content);
   }
 
   // ──────────────────────────────────────────────
@@ -672,47 +667,47 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     return true;
   }
 
-  private static Markup BuildProfileDetail(JeaProfile profile, string filePath)
+  private static string BuildProfileDetailText(JeaProfile profile, string filePath)
   {
     var lines = new List<string>
         {
-            $"[bold]Language mode:[/]  {profile.LanguageMode}",
+            $"Language mode:  {profile.LanguageMode}",
         };
 
     if (profile.AllowedCommands.Count > 0)
     {
       lines.Add("");
-      lines.Add("[bold]Allowed commands:[/]");
+      lines.Add("Allowed commands:");
       foreach (var command in profile.AllowedCommands)
       {
-        lines.Add($"  [green]\u2713[/] {Markup.Escape(command)}");
+        lines.Add($"  \u2713 {command}");
       }
     }
 
     if (profile.DeniedCommands.Count > 0)
     {
       lines.Add("");
-      lines.Add("[bold]Denied commands:[/]");
+      lines.Add("Denied commands:");
       foreach (var command in profile.DeniedCommands)
       {
-        lines.Add($"  [red]x[/] {Markup.Escape(command)}");
+        lines.Add($"  x {command}");
       }
     }
 
     if (profile.Modules.Count > 0)
     {
       lines.Add("");
-      lines.Add("[bold]Modules:[/]");
+      lines.Add("Modules:");
       foreach (var module in profile.Modules)
       {
-        lines.Add($"  {Markup.Escape(module)}");
+        lines.Add($"  {module}");
       }
     }
 
     lines.Add("");
-    lines.Add($"[dim]File: {Markup.Escape(filePath)}[/]");
+    lines.Add($"File: {filePath}");
 
-    return new Markup(string.Join("\n", lines));
+    return string.Join("\n", lines);
   }
 
   private static string GetProfileFilePath(string name)

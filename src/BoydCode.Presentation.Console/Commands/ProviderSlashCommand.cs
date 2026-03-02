@@ -73,7 +73,9 @@ public sealed class ProviderSlashCommand : ISlashCommand
 
   private async Task HandleListAsync(CancellationToken ct)
   {
-    var table = SpectreHelpers.SimpleTable("Provider", "Status", "Model", "API Key");
+    SpectreHelpers.OutputLine();
+    SpectreHelpers.OutputMarkup($"{"Provider",-14}{"Status",-10}{"Model",-30}{"API Key"}");
+    SpectreHelpers.OutputMarkup(new string('\u2500', 70));
 
     var allProfiles = await _providerConfigStore.GetAllAsync(ct);
     var profileLookup = allProfiles.ToDictionary(p => p.ProviderType);
@@ -85,27 +87,23 @@ public sealed class ProviderSlashCommand : ISlashCommand
       var isActive = _activeProvider.IsConfigured
           && _activeProvider.Config!.ProviderType == providerType;
 
-      var status = isActive
-          ? "[green bold]active[/]"
-          : profile?.ApiKey is not null
-              ? "[dim]ready[/]"
-              : "[dim]--[/]";
+      var status = isActive ? "active" : profile?.ApiKey is not null ? "ready" : "--";
 
       var model = profile?.DefaultModel
           ?? ProviderDefaults.DefaultModelFor(providerType);
 
       var apiKeyDisplay = profile?.ApiKey is { Length: > 0 } key
           ? MaskApiKey(key)
-          : "[dim](not set)[/]";
+          : "(not set)";
 
-      table.AddRow(
-          Markup.Escape(providerType.ToString()),
-          status,
-          Markup.Escape(model),
-          apiKeyDisplay);
+      SpectreHelpers.OutputMarkup(
+        $"{Markup.Escape(providerType.ToString()),-14}" +
+        $"{Markup.Escape(status),-10}" +
+        $"{Markup.Escape(model),-30}" +
+        $"{Markup.Escape(apiKeyDisplay)}");
     }
 
-    SpectreHelpers.OutputRenderable(table);
+    SpectreHelpers.OutputLine();
   }
 
   private async Task HandleSetupAsync(string[] tokens, CancellationToken ct)
@@ -176,19 +174,12 @@ public sealed class ProviderSlashCommand : ISlashCommand
     var config = _activeProvider.Config!;
     var capabilities = _activeProvider.Provider!.Capabilities;
 
-    var lines = new List<string>
-        {
-            $"[bold]Provider:[/]       {Markup.Escape(config.ProviderType.ToString())}",
-            $"[bold]Model:[/]          {Markup.Escape(config.Model)}",
-            $"[bold]Context window:[/] {capabilities.MaxContextWindowTokens.ToString("N0", CultureInfo.InvariantCulture)} tokens",
-        };
+    var content =
+      $"Provider:       {config.ProviderType}\n" +
+      $"Model:          {config.Model}\n" +
+      $"Context window: {capabilities.MaxContextWindowTokens.ToString("N0", CultureInfo.InvariantCulture)} tokens";
 
-    var panel = new Panel(new Markup(string.Join("\n", lines)))
-        .Header("[bold]Active Provider[/]")
-        .Border(BoxBorder.Rounded)
-        .Padding(1, 0, 1, 0);
-
-    SpectreHelpers.OutputRenderable(panel);
+    _ui.ShowModal("Active Provider", content);
   }
 
   private async Task HandleRemoveAsync(string[] tokens, CancellationToken ct)
@@ -246,9 +237,9 @@ public sealed class ProviderSlashCommand : ISlashCommand
   {
     if (key.Length <= 4)
     {
-      return Markup.Escape(key);
+      return key;
     }
 
-    return Markup.Escape(key[..4] + "****");
+    return key[..4] + "****";
   }
 }

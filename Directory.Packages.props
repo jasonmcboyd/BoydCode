@@ -31,6 +31,7 @@
     <!-- UI -->
     <PackageVersion Include="Spectre.Console" Version="0.49.1" />
     <PackageVersion Include="Spectre.Console.Cli" Version="0.49.1" />
+    <PackageVersion Include="Terminal.Gui" Version="2.0.0-develop.5092" />
 
     <!-- Serialization -->
     <PackageVersion Include="System.Text.Json" Version="10.0.3" />

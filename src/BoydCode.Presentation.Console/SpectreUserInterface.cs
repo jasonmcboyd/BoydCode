@@ -1,7 +1,12 @@
+using System.Text;
 using BoydCode.Application.Interfaces;
-using BoydCode.Presentation.Console.Renderables;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
+using Terminal.Gui.ViewBase;
+using Terminal.Gui.Views;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Invoke/Init/Shutdown/RequestStop - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console;
 
@@ -10,27 +15,69 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   private readonly IAnsiConsole _stderr = AnsiConsole.Create(
       new AnsiConsoleSettings { Out = new AnsiConsoleOutput(System.Console.Error) });
 
-  private readonly TuiLayout _layout = new();
   private readonly ExecutionWindow _executionWindow;
-  private AsyncInputReader? _inputReader;
 
   private bool _streamingStarted;
   private bool _isExecuting;
+  private bool _isThinking;
   private bool _sessionActive; // true for entire chat session
 
   // Track previous activity state for restoring after cancel hint
   private ActivityState _preHintActivityState = ActivityState.Idle;
 
+  // Terminal.Gui views
+  private BoydCodeToplevel? _toplevel;
+
+  // Modal overlay
+  private Window? _modalWindow;
+
+  // Streaming token batching
+  private readonly StringBuilder _pendingTokens = new();
+  private readonly object _tokenLock = new();
+  private bool _flushScheduled;
+
+  // Suspend/resume coordination for Spectre prompts
+  private ManualResetEventSlim? _suspendedSignal;
+  private ManualResetEventSlim? _resumeSignal;
+  private ManualResetEventSlim? _resumedSignal;
+  private volatile bool _suspendRequested;
+
   public SpectreUserInterface()
   {
-    _executionWindow = new ExecutionWindow(_layout);
+    _executionWindow = new ExecutionWindow();
   }
+
+  public static SpectreUserInterface? Current { get; private set; }
 
   public bool IsInteractive => AnsiConsole.Profile.Capabilities.Interactive;
 
   public string? StatusLine { get; set; }
 
   public string? StaleSettingsWarning { get; set; }
+
+  internal BoydCodeToplevel? Toplevel => _toplevel;
+  internal bool IsSessionActive => _sessionActive;
+  internal bool IsSuspendRequested => _suspendRequested;
+
+  internal void SignalSuspended()
+  {
+    _suspendedSignal?.Set();
+  }
+
+  internal void WaitForResume()
+  {
+    _resumeSignal?.Wait();
+  }
+
+  internal void SignalResumed()
+  {
+    _suspendRequested = false;
+    _resumedSignal?.Set();
+  }
+
+  // -----------------------------------------------
+  //  Input
+  // -----------------------------------------------
 
   public async Task<string> GetUserInputAsync(CancellationToken ct = default)
   {
@@ -40,11 +87,9 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
       return line ?? "/quit";
     }
 
-    if (_sessionActive && _inputReader is not null)
+    if (_sessionActive && _toplevel is not null)
     {
-      _inputReader.ShowPrompt();
-      // Async input: read from Channel (user can type while agent works)
-      return await _inputReader.ReadLineAsync(ct);
+      return await _toplevel.InputView.GetUserInputAsync(ct);
     }
 
     // Fallback: blocking Spectre.Console prompt
@@ -63,6 +108,10 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
             .AllowEmpty());
     return input;
   }
+
+  // -----------------------------------------------
+  //  Tool preview formatting (pure helpers)
+  // -----------------------------------------------
 
   private static string FormatToolPreview(string toolName, string argumentsJson)
   {
@@ -113,61 +162,105 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     return root.TryGetProperty(name, out var prop) ? prop.GetString() : null;
   }
 
+  // -----------------------------------------------
+  //  Render methods — marshal to UI thread
+  // -----------------------------------------------
+
   public void RenderUserMessage(string message)
   {
-    _layout.AddContent(ConversationRenderables.UserMessage(message));
+    InvokeOnUiThread(() => _toplevel!.ConversationView.AddBlock(new UserMessageBlock(message)));
   }
 
   public void RenderAssistantText(string text)
   {
-    _layout.AddContent(ConversationRenderables.AssistantText(text));
-    _layout.AddContent(ConversationRenderables.TurnSeparator());
+    InvokeOnUiThread(() =>
+    {
+      _toplevel!.ConversationView.AddBlock(new AssistantTextBlock(text));
+      _toplevel!.ConversationView.AddBlock(new SeparatorBlock());
+    });
   }
 
   public void RenderStreamingToken(string token)
   {
     if (!_streamingStarted)
     {
-      _layout.BeginStream();
-      _layout.AppendStreamText("  " + token);
-      _layout.SetActivity(ActivityState.Streaming);
       _streamingStarted = true;
+      _isThinking = false;
+      InvokeOnUiThread(() =>
+      {
+        _toplevel?.ConversationView.BeginStream();
+        _toplevel?.ActivityBar.SetState(ActivityState.Streaming);
+      });
     }
-    else
+
+    lock (_tokenLock)
     {
-      _layout.AppendStreamText(token);
+      _pendingTokens.Append(token);
+      if (!_flushScheduled)
+      {
+        _flushScheduled = true;
+        TguiApp.Invoke(() =>
+        {
+          string text;
+          lock (_tokenLock)
+          {
+            text = _pendingTokens.ToString();
+            _pendingTokens.Clear();
+            _flushScheduled = false;
+          }
+          _toplevel?.ConversationView.AppendStreamText(text);
+        });
+      }
     }
   }
 
   public void RenderStreamingComplete()
   {
+    // Flush any remaining tokens
+    lock (_tokenLock)
+    {
+      if (_pendingTokens.Length > 0)
+      {
+        var remaining = _pendingTokens.ToString();
+        _pendingTokens.Clear();
+        InvokeOnUiThread(() => _toplevel?.ConversationView.AppendStreamText(remaining));
+      }
+      _flushScheduled = false;
+    }
+
     _streamingStarted = false;
-    _layout.EndStream();
-    _layout.SetActivity(ActivityState.Idle);
-    _layout.AddContentLine("");
+    InvokeOnUiThread(() =>
+    {
+      _toplevel?.ConversationView.EndStream();
+      _toplevel?.ConversationView.AddBlock(new SeparatorBlock());
+      _toplevel?.ActivityBar.SetState(ActivityState.Idle);
+    });
   }
 
   public void RenderThinkingStart()
   {
-    _layout.SetActivity(ActivityState.Thinking);
+    _isThinking = true;
+    InvokeOnUiThread(() => _toplevel?.ActivityBar.SetState(ActivityState.Thinking));
   }
 
   public void RenderThinkingStop()
   {
-    _layout.SetActivity(ActivityState.Idle);
+    _isThinking = false;
+    InvokeOnUiThread(() => _toplevel?.ActivityBar.SetState(ActivityState.Idle));
   }
 
   public void RenderToolExecution(string toolName, string argumentsJson)
   {
     var preview = FormatToolPreview(toolName, argumentsJson);
-    var badge = ConversationRenderables.ToolCallBadge(toolName, preview);
-    _layout.AddContent(badge);
+    InvokeOnUiThread(() =>
+        _toplevel?.ConversationView.AddBlock(new ToolCallConversationBlock(toolName, preview)));
   }
 
   public void RenderExecutingStart()
   {
     _isExecuting = true;
     _executionWindow.Start();
+    InvokeOnUiThread(() => _toplevel?.ActivityBar.SetState(ActivityState.Executing));
   }
 
   public void RenderExecutingStop()
@@ -175,6 +268,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     if (!_isExecuting) return;
     _isExecuting = false;
     _executionWindow.Stop();
+    InvokeOnUiThread(() => _toplevel?.ActivityBar.SetState(ActivityState.Idle));
   }
 
   public void RenderOutputLine(string line)
@@ -192,13 +286,15 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     var output = _executionWindow.GetLastOutput();
     if (output is null)
     {
-      _layout.AddContentMarkup("[dim]No tool output to expand.[/]");
+      InvokeOnUiThread(() =>
+          _toplevel?.ConversationView.AddBlock(new StatusMessageBlock("No tool output to expand.", MessageKind.Hint)));
       return;
     }
 
     if (_executionWindow.IsLastOutputExpanded)
     {
-      _layout.AddContentMarkup("[dim]Output already expanded.[/]");
+      InvokeOnUiThread(() =>
+          _toplevel?.ConversationView.AddBlock(new StatusMessageBlock("Output already expanded.", MessageKind.Hint)));
       return;
     }
 
@@ -223,157 +319,312 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     {
       _stderr.MarkupLine($"[red bold]Error:[/] [red]{Markup.Escape(message)}[/]");
     }
+
+    if (_sessionActive && _toplevel is not null)
+    {
+      InvokeOnUiThread(() =>
+          _toplevel!.ConversationView.AddBlock(new StatusMessageBlock(message, MessageKind.Error)));
+    }
   }
 
   public void RenderHint(string hint)
   {
-    _layout.AddContentMarkup($"  [dim italic]{Markup.Escape(hint)}[/]");
-    _layout.AddContentLine("");
+    InvokeOnUiThread(() =>
+    {
+      _toplevel?.ConversationView.AddBlock(new StatusMessageBlock(hint, MessageKind.Hint));
+      _toplevel?.ConversationView.AddBlock(new SeparatorBlock());
+    });
   }
 
   public void RenderSuccess(string message)
   {
-    _layout.AddContentMarkup($"  [green]\u2713[/] {Markup.Escape(message)}");
+    InvokeOnUiThread(() =>
+        _toplevel?.ConversationView.AddBlock(new StatusMessageBlock(message, MessageKind.Success)));
   }
 
   public void RenderWarning(string message)
   {
-    _layout.AddContentMarkup($"[yellow]Warning:[/] {Markup.Escape(message)}");
+    InvokeOnUiThread(() =>
+        _toplevel?.ConversationView.AddBlock(new StatusMessageBlock(message, MessageKind.Warning)));
   }
 
   public void RenderSection(string title)
   {
-    _layout.AddContentLine("");
-    _layout.AddContent(new Rule($"[bold]{Markup.Escape(title)}[/]").LeftJustified().RuleStyle("dim"));
+    InvokeOnUiThread(() =>
+    {
+      _toplevel?.ConversationView.AddBlock(new SeparatorBlock());
+      _toplevel?.ConversationView.AddBlock(new SectionBlock(title));
+    });
   }
 
   public void RenderTokenUsage(int inputTokens, int outputTokens)
   {
-    var renderable = ConversationRenderables.TokenUsage(inputTokens, outputTokens);
-    _layout.AddContent(renderable);
+    InvokeOnUiThread(() =>
+        _toplevel?.ConversationView.AddBlock(new TokenUsageBlock(inputTokens, outputTokens)));
   }
 
   public void RenderWelcome(string model, string workingDirectory)
   {
+    // Render to stdout BEFORE Terminal.Gui takes over (called before ActivateLayout)
     AnsiConsole.Write(new FigletText("BoydCode").Color(Color.Blue));
     AnsiConsole.MarkupLine("[bold]AI Coding Assistant with JEA-Constrained PowerShell[/]");
     AnsiConsole.MarkupLine($"Model: [cyan]{Markup.Escape(model)}[/]");
     AnsiConsole.MarkupLine($"Working directory: [cyan]{Markup.Escape(workingDirectory)}[/]");
-    AnsiConsole.MarkupLine("[dim]Type /quit to exit. Commands execute in a constrained PowerShell runspace.[/]");
+    AnsiConsole.MarkupLine("[dim]Type /quit to exit.[/]");
     AnsiConsole.WriteLine();
   }
 
   public void RenderMarkdown(string markdown)
   {
-    var panel = new Panel(Markup.Escape(markdown)).Border(BoxBorder.Rounded);
-    _layout.AddContent(panel);
+    InvokeOnUiThread(() =>
+        _toplevel?.ConversationView.AddBlock(new PlainTextBlock(markdown)));
   }
+
+  // -----------------------------------------------
+  //  Cancel hint
+  // -----------------------------------------------
 
   public void RenderCancelHint()
   {
-    // Track what the activity was before the hint so we can restore it
-    _preHintActivityState = _isExecuting
-      ? ActivityState.Executing
-      : _streamingStarted
-        ? ActivityState.Streaming
-        : ActivityState.Idle;
-
-    _layout.SetActivity(ActivityState.CancelHint);
+    _preHintActivityState = CurrentActivityState();
+    InvokeOnUiThread(() => _toplevel?.ActivityBar.SetState(ActivityState.CancelHint));
   }
 
   public void ClearCancelHint()
   {
-    // Restore the previous activity state
-    _layout.SetActivity(_preHintActivityState);
+    InvokeOnUiThread(() => _toplevel?.ActivityBar.SetState(_preHintActivityState));
   }
+
+  // -----------------------------------------------
+  //  Modal windows
+  // -----------------------------------------------
 
   public void ShowModal(string title, string content)
   {
-    var panel = new Panel(Markup.Escape(content))
-      .Header($"[bold]{Markup.Escape(title)}[/]")
-      .Border(BoxBorder.Rounded)
-      .BorderColor(Color.Blue)
-      .Expand();
+    InvokeOnUiThread(() =>
+    {
+      if (_toplevel is null) return;
+      DismissCurrentModal();
 
-    _layout.ShowModal(panel);
+      var window = new Window
+      {
+        Title = title,
+        X = 2,
+        Y = 1,
+        Width = Dim.Fill(2),
+        Height = Dim.Fill(2),
+      };
+
+      var textView = new TextView
+      {
+        Text = content,
+        ReadOnly = true,
+        X = 0,
+        Y = 0,
+        Width = Dim.Fill(),
+        Height = Dim.Fill(),
+      };
+
+      window.Add(textView);
+      _modalWindow = window;
+      _toplevel.Add(window);
+      _toplevel.ActivityBar.SetState(ActivityState.Modal);
+    });
   }
 
   public void DismissModal()
   {
-    _layout.DismissModal();
+    InvokeOnUiThread(() => DismissCurrentModal());
   }
 
-  public bool IsModalActive => _layout.IsModalActive;
+  public bool IsModalActive => _modalWindow is not null;
+
+  private void DismissCurrentModal()
+  {
+    if (_modalWindow is not null && _toplevel is not null)
+    {
+      _toplevel.Remove(_modalWindow);
+      _modalWindow.Dispose();
+      _modalWindow = null;
+      _toplevel.ActivityBar.SetState(ActivityState.Idle);
+    }
+  }
+
+  // -----------------------------------------------
+  //  Turn lifecycle
+  // -----------------------------------------------
 
   public void BeginTurn()
   {
-    _layout.BeginTurn();
-    if (StatusLine is not null)
+    InvokeOnUiThread(() =>
     {
-      _layout.UpdateStatus(StatusLine);
+      if (_toplevel is not null)
+      {
+        _toplevel.InputView.Enabled = false;
+      }
+    });
+
+    if (StatusLine is not null && _toplevel is not null)
+    {
+      InvokeOnUiThread(() => _toplevel!.StatusBar.StatusText = StatusLine!);
     }
   }
 
   public void EndTurn()
   {
-    _layout.EndTurn();
+    InvokeOnUiThread(() =>
+    {
+      if (_toplevel is not null)
+      {
+        _toplevel.InputView.Enabled = true;
+      }
+    });
   }
+
+  // -----------------------------------------------
+  //  Layout lifecycle
+  // -----------------------------------------------
 
   public void ActivateLayout()
   {
     if (!IsInteractive) return;
     _sessionActive = true;
+    Current = this;
+    _toplevel = new BoydCodeToplevel();
 
-    _layout.Activate();
-
-    _inputReader = new AsyncInputReader(_layout)
+    // Wire ChatInputView cancel events to activity bar
+    _toplevel.InputView.CancelHintRequested += () =>
     {
-      OnCancelHintRequested = RenderCancelHint,
-      OnCancelHintCleared = ClearCancelHint,
-      IsModalActive = () => _layout.IsModalActive,
-      OnModalDismissRequested = () => _layout.DismissModal(),
+      _preHintActivityState = CurrentActivityState();
+      _toplevel.ActivityBar.SetState(ActivityState.CancelHint);
     };
-    _inputReader.Start();
+    _toplevel.InputView.CancelHintCleared += () =>
+    {
+      _toplevel.ActivityBar.SetState(_preHintActivityState);
+    };
+
+    // Wire ExecutionWindow block callback to marshal through UI thread
+    _executionWindow.AddBlock = block =>
+        InvokeOnUiThread(() => _toplevel?.ConversationView.AddBlock(block));
+
+    // Push any pre-set status text to the status bar
+    if (StatusLine is not null)
+    {
+      _toplevel.StatusBar.StatusText = StatusLine;
+    }
   }
 
   public void DeactivateLayout()
   {
     _sessionActive = false;
-    _inputReader?.Dispose();
-    _inputReader = null;
-    _layout.Deactivate();
+    _toplevel = null;
+    if (Current == this)
+    {
+      Current = null;
+    }
   }
 
-  public void SuspendLayout() => _layout.Suspend();
+  // -----------------------------------------------
+  //  Suspend/resume for Spectre prompts
+  // -----------------------------------------------
 
-  public void ResumeLayout() => _layout.Resume();
+  public void SuspendLayout()
+  {
+    if (!_sessionActive || _toplevel is null) return;
+
+    _suspendedSignal = new ManualResetEventSlim(false);
+    _resumeSignal = new ManualResetEventSlim(false);
+    _resumedSignal = new ManualResetEventSlim(false);
+    _suspendRequested = true;
+
+    TguiApp.Invoke(() => TguiApp.RequestStop());
+    _suspendedSignal.Wait(); // Block until Terminal.Gui actually stopped
+  }
+
+  public void ResumeLayout()
+  {
+    if (!_sessionActive) return;
+    _resumeSignal?.Set(); // Tell main thread to restart
+    _resumedSignal?.Wait(); // Wait for Terminal.Gui to be running again
+  }
+
+  // -----------------------------------------------
+  //  Agent busy state
+  // -----------------------------------------------
 
   public void SetAgentBusy(bool busy)
   {
-    _layout.SetAgentBusy(busy);
-    if (_inputReader is not null)
-    {
-      _layout.UpdateQueueCount(_inputReader.PendingCount);
-    }
+    // State tracking for potential future UI indicator
   }
 
-  public void Dispose()
-  {
-    _inputReader?.Dispose();
-    _layout.Dispose();
-  }
+  // -----------------------------------------------
+  //  Cancellation monitoring
+  // -----------------------------------------------
 
   public IDisposable BeginCancellationMonitor(Action onCancelRequested)
   {
-    if (_sessionActive && _inputReader is not null)
+    if (_sessionActive && _toplevel is not null)
     {
-      // Delegate to AsyncInputReader's integrated cancellation
-      return _inputReader.BeginCancellationMonitor(onCancelRequested);
+      _toplevel.InputView.SetCancelCallback(onCancelRequested);
+      return new CancelCallbackDisposer(_toplevel.InputView);
     }
 
-    // Fallback: use standalone monitor
+    // Fallback: use standalone monitor for non-TUI mode
     return new CancellationMonitor(this, onCancelRequested);
   }
+
+  // -----------------------------------------------
+  //  Helpers
+  // -----------------------------------------------
+
+  private void InvokeOnUiThread(Action action)
+  {
+    if (_toplevel is null) return;
+    TguiApp.Invoke(action);
+  }
+
+  private ActivityState CurrentActivityState()
+  {
+    if (_isExecuting) return ActivityState.Executing;
+    if (_streamingStarted) return ActivityState.Streaming;
+    if (_isThinking) return ActivityState.Thinking;
+    return ActivityState.Idle;
+  }
+
+  // -----------------------------------------------
+  //  Dispose
+  // -----------------------------------------------
+
+  public void Dispose()
+  {
+    _toplevel = null;
+  }
+
+  // -----------------------------------------------
+  //  CancelCallbackDisposer — clears the cancel callback on the ChatInputView
+  // -----------------------------------------------
+
+  private sealed class CancelCallbackDisposer : IDisposable
+  {
+    private readonly ChatInputView _inputView;
+    private bool _disposed;
+
+    internal CancelCallbackDisposer(ChatInputView inputView)
+    {
+      _inputView = inputView;
+    }
+
+    public void Dispose()
+    {
+      if (_disposed) return;
+      _disposed = true;
+      _inputView.SetCancelCallback(null);
+    }
+  }
+
+  // -----------------------------------------------
+  //  CancellationMonitor — fallback for non-interactive mode
+  // -----------------------------------------------
 
   private sealed class CancellationMonitor : IDisposable
   {

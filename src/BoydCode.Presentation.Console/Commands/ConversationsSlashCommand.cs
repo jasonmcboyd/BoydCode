@@ -8,6 +8,7 @@ using BoydCode.Domain.SlashCommands;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 using Terminal.Gui.Input;
+using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
 
 #pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
@@ -300,7 +301,26 @@ public sealed class ConversationsSlashCommand : ISlashCommand
     }
     else if (_ui.IsInteractive)
     {
-      name = SpectreHelpers.PromptNonEmpty("  Name: ");
+      if (SpectreUserInterface.Current?.Toplevel is not null)
+      {
+        var result = new FormDialogBuilder()
+          .SetTitle("Rename Conversation")
+          .AddTextField("Name", defaultValue: session.Name, validate: v =>
+            string.IsNullOrWhiteSpace(v) ? "Name cannot be empty." : null)
+          .Show();
+
+        if (result is null)
+        {
+          SpectreHelpers.Cancelled();
+          return;
+        }
+
+        name = result.Values["Name"];
+      }
+      else
+      {
+        name = SpectreHelpers.PromptNonEmpty("  Name: ");
+      }
     }
     else
     {
@@ -336,7 +356,24 @@ public sealed class ConversationsSlashCommand : ISlashCommand
       return;
     }
 
-    if (_ui.IsInteractive)
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      var messageCount = session.Conversation.Messages.Count;
+      var message = string.Format(
+          CultureInfo.InvariantCulture,
+          "Delete conversation '{0}'?\n\n  * Messages: {1}\n  * Project: {2}",
+          sessionId,
+          messageCount.ToString(CultureInfo.InvariantCulture),
+          session.ProjectName ?? "(none)");
+
+      var result = MessageBox.Query(TguiApp.Instance, "Delete Conversation", message, "Cancel", "Delete");
+      if (result != 1)
+      {
+        SpectreHelpers.Cancelled();
+        return;
+      }
+    }
+    else if (_ui.IsInteractive)
     {
       var messageCount = session.Conversation.Messages.Count;
       SpectreHelpers.OutputMarkup(

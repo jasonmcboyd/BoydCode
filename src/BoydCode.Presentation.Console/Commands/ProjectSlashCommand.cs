@@ -9,6 +9,7 @@ using BoydCode.Domain.SlashCommands;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 using Terminal.Gui.Input;
+using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
 
 #pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
@@ -124,7 +125,21 @@ public sealed class ProjectSlashCommand : ISlashCommand
       return;
     }
 
-    var wantConfigure = SpectreHelpers.Confirm("Configure project settings now?", defaultValue: false);
+    bool wantConfigure;
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      var configMessage = string.Format(
+          CultureInfo.InvariantCulture,
+          "Configure project settings for '{0}' now?",
+          name);
+      var configResult = MessageBox.Query(TguiApp.Instance, "Configure Project", configMessage, "No", "Yes");
+      wantConfigure = configResult == 1;
+    }
+    else
+    {
+      wantConfigure = SpectreHelpers.Confirm("Configure project settings now?", defaultValue: false);
+    }
+
     if (!wantConfigure)
     {
       SpectreHelpers.OutputMarkup($"[dim]Tip: Use /project edit {Markup.Escape(name)} to configure later.[/]");
@@ -577,46 +592,73 @@ public sealed class ProjectSlashCommand : ISlashCommand
       return;
     }
 
-    SpectreHelpers.OutputLine();
-    SpectreHelpers.OutputMarkup($"  This will delete project [bold]{Markup.Escape(name)}[/]:");
-
-    var details = new List<string>();
+    var detailBullets = new List<string>();
 
     if (project.Directories.Count > 0)
     {
-      details.Add($"{project.Directories.Count} directory mapping(s)");
+      detailBullets.Add($"{project.Directories.Count} directory mapping(s)");
     }
 
     if (project.SystemPrompt is not null)
     {
-      details.Add("Custom system prompt");
+      detailBullets.Add("Custom system prompt");
     }
 
     if (project.DockerImage is not null)
     {
-      details.Add($"Docker image ({Markup.Escape(project.DockerImage)})");
+      detailBullets.Add($"Docker image ({project.DockerImage})");
     }
 
     if (project.RequireContainer)
     {
-      details.Add("Container execution required");
+      detailBullets.Add("Container execution required");
     }
 
-    if (details.Count > 0)
+    if (SpectreUserInterface.Current?.Toplevel is not null)
     {
-      foreach (var detail in details)
+      var messageParts = new List<string> { $"Delete project '{name}'?" };
+      if (detailBullets.Count > 0)
       {
-        SpectreHelpers.OutputMarkup($"    [dim]-[/] {detail}");
+        messageParts.Add("");
+        foreach (var bullet in detailBullets)
+        {
+          messageParts.Add($"  * {bullet}");
+        }
+      }
+
+      var deleteResult = MessageBox.Query(TguiApp.Instance, "Delete Project", string.Join("\n", messageParts), "Cancel", "Delete");
+      if (deleteResult != 1)
+      {
+        SpectreHelpers.Cancelled();
+        return;
+      }
+    }
+    else if (_ui.IsInteractive)
+    {
+      SpectreHelpers.OutputLine();
+      SpectreHelpers.OutputMarkup($"  This will delete project [bold]{Markup.Escape(name)}[/]:");
+
+      if (detailBullets.Count > 0)
+      {
+        foreach (var detail in detailBullets)
+        {
+          SpectreHelpers.OutputMarkup($"    [dim]-[/] {detail}");
+        }
+      }
+      else
+      {
+        SpectreHelpers.OutputMarkup("    [dim]No custom configuration.[/]");
+      }
+
+      SpectreHelpers.OutputLine();
+
+      if (!SpectreHelpers.Confirm($"Delete project [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
+      {
+        SpectreHelpers.Cancelled();
+        return;
       }
     }
     else
-    {
-      SpectreHelpers.OutputMarkup("    [dim]No custom configuration.[/]");
-    }
-
-    SpectreHelpers.OutputLine();
-
-    if (!_ui.IsInteractive || !SpectreHelpers.Confirm($"Delete project [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
     {
       SpectreHelpers.Cancelled();
       return;

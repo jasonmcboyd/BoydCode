@@ -12,6 +12,10 @@ using BoydCode.Domain.Tools;
 using BoydCode.Presentation.Console.Terminal;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
+using Terminal.Gui.Views;
+using TguiApp = Terminal.Gui.App.Application;
+
+#pragma warning disable CS0618 // Application.Instance - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -834,7 +838,21 @@ public sealed class ContextSlashCommand : ISlashCommand
         "  [dim]{0} messages, ~{1:N0} tokens → {2} messages, ~{3:N0} tokens[/]",
         beforeCount, beforeTokens, afterCount, afterTokens));
 
-    if (_ui.IsInteractive)
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      var pruneMessage = string.Format(
+          CultureInfo.InvariantCulture,
+          "Will prune {0} messages (estimated savings: {1:N0} tokens).\n{2} messages, ~{3:N0} tokens \u2192 {4} messages, ~{5:N0} tokens",
+          prunedCount, tokensSaved, beforeCount, beforeTokens, afterCount, afterTokens);
+
+      var pruneResult = MessageBox.Query(TguiApp.Instance, "Prune Context", pruneMessage, "No", "Yes");
+      if (pruneResult != 1)
+      {
+        SpectreHelpers.Cancelled();
+        return;
+      }
+    }
+    else if (_ui.IsInteractive)
     {
       if (!SpectreHelpers.Confirm("Prune?", defaultValue: true))
       {

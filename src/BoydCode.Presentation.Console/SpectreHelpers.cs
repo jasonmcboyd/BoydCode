@@ -1,11 +1,12 @@
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using TguiApp = Terminal.Gui.App.Application;
 
-#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
+#pragma warning disable CS0618 // Application.Run/RequestStop/Invoke - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console;
 
@@ -277,7 +278,7 @@ internal static class SpectreHelpers
         new SelectionPrompt<string>()
           .Title(title)
           .AddChoices(choices)
-          .HighlightStyle(new Style(Color.Green)),
+          .HighlightStyle(new Style(Spectre.Console.Color.Green)),
         defaultIndex);
     }
     finally
@@ -295,7 +296,7 @@ internal static class SpectreHelpers
         new SelectionPrompt<T>()
           .Title(title)
           .AddChoices(choices)
-          .HighlightStyle(new Style(Color.Green)),
+          .HighlightStyle(new Style(Spectre.Console.Color.Green)),
         defaultIndex);
     }
     finally
@@ -314,7 +315,7 @@ internal static class SpectreHelpers
           .Title(title)
           .NotRequired()
           .AddChoices(choices)
-          .HighlightStyle(new Style(Color.Green)));
+          .HighlightStyle(new Style(Spectre.Console.Color.Green)));
     }
     finally
     {
@@ -375,6 +376,79 @@ internal static class SpectreHelpers
     // Simple tag-stripping: remove [color], [/], [bold], etc.
     var result = System.Text.RegularExpressions.Regex.Replace(markup, @"\[/?[^\]]*\]", "");
     return result;
+  }
+
+  // ──────────────────────────────────────────────
+  //  TERMINAL.GUI SELECTION DIALOG
+  // ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Shows a modal selection dialog with a ListView. Returns the selected item
+  /// or null if cancelled. Requires the TUI to be active.
+  /// </summary>
+  internal static string? ShowSelectionDialog(string title, IReadOnlyList<string> items)
+  {
+    if (items.Count == 0)
+    {
+      return null;
+    }
+
+    var selected = (string?)null;
+    var dialog = new global::Terminal.Gui.Views.Dialog
+    {
+      Title = title,
+      Width = global::Terminal.Gui.ViewBase.Dim.Percent(50),
+      Height = Math.Min(items.Count + 6, 20),
+      BorderStyle = global::Terminal.Gui.Drawing.LineStyle.Rounded,
+    };
+    dialog.Border?.SetScheme(Theme.Modal.BorderScheme);
+
+    var listView = new global::Terminal.Gui.Views.ListView
+    {
+      X = 2,
+      Y = 1,
+      Width = global::Terminal.Gui.ViewBase.Dim.Fill(2),
+      Height = global::Terminal.Gui.ViewBase.Dim.Fill(2),
+    };
+    listView.SetSource(new ObservableCollection<string>(items));
+    dialog.Add(listView);
+
+    var cancelButton = new global::Terminal.Gui.Views.Button { Text = "Cancel" };
+    var okButton = new global::Terminal.Gui.Views.Button { Text = "Ok", IsDefault = true };
+    dialog.AddButton(cancelButton);
+    dialog.AddButton(okButton);
+
+    okButton.Accepting += (s, e) =>
+    {
+      e.Handled = true;
+      var index = listView.SelectedItem ?? -1;
+      if (index >= 0 && index < items.Count)
+      {
+        selected = items[index];
+      }
+      TguiApp.RequestStop();
+    };
+
+    cancelButton.Accepting += (s, e) =>
+    {
+      e.Handled = true;
+      TguiApp.RequestStop();
+    };
+
+    listView.Accepting += (s, e) =>
+    {
+      e.Handled = true;
+      var index = listView.SelectedItem ?? -1;
+      if (index >= 0 && index < items.Count)
+      {
+        selected = items[index];
+      }
+      TguiApp.RequestStop();
+    };
+
+    TguiApp.Run(dialog);
+    dialog.Dispose();
+    return selected;
   }
 
 }

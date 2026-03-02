@@ -9,6 +9,7 @@ using BoydCode.Domain.SlashCommands;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 using Terminal.Gui.Input;
+using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
 
 #pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
@@ -554,7 +555,21 @@ public sealed partial class JeaSlashCommand : ISlashCommand
         return;
       }
 
-      name = SpectreHelpers.Select("Select profile to delete:", deletable);
+      if (SpectreUserInterface.Current?.Toplevel is not null)
+      {
+        var selected = SpectreHelpers.ShowSelectionDialog("Select Profile to Delete", deletable);
+        if (selected is null)
+        {
+          SpectreHelpers.Cancelled();
+          return;
+        }
+
+        name = selected;
+      }
+      else
+      {
+        name = SpectreHelpers.Select("Select profile to delete:", deletable);
+      }
     }
 
     if (name.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase))
@@ -570,7 +585,16 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       return;
     }
 
-    if (!SpectreHelpers.Confirm($"Delete profile [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      var deleteResult = MessageBox.Query(TguiApp.Instance, "Delete JEA Profile", $"Delete profile '{name}'?", "Cancel", "Delete");
+      if (deleteResult != 1)
+      {
+        SpectreHelpers.Cancelled();
+        return;
+      }
+    }
+    else if (!SpectreHelpers.Confirm($"Delete profile [bold]{Markup.Escape(name)}[/]?", defaultValue: false))
     {
       SpectreHelpers.Cancelled();
       return;
@@ -666,7 +690,21 @@ public sealed partial class JeaSlashCommand : ISlashCommand
         return;
       }
 
-      name = SpectreHelpers.Select("Select profile to assign:", assignable);
+      if (SpectreUserInterface.Current?.Toplevel is not null)
+      {
+        var selected = SpectreHelpers.ShowSelectionDialog("Select Profile to Assign", assignable);
+        if (selected is null)
+        {
+          SpectreHelpers.Cancelled();
+          return;
+        }
+
+        name = selected;
+      }
+      else
+      {
+        name = SpectreHelpers.Select("Select profile to assign:", assignable);
+      }
     }
 
     var profile = await _store.LoadAsync(name, ct);
@@ -730,7 +768,21 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     }
     else
     {
-      name = SpectreHelpers.Select("Select profile to unassign:", assigned);
+      if (SpectreUserInterface.Current?.Toplevel is not null)
+      {
+        var selected = SpectreHelpers.ShowSelectionDialog("Select Profile to Unassign", assigned);
+        if (selected is null)
+        {
+          SpectreHelpers.Cancelled();
+          return;
+        }
+
+        name = selected;
+      }
+      else
+      {
+        name = SpectreHelpers.Select("Select profile to unassign:", assigned);
+      }
     }
 
     if (!assigned.Remove(name))
@@ -755,6 +807,11 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       SpectreHelpers.OutputMarkup("No JEA profiles found.");
       SpectreHelpers.Dim("Create one with /jea create <name>");
       return null;
+    }
+
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      return SpectreHelpers.ShowSelectionDialog("Select Profile", names);
     }
 
     return SpectreHelpers.Select("Select profile:", names);

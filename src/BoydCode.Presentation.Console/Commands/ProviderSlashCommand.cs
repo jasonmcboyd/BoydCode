@@ -8,9 +8,10 @@ using BoydCode.Presentation.Console.Terminal;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
 using Terminal.Gui.Input;
+using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
 
-#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
+#pragma warning disable CS0618 // Application.Invoke/Run/RequestStop - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -318,9 +319,45 @@ public sealed class ProviderSlashCommand : ISlashCommand
           .Select(p => p.ToString())
           .ToList();
 
-      var selected = SpectreHelpers.Select("Select a provider to remove:", providerNames);
+      if (SpectreUserInterface.Current?.Toplevel is not null)
+      {
+        var selected = SpectreHelpers.ShowSelectionDialog("Select Provider to Remove", providerNames);
+        if (selected is null)
+        {
+          SpectreHelpers.Cancelled();
+          return;
+        }
 
-      providerType = Enum.Parse<LlmProviderType>(selected);
+        providerType = Enum.Parse<LlmProviderType>(selected);
+      }
+      else
+      {
+        var selected = SpectreHelpers.Select("Select a provider to remove:", providerNames);
+        providerType = Enum.Parse<LlmProviderType>(selected);
+      }
+    }
+
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      var isActive = _activeProvider.IsConfigured
+          && _activeProvider.Config!.ProviderType == providerType;
+
+      var message = isActive
+        ? $"Remove provider '{providerType}'?\n\nWarning: '{providerType}' is the active provider. "
+          + "It will remain active for this session but won't persist.\n\n"
+          + "This will delete the stored API key and model configuration.\n"
+          + "You can reconfigure later with /provider setup."
+        : $"Remove provider '{providerType}'?\n\n"
+          + "This will delete the stored API key and model configuration.\n"
+          + "You can reconfigure later with /provider setup.";
+
+      var confirmResult = MessageBox.Query(
+        TguiApp.Instance, "Remove Provider", message, "Cancel", "Remove");
+      if (confirmResult != 1)
+      {
+        SpectreHelpers.Cancelled();
+        return;
+      }
     }
 
     await _providerConfigStore.RemoveAsync(providerType, ct);

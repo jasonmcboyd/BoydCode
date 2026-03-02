@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using BoydCode.Application.Interfaces;
 using BoydCode.Application.Services;
 using BoydCode.Domain.Configuration;
@@ -8,17 +10,22 @@ using BoydCode.Domain.LlmRequests;
 using BoydCode.Domain.SlashCommands;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
+using WizardDialog = BoydCode.Presentation.Console.Terminal.WizardDialog;
+using WizardStep = BoydCode.Presentation.Console.Terminal.WizardStep;
 
-#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
+#pragma warning disable CS0618 // Application.Invoke/Run/RequestStop - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
-public sealed class ProjectSlashCommand : ISlashCommand
+public sealed partial class ProjectSlashCommand : ISlashCommand
 {
   private static readonly string[] ConfigureSections = ["Directories", "System prompt", "Container settings"];
+  private static readonly string[] YesNoOptions = ["No", "Yes"];
 
   private readonly IProjectRepository _projectRepository;
   private readonly DirectoryResolver _directoryResolver;
@@ -98,12 +105,41 @@ public sealed class ProjectSlashCommand : ISlashCommand
 
   private async Task HandleCreateAsync(string[] tokens, CancellationToken ct)
   {
-    if (tokens.Length <= 2 && !_ui.IsInteractive)
+    if (!_ui.IsInteractive)
     {
-      SpectreHelpers.Usage("/project create <name>");
+      if (tokens.Length <= 2)
+      {
+        SpectreHelpers.Usage("/project create <name>");
+        return;
+      }
+
+      // Non-interactive: create bare project
+      var bareName = string.Join(' ', tokens.Skip(2));
+      var bareExisting = await _projectRepository.LoadAsync(bareName, ct);
+      if (bareExisting is not null)
+      {
+        SpectreHelpers.Error($"Project '{bareName}' already exists.");
+        return;
+      }
+
+      var bareProject = new Project(bareName);
+      await _projectRepository.SaveAsync(bareProject, ct);
+      SpectreHelpers.Success($"Project '{bareName}' created.");
       return;
     }
 
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      await RunProjectCreateWizard(tokens, ct);
+    }
+    else
+    {
+      await RunProjectCreateSpectre(tokens, ct);
+    }
+  }
+
+  private async Task RunProjectCreateSpectre(string[] tokens, CancellationToken ct)
+  {
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
         : SpectreHelpers.PromptNonEmpty("Project [green]name[/]:");
@@ -120,25 +156,7 @@ public sealed class ProjectSlashCommand : ISlashCommand
     SpectreHelpers.Success($"Project '{name}' created.");
     SpectreHelpers.OutputLine();
 
-    if (!_ui.IsInteractive)
-    {
-      return;
-    }
-
-    bool wantConfigure;
-    if (SpectreUserInterface.Current?.Toplevel is not null)
-    {
-      var configMessage = string.Format(
-          CultureInfo.InvariantCulture,
-          "Configure project settings for '{0}' now?",
-          name);
-      var configResult = MessageBox.Query(TguiApp.Instance, "Configure Project", configMessage, "No", "Yes");
-      wantConfigure = configResult == 1;
-    }
-    else
-    {
-      wantConfigure = SpectreHelpers.Confirm("Configure project settings now?", defaultValue: false);
-    }
+    var wantConfigure = SpectreHelpers.Confirm("Configure project settings now?", defaultValue: false);
 
     if (!wantConfigure)
     {
@@ -172,6 +190,474 @@ public sealed class ProjectSlashCommand : ISlashCommand
     SpectreHelpers.OutputLine();
     SpectreHelpers.Success($"Project '{name}' saved.");
   }
+
+  private async Task RunProjectCreateWizard(string[] tokens, CancellationToken ct)
+  {
+    var existingNames = (await _projectRepository.ListNamesAsync(ct))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    var projectName = tokens.Length > 2 ? string.Join(' ', tokens.Skip(2)) : string.Empty;
+    var directories = new List<ProjectDirectory>();
+    var systemPrompt = string.Empty;
+    var dockerImage = string.Empty;
+    var requireContainer = false;
+    Label? nameError = null;
+
+    var steps = new List<WizardStep>
+    {
+      // Step 1: Name + Directories
+      new WizardStep(
+        "Name & Directories",
+        () =>
+        {
+          var container = new View
+          {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+
+          var nameLabel = new Label
+          {
+            Text = "Project name:",
+            X = 0,
+            Y = 0,
+          };
+
+          var nameField = new TextField
+          {
+            X = 0,
+            Y = 1,
+            Width = Dim.Fill(),
+            Text = projectName,
+          };
+
+          nameError = new Label
+          {
+            X = 0,
+            Y = 2,
+            Width = Dim.Fill(),
+            Visible = false,
+          };
+          nameError.SetScheme(new Scheme(Theme.Semantic.Error));
+
+          nameField.TextChanged += (_, _) =>
+          {
+            projectName = nameField.Text ?? string.Empty;
+            if (nameError is not null)
+            {
+              nameError.Visible = false;
+            }
+          };
+
+          var dirLabel = new Label
+          {
+            Text = "Directories:",
+            X = 0,
+            Y = 4,
+          };
+
+          var dirListView = new View
+          {
+            X = 0,
+            Y = 5,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(2),
+          };
+
+          RebuildDirectoryList(dirListView, directories);
+
+          var addDirButton = new Button
+          {
+            Text = "Add Directory",
+            X = 0,
+            Y = Pos.AnchorEnd(1),
+          };
+
+          addDirButton.Accepting += (_, args) =>
+          {
+            args.Handled = true;
+            ShowAddDirectoryDialog(directories);
+            RebuildDirectoryList(dirListView, directories);
+          };
+
+          container.Add(nameLabel, nameField, nameError, dirLabel, dirListView, addDirButton);
+          return container;
+        },
+        () =>
+        {
+          // Validation
+          if (string.IsNullOrWhiteSpace(projectName))
+          {
+            if (nameError is not null)
+            {
+              nameError.Text = "Project name cannot be empty.";
+              nameError.Visible = true;
+            }
+
+            return false;
+          }
+
+          if (!ProjectNameRegex().IsMatch(projectName))
+          {
+            if (nameError is not null)
+            {
+              nameError.Text = "Name must contain only letters, numbers, hyphens, and underscores.";
+              nameError.Visible = true;
+            }
+
+            return false;
+          }
+
+          if (existingNames.Contains(projectName))
+          {
+            if (nameError is not null)
+            {
+              nameError.Text = $"Project '{projectName}' already exists.";
+              nameError.Visible = true;
+            }
+
+            return false;
+          }
+
+          return true;
+        }),
+
+      // Step 2: System Prompt
+      new WizardStep(
+        "System Prompt",
+        () =>
+        {
+          var container = new View
+          {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+
+          var hintLabel = new Label
+          {
+            Text = "Custom system prompt (optional, leave empty for default):",
+            X = 0,
+            Y = 0,
+          };
+          hintLabel.SetScheme(new Scheme(Theme.Semantic.Muted));
+
+          var promptView = new TextView
+          {
+            X = 0,
+            Y = 2,
+            Width = Dim.Fill(),
+            Height = 5,
+            WordWrap = true,
+            Text = systemPrompt,
+          };
+
+          promptView.TextChanged += (_, _) =>
+          {
+            systemPrompt = promptView.Text ?? string.Empty;
+          };
+
+          container.Add(hintLabel, promptView);
+          return container;
+        }),
+
+      // Step 3: Container Settings
+      new WizardStep(
+        "Container Settings",
+        () =>
+        {
+          var container = new View
+          {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+
+          var imageLabel = new Label
+          {
+            Text = "Docker image (optional):",
+            X = 0,
+            Y = 0,
+          };
+
+          var imageField = new TextField
+          {
+            X = 0,
+            Y = 1,
+            Width = Dim.Fill(),
+            Text = dockerImage,
+          };
+
+          imageField.TextChanged += (_, _) =>
+          {
+            dockerImage = imageField.Text ?? string.Empty;
+          };
+
+          var requireLabel = new Label
+          {
+            Text = "Require container execution?",
+            X = 0,
+            Y = 3,
+          };
+
+          var requireOptions = YesNoOptions;
+          var requireListView = new ListView
+          {
+            X = 0,
+            Y = 4,
+            Width = Dim.Fill(),
+            Height = 2,
+          };
+          requireListView.SetSource(new ObservableCollection<string>(requireOptions));
+          requireListView.SelectedItem = requireContainer ? 1 : 0;
+
+          requireListView.ValueChanged += (_, args) =>
+          {
+            requireContainer = args.NewValue == 1;
+          };
+
+          container.Add(imageLabel, imageField, requireLabel, requireListView);
+          return container;
+        }),
+
+      // Step 4: Review
+      new WizardStep(
+        "Review",
+        () =>
+        {
+          var container = new View
+          {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+
+          var y = 0;
+
+          var nameLabel = new Label
+          {
+            Text = $"Name:        {projectName}",
+            X = 0,
+            Y = y++,
+          };
+          container.Add(nameLabel);
+
+          var dirSummary = directories.Count == 0
+              ? "none"
+              : $"{directories.Count} configured";
+          var dirLabel = new Label
+          {
+            Text = $"Directories: {dirSummary}",
+            X = 0,
+            Y = y++,
+          };
+          container.Add(dirLabel);
+
+          foreach (var dir in directories)
+          {
+            var dirEntry = new Label
+            {
+              Text = $"  {dir.Path} ({dir.AccessLevel})",
+              X = 0,
+              Y = y++,
+            };
+            dirEntry.SetScheme(new Scheme(Theme.Semantic.Muted));
+            container.Add(dirEntry);
+          }
+
+          var promptSummary = string.IsNullOrWhiteSpace(systemPrompt)
+              ? "(default)"
+              : systemPrompt.Length > 50
+                  ? systemPrompt[..50] + "..."
+                  : systemPrompt;
+          var promptLabel = new Label
+          {
+            Text = $"Prompt:      {promptSummary}",
+            X = 0,
+            Y = y++,
+          };
+          container.Add(promptLabel);
+
+          var dockerSummary = string.IsNullOrWhiteSpace(dockerImage)
+              ? "(not set)"
+              : dockerImage;
+          var dockerLabel = new Label
+          {
+            Text = $"Docker:      {dockerSummary}",
+            X = 0,
+            Y = y++,
+          };
+          container.Add(dockerLabel);
+
+          var requireSummary = requireContainer ? "Yes" : "No";
+          var requireLabel = new Label
+          {
+            Text = $"Require:     {requireSummary}",
+            X = 0,
+            Y = y++,
+          };
+          container.Add(requireLabel);
+
+          return container;
+        }),
+    };
+
+    using var wizard = new WizardDialog(
+      "Create Project",
+      steps,
+      doneButtonText: "Create",
+      hasUnsavedData: () =>
+        !string.IsNullOrWhiteSpace(projectName) ||
+        directories.Count > 0 ||
+        !string.IsNullOrWhiteSpace(systemPrompt) ||
+        !string.IsNullOrWhiteSpace(dockerImage));
+
+    var result = wizard.Show();
+
+    if (!result.Completed)
+    {
+      SpectreHelpers.Cancelled();
+      return;
+    }
+
+    var project = new Project(projectName);
+    project.Directories.AddRange(directories);
+
+    if (!string.IsNullOrWhiteSpace(systemPrompt))
+    {
+      project.SystemPrompt = systemPrompt;
+    }
+
+    if (!string.IsNullOrWhiteSpace(dockerImage))
+    {
+      project.DockerImage = dockerImage;
+    }
+
+    project.RequireContainer = requireContainer;
+
+    await _projectRepository.SaveAsync(project, ct);
+    SpectreHelpers.Success($"Project '{projectName}' created.");
+  }
+
+  private static void RebuildDirectoryList(View dirListView, List<ProjectDirectory> directories)
+  {
+    dirListView.RemoveAll();
+
+    if (directories.Count == 0)
+    {
+      var emptyLabel = new Label
+      {
+        Text = "(no directories added)",
+        X = 0,
+        Y = 0,
+      };
+      emptyLabel.SetScheme(new Scheme(Theme.Semantic.Muted));
+      dirListView.Add(emptyLabel);
+    }
+    else
+    {
+      for (var i = 0; i < directories.Count; i++)
+      {
+        var dir = directories[i];
+        var dirLabel = new Label
+        {
+          Text = $"  {dir.Path}  ({dir.AccessLevel})",
+          X = 0,
+          Y = i,
+        };
+        dirListView.Add(dirLabel);
+      }
+    }
+
+    dirListView.SetNeedsDraw();
+  }
+
+  private static void ShowAddDirectoryDialog(List<ProjectDirectory> directories)
+  {
+    var path = string.Empty;
+    var accessLevel = DirectoryAccessLevel.ReadWrite;
+
+    var dialog = new Dialog
+    {
+      Title = "Add Directory",
+      Width = Dim.Percent(50),
+      Height = 12,
+      BorderStyle = LineStyle.Rounded,
+    };
+    dialog.Border?.SetScheme(Theme.Modal.BorderScheme);
+
+    var pathLabel = new Label
+    {
+      Text = "Path:",
+      X = 2,
+      Y = 1,
+    };
+
+    var pathField = new TextField
+    {
+      X = 2,
+      Y = 2,
+      Width = Dim.Fill(2),
+    };
+
+    pathField.TextChanged += (_, _) =>
+    {
+      path = pathField.Text ?? string.Empty;
+    };
+
+    var accessLabel = new Label
+    {
+      Text = "Access level:",
+      X = 2,
+      Y = 4,
+    };
+
+    var accessOptions = new[] { "ReadWrite", "ReadOnly" };
+    var accessListView = new ListView
+    {
+      X = 2,
+      Y = 5,
+      Width = Dim.Fill(2),
+      Height = 2,
+    };
+    accessListView.SetSource(new ObservableCollection<string>(accessOptions));
+    accessListView.SelectedItem = 0;
+
+    accessListView.ValueChanged += (_, args) =>
+    {
+      accessLevel = args.NewValue == 1
+          ? DirectoryAccessLevel.ReadOnly
+          : DirectoryAccessLevel.ReadWrite;
+    };
+
+    dialog.Add(pathLabel, pathField, accessLabel, accessListView);
+
+    var cancelButton = new Button { Text = "Cancel" };
+    var addButton = new Button { Text = "Add", IsDefault = true };
+
+    cancelButton.Accepting += (_, args) =>
+    {
+      args.Handled = true;
+      TguiApp.RequestStop();
+    };
+
+    addButton.Accepting += (_, args) =>
+    {
+      args.Handled = true;
+      if (!string.IsNullOrWhiteSpace(path))
+      {
+        directories.Add(new ProjectDirectory(path, accessLevel));
+      }
+
+      TguiApp.RequestStop();
+    };
+
+    dialog.AddButton(cancelButton);
+    dialog.AddButton(addButton);
+
+    TguiApp.Run(dialog);
+    dialog.Dispose();
+  }
+
+  [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
+  private static partial Regex ProjectNameRegex();
 
   // ──────────────────────────────────────────────
   //  LIST
@@ -479,6 +965,14 @@ public sealed class ProjectSlashCommand : ISlashCommand
       return;
     }
 
+    // TUI path: use the complex edit dialog
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      await HandleEditTuiAsync(project, ct);
+      return;
+    }
+
+    // Spectre fallback: inline edit loop
     var lastIndex = 0;
     while (true)
     {
@@ -546,6 +1040,28 @@ public sealed class ProjectSlashCommand : ISlashCommand
       SpectreHelpers.Success("Project saved.");
       SpectreHelpers.OutputLine();
     }
+  }
+
+  private async Task HandleEditTuiAsync(Project project, CancellationToken ct)
+  {
+    using var dialog = new ProjectEditDialog(project);
+    if (!dialog.ShowDialog())
+    {
+      SpectreHelpers.Cancelled();
+      return;
+    }
+
+    dialog.ApplyChanges(project);
+    await _projectRepository.SaveAsync(project, ct);
+    RefreshSessionContext(project);
+
+    if (dialog.ContainerSettingsChanged
+        && string.Equals(project.Name, _activeProject.Name, StringComparison.OrdinalIgnoreCase))
+    {
+      _ui.StaleSettingsWarning = "Project settings changed. Run /context refresh to apply.";
+    }
+
+    SpectreHelpers.Success($"Project '{project.Name}' saved.");
   }
 
   /// <summary>

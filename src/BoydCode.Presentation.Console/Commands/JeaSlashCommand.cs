@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using BoydCode.Application.Interfaces;
@@ -8,11 +9,15 @@ using BoydCode.Domain.Enums;
 using BoydCode.Domain.SlashCommands;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
+using WizardDialog = BoydCode.Presentation.Console.Terminal.WizardDialog;
+using WizardStep = BoydCode.Presentation.Console.Terminal.WizardStep;
 
-#pragma warning disable CS0618 // Application.Invoke - using legacy static API during Terminal.Gui migration
+#pragma warning disable CS0618 // Application.Invoke/Run/RequestStop - using legacy static API during Terminal.Gui migration
 
 namespace BoydCode.Presentation.Console.Commands;
 
@@ -318,6 +323,18 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
   private async Task HandleCreateAsync(string[] tokens, CancellationToken ct)
   {
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      await RunJeaCreateWizard(tokens, ct);
+    }
+    else
+    {
+      await RunJeaCreateSpectre(tokens, ct);
+    }
+  }
+
+  private async Task RunJeaCreateSpectre(string[] tokens, CancellationToken ct)
+  {
     var name = tokens.Length > 2
         ? string.Join(' ', tokens.Skip(2))
         : SpectreHelpers.PromptNonEmpty("Profile [green]name[/]:");
@@ -388,6 +405,558 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     SpectreHelpers.Dim($"File: {filePath}");
   }
 
+  private async Task RunJeaCreateWizard(string[] tokens, CancellationToken ct)
+  {
+    var existingProfileNames = (await _store.ListNamesAsync(ct))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    var profileName = tokens.Length > 2 ? string.Join(' ', tokens.Skip(2)) : string.Empty;
+    var languageMode = PSLanguageModeName.FullLanguage;
+    var entries = new List<JeaProfileEntry>();
+    var modules = new List<string>();
+    Label? nameError = null;
+
+    var steps = new List<WizardStep>
+    {
+      // Step 1: Name + Language Mode
+      new WizardStep(
+        "Name & Language Mode",
+        () =>
+        {
+          var container = new View
+          {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+
+          var nameLabel = new Label
+          {
+            Text = "Profile name:",
+            X = 0,
+            Y = 0,
+          };
+
+          var nameField = new TextField
+          {
+            X = 0,
+            Y = 1,
+            Width = Dim.Fill(),
+            Text = profileName,
+          };
+
+          nameError = new Label
+          {
+            X = 0,
+            Y = 2,
+            Width = Dim.Fill(),
+            Visible = false,
+          };
+          nameError.SetScheme(new Scheme(Theme.Semantic.Error));
+
+          nameField.TextChanged += (_, _) =>
+          {
+            profileName = nameField.Text ?? string.Empty;
+            if (nameError is not null)
+            {
+              nameError.Visible = false;
+            }
+          };
+
+          var langLabel = new Label
+          {
+            Text = "Language mode:",
+            X = 0,
+            Y = 4,
+          };
+
+          var langValues = Enum.GetValues<PSLanguageModeName>();
+          var langNames = langValues.Select(v => v.ToString()).ToList();
+
+          var langListView = new ListView
+          {
+            X = 0,
+            Y = 5,
+            Width = Dim.Fill(),
+            Height = 4,
+          };
+          langListView.SetSource(new ObservableCollection<string>(langNames));
+          langListView.SelectedItem = Array.IndexOf(langValues, languageMode);
+
+          langListView.ValueChanged += (_, args) =>
+          {
+            var index = args.NewValue ?? -1;
+            if (index >= 0 && index < langValues.Length)
+            {
+              languageMode = langValues[index];
+            }
+          };
+
+          container.Add(nameLabel, nameField, nameError, langLabel, langListView);
+          return container;
+        },
+        () =>
+        {
+          // Validation
+          if (string.IsNullOrWhiteSpace(profileName))
+          {
+            if (nameError is not null)
+            {
+              nameError.Text = "Profile name cannot be empty.";
+              nameError.Visible = true;
+            }
+
+            return false;
+          }
+
+          if (!ProfileNameRegex().IsMatch(profileName))
+          {
+            if (nameError is not null)
+            {
+              nameError.Text = "Name must contain only letters, numbers, hyphens, and underscores.";
+              nameError.Visible = true;
+            }
+
+            return false;
+          }
+
+          if (profileName.Equals(BuiltInJeaProfile.GlobalName, StringComparison.OrdinalIgnoreCase)
+              || profileName.Equals(BuiltInJeaProfile.Name, StringComparison.OrdinalIgnoreCase))
+          {
+            if (nameError is not null)
+            {
+              nameError.Text = $"'{profileName}' is a reserved profile name.";
+              nameError.Visible = true;
+            }
+
+            return false;
+          }
+
+          if (existingProfileNames.Contains(profileName))
+          {
+            if (nameError is not null)
+            {
+              nameError.Text = $"Profile '{profileName}' already exists.";
+              nameError.Visible = true;
+            }
+
+            return false;
+          }
+
+          return true;
+        }),
+
+      // Step 2: Commands + Modules
+      new WizardStep(
+        "Commands & Modules",
+        () =>
+        {
+          var container = new View
+          {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+
+          var commandLabel = new Label
+          {
+            Text = "Commands:",
+            X = 0,
+            Y = 0,
+          };
+
+          var commandListView = new View
+          {
+            X = 0,
+            Y = 1,
+            Width = Dim.Fill(),
+            Height = Dim.Auto(DimAutoStyle.Content, minimumContentDim: 1),
+          };
+
+          RebuildCommandList(commandListView, entries);
+
+          var addCommandButton = new Button
+          {
+            Text = "Add Command",
+            X = 0,
+            Y = Pos.Bottom(commandListView) + 1,
+          };
+
+          addCommandButton.Accepting += (_, args) =>
+          {
+            args.Handled = true;
+            ShowAddCommandDialog(entries);
+            RebuildCommandList(commandListView, entries);
+          };
+
+          var moduleLabel = new Label
+          {
+            Text = "Modules:",
+            X = 0,
+            Y = Pos.Bottom(addCommandButton) + 1,
+          };
+
+          var moduleListView = new View
+          {
+            X = 0,
+            Y = Pos.Bottom(moduleLabel),
+            Width = Dim.Fill(),
+            Height = Dim.Auto(DimAutoStyle.Content, minimumContentDim: 1),
+          };
+
+          RebuildModuleList(moduleListView, modules);
+
+          var addModuleButton = new Button
+          {
+            Text = "Add Module",
+            X = 0,
+            Y = Pos.Bottom(moduleListView) + 1,
+          };
+
+          addModuleButton.Accepting += (_, args) =>
+          {
+            args.Handled = true;
+            ShowAddModuleDialog(modules);
+            RebuildModuleList(moduleListView, modules);
+          };
+
+          container.Add(commandLabel, commandListView, addCommandButton, moduleLabel, moduleListView, addModuleButton);
+          return container;
+        }),
+
+      // Step 3: Review
+      new WizardStep(
+        "Review",
+        () =>
+        {
+          var container = new View
+          {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+
+          var y = 0;
+
+          var nameLabel = new Label
+          {
+            Text = $"Name:          {profileName}",
+            X = 0,
+            Y = y++,
+          };
+
+          var langLabel = new Label
+          {
+            Text = $"Language mode: {languageMode}",
+            X = 0,
+            Y = y++,
+          };
+
+          var allowCount = entries.Count(e => !e.IsDenied);
+          var denyCount = entries.Count(e => e.IsDenied);
+          var cmdLabel = new Label
+          {
+            Text = $"Commands:      {entries.Count} ({allowCount} allow, {denyCount} deny)",
+            X = 0,
+            Y = y++,
+          };
+
+          var modLabel = new Label
+          {
+            Text = $"Modules:       {modules.Count}",
+            X = 0,
+            Y = y++,
+          };
+
+          container.Add(nameLabel, langLabel, cmdLabel, modLabel);
+
+          if (entries.Count > 0)
+          {
+            y++;
+            var cmdHeader = new Label
+            {
+              Text = "Commands:",
+              X = 0,
+              Y = y++,
+            };
+            cmdHeader.SetScheme(new Scheme(Theme.Semantic.Muted));
+            container.Add(cmdHeader);
+
+            foreach (var entry in entries)
+            {
+              var marker = entry.IsDenied ? "x" : "\u2713";
+              var entryLabel = new Label
+              {
+                Text = $"  {marker} {entry.CommandName}",
+                X = 0,
+                Y = y++,
+              };
+              container.Add(entryLabel);
+            }
+          }
+
+          if (modules.Count > 0)
+          {
+            y++;
+            var modHeader = new Label
+            {
+              Text = "Modules:",
+              X = 0,
+              Y = y++,
+            };
+            modHeader.SetScheme(new Scheme(Theme.Semantic.Muted));
+            container.Add(modHeader);
+
+            foreach (var module in modules)
+            {
+              var modEntryLabel = new Label
+              {
+                Text = $"  {module}",
+                X = 0,
+                Y = y++,
+              };
+              container.Add(modEntryLabel);
+            }
+          }
+
+          return container;
+        }),
+    };
+
+    using var wizard = new WizardDialog(
+      "Create JEA Profile",
+      steps,
+      doneButtonText: "Create",
+      hasUnsavedData: () =>
+        !string.IsNullOrWhiteSpace(profileName) ||
+        entries.Count > 0 ||
+        modules.Count > 0);
+
+    var result = wizard.Show();
+
+    if (!result.Completed)
+    {
+      SpectreHelpers.Cancelled();
+      return;
+    }
+
+    var profile = new JeaProfile(profileName, languageMode, modules, entries);
+    await _store.SaveAsync(profile, ct);
+
+    var filePath = GetProfileFilePath(profileName);
+    SpectreHelpers.Success($"Profile '{profileName}' created.");
+    SpectreHelpers.Dim($"File: {filePath}");
+  }
+
+  private static void RebuildCommandList(View commandListView, List<JeaProfileEntry> entries)
+  {
+    commandListView.RemoveAll();
+
+    if (entries.Count == 0)
+    {
+      var emptyLabel = new Label
+      {
+        Text = "(no commands added)",
+        X = 0,
+        Y = 0,
+      };
+      emptyLabel.SetScheme(new Scheme(Theme.Semantic.Muted));
+      commandListView.Add(emptyLabel);
+    }
+    else
+    {
+      for (var i = 0; i < entries.Count; i++)
+      {
+        var entry = entries[i];
+        var marker = entry.IsDenied ? "Deny " : "Allow";
+        var cmdLabel = new Label
+        {
+          Text = $"  {marker}  {entry.CommandName}",
+          X = 0,
+          Y = i,
+        };
+        commandListView.Add(cmdLabel);
+      }
+    }
+
+    commandListView.SetNeedsDraw();
+  }
+
+  private static void RebuildModuleList(View moduleListView, List<string> modules)
+  {
+    moduleListView.RemoveAll();
+
+    if (modules.Count == 0)
+    {
+      var emptyLabel = new Label
+      {
+        Text = "(no modules added)",
+        X = 0,
+        Y = 0,
+      };
+      emptyLabel.SetScheme(new Scheme(Theme.Semantic.Muted));
+      moduleListView.Add(emptyLabel);
+    }
+    else
+    {
+      for (var i = 0; i < modules.Count; i++)
+      {
+        var modLabel = new Label
+        {
+          Text = $"  {modules[i]}",
+          X = 0,
+          Y = i,
+        };
+        moduleListView.Add(modLabel);
+      }
+    }
+
+    moduleListView.SetNeedsDraw();
+  }
+
+  private static void ShowAddCommandDialog(List<JeaProfileEntry> entries)
+  {
+    var commandName = string.Empty;
+    var isDenied = false;
+
+    var dialog = new Dialog
+    {
+      Title = "Add Command",
+      Width = Dim.Percent(50),
+      Height = 11,
+      BorderStyle = LineStyle.Rounded,
+    };
+    dialog.Border?.SetScheme(Theme.Modal.BorderScheme);
+
+    var nameLabel = new Label
+    {
+      Text = "Command name:",
+      X = 2,
+      Y = 1,
+    };
+
+    var nameField = new TextField
+    {
+      X = 2,
+      Y = 2,
+      Width = Dim.Fill(2),
+    };
+
+    nameField.TextChanged += (_, _) =>
+    {
+      commandName = nameField.Text ?? string.Empty;
+    };
+
+    var actionLabel = new Label
+    {
+      Text = "Action:",
+      X = 2,
+      Y = 4,
+    };
+
+    var actionOptions = new[] { "Allow", "Deny" };
+    var actionListView = new ListView
+    {
+      X = 2,
+      Y = 5,
+      Width = Dim.Fill(2),
+      Height = 2,
+    };
+    actionListView.SetSource(new ObservableCollection<string>(actionOptions));
+    actionListView.SelectedItem = 0;
+
+    actionListView.ValueChanged += (_, args) =>
+    {
+      isDenied = args.NewValue == 1;
+    };
+
+    dialog.Add(nameLabel, nameField, actionLabel, actionListView);
+
+    var cancelButton = new Button { Text = "Cancel" };
+    var addButton = new Button { Text = "Add", IsDefault = true };
+
+    cancelButton.Accepting += (_, args) =>
+    {
+      args.Handled = true;
+      TguiApp.RequestStop();
+    };
+
+    addButton.Accepting += (_, args) =>
+    {
+      args.Handled = true;
+      if (!string.IsNullOrWhiteSpace(commandName))
+      {
+        entries.Add(new JeaProfileEntry(commandName, isDenied));
+      }
+
+      TguiApp.RequestStop();
+    };
+
+    dialog.AddButton(cancelButton);
+    dialog.AddButton(addButton);
+
+    TguiApp.Run(dialog);
+    dialog.Dispose();
+  }
+
+  private static void ShowAddModuleDialog(List<string> modules)
+  {
+    var moduleName = string.Empty;
+
+    var dialog = new Dialog
+    {
+      Title = "Add Module",
+      Width = Dim.Percent(50),
+      Height = 8,
+      BorderStyle = LineStyle.Rounded,
+    };
+    dialog.Border?.SetScheme(Theme.Modal.BorderScheme);
+
+    var nameLabel = new Label
+    {
+      Text = "Module name:",
+      X = 2,
+      Y = 1,
+    };
+
+    var nameField = new TextField
+    {
+      X = 2,
+      Y = 2,
+      Width = Dim.Fill(2),
+    };
+
+    nameField.TextChanged += (_, _) =>
+    {
+      moduleName = nameField.Text ?? string.Empty;
+    };
+
+    dialog.Add(nameLabel, nameField);
+
+    var cancelButton = new Button { Text = "Cancel" };
+    var addButton = new Button { Text = "Add", IsDefault = true };
+
+    cancelButton.Accepting += (_, args) =>
+    {
+      args.Handled = true;
+      TguiApp.RequestStop();
+    };
+
+    addButton.Accepting += (_, args) =>
+    {
+      args.Handled = true;
+      if (!string.IsNullOrWhiteSpace(moduleName))
+      {
+        modules.Add(moduleName);
+      }
+
+      TguiApp.RequestStop();
+    };
+
+    dialog.AddButton(cancelButton);
+    dialog.AddButton(addButton);
+
+    TguiApp.Run(dialog);
+    dialog.Dispose();
+  }
+
   // ──────────────────────────────────────────────
   //  EDIT
   // ──────────────────────────────────────────────
@@ -410,6 +979,14 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       return;
     }
 
+    // TUI path: use the complex edit dialog
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      await HandleEditTuiAsync(profile, ct);
+      return;
+    }
+
+    // Spectre fallback: inline edit loop
     var entries = new List<JeaProfileEntry>(profile.Entries);
     var modules = new List<string>(profile.Modules);
     var languageMode = profile.LanguageMode;
@@ -528,6 +1105,23 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     var filePath = GetProfileFilePath(name);
     SpectreHelpers.Success($"Profile '{name}' saved.");
+    SpectreHelpers.Dim($"File: {filePath}");
+  }
+
+  private async Task HandleEditTuiAsync(JeaProfile profile, CancellationToken ct)
+  {
+    using var dialog = new JeaEditDialog(profile);
+    if (!dialog.ShowDialog())
+    {
+      SpectreHelpers.Cancelled();
+      return;
+    }
+
+    var updatedProfile = dialog.BuildProfile();
+    await _store.SaveAsync(updatedProfile, ct);
+
+    var filePath = GetProfileFilePath(updatedProfile.Name);
+    SpectreHelpers.Success($"Profile '{updatedProfile.Name}' saved.");
     SpectreHelpers.Dim($"File: {filePath}");
   }
 

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using BoydCode.Application.Interfaces;
 using BoydCode.Application.Services;
@@ -7,9 +8,13 @@ using BoydCode.Domain.SlashCommands;
 using BoydCode.Presentation.Console.Terminal;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
+using WizardDialog = BoydCode.Presentation.Console.Terminal.WizardDialog;
+using WizardStep = BoydCode.Presentation.Console.Terminal.WizardStep;
 
 #pragma warning disable CS0618 // Application.Invoke/Run/RequestStop - using legacy static API during Terminal.Gui migration
 
@@ -224,18 +229,42 @@ public sealed class ProviderSlashCommand : ISlashCommand
 
   private async Task HandleSetupAsync(string[] tokens, CancellationToken ct)
   {
-    if (!_ui.IsInteractive && tokens.Length <= 2)
+    LlmProviderType? preselected = tokens.Length > 2
+        && Enum.TryParse<LlmProviderType>(tokens[2], ignoreCase: true, out var parsed)
+        ? parsed
+        : null;
+
+    if (!_ui.IsInteractive)
     {
-      SpectreHelpers.Usage("/provider setup <name>");
+      if (preselected is null)
+      {
+        SpectreHelpers.Usage("/provider setup <name>");
+      }
+      else
+      {
+        SpectreHelpers.Error("/provider setup requires an interactive terminal. Use --api-key instead.");
+      }
+
       return;
     }
 
+    if (SpectreUserInterface.Current?.Toplevel is not null)
+    {
+      await RunProviderSetupWizard(preselected, ct);
+    }
+    else
+    {
+      await RunProviderSetupSpectre(preselected, ct);
+    }
+  }
+
+  private async Task RunProviderSetupSpectre(LlmProviderType? preselected, CancellationToken ct)
+  {
     LlmProviderType providerType;
 
-    if (tokens.Length > 2
-        && Enum.TryParse<LlmProviderType>(tokens[2], ignoreCase: true, out var parsed))
+    if (preselected is not null)
     {
-      providerType = parsed;
+      providerType = preselected.Value;
     }
     else
     {
@@ -244,14 +273,7 @@ public sealed class ProviderSlashCommand : ISlashCommand
           .ToList();
 
       var selected = SpectreHelpers.Select("Select a provider:", providerNames);
-
       providerType = Enum.Parse<LlmProviderType>(selected);
-    }
-
-    if (!_ui.IsInteractive)
-    {
-      SpectreHelpers.Error("/provider setup requires an interactive terminal. Use --api-key instead.");
-      return;
     }
 
     var isOllama = providerType == LlmProviderType.Ollama;
@@ -265,6 +287,222 @@ public sealed class ProviderSlashCommand : ISlashCommand
     var defaultModel = ProviderDefaults.DefaultModelFor(providerType);
     var model = SpectreHelpers.PromptWithDefault("Model:", defaultModel);
 
+    await ActivateAndSaveProvider(providerType, apiKey, model, ct);
+  }
+
+  private async Task RunProviderSetupWizard(LlmProviderType? preselected, CancellationToken ct)
+  {
+    var selectedProvider = preselected ?? LlmProviderType.Gemini;
+    var apiKey = string.Empty;
+    var model = ProviderDefaults.DefaultModelFor(selectedProvider);
+    LlmProviderType? lastProviderForModel = preselected;
+
+    var steps = new List<WizardStep>();
+
+    // Step 1: Choose Provider (only when not preselected)
+    if (preselected is null)
+    {
+      steps.Add(new WizardStep(
+        "Choose Provider",
+        () =>
+        {
+          var container = new View
+          {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+
+          var label = new Label
+          {
+            Text = "Select an LLM provider:",
+            X = 0,
+            Y = 0,
+          };
+
+          var providerValues = Enum.GetValues<LlmProviderType>();
+          var providerNames = providerValues.Select(p => p.ToString()).ToList();
+
+          var listView = new ListView
+          {
+            X = 0,
+            Y = 2,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+          };
+          listView.SetSource(new ObservableCollection<string>(providerNames));
+          listView.SelectedItem = Array.IndexOf(providerValues, selectedProvider);
+
+          listView.ValueChanged += (_, args) =>
+          {
+            var index = args.NewValue ?? -1;
+            if (index >= 0 && index < providerValues.Length)
+            {
+              selectedProvider = providerValues[index];
+            }
+          };
+
+          container.Add(label, listView);
+          return container;
+        }));
+    }
+
+    // Step 2: Authentication
+    steps.Add(new WizardStep(
+      "Authentication",
+      () =>
+      {
+        // Reset model when provider changed
+        if (lastProviderForModel != selectedProvider)
+        {
+          model = ProviderDefaults.DefaultModelFor(selectedProvider);
+          lastProviderForModel = selectedProvider;
+        }
+
+        var container = new View
+        {
+          Width = Dim.Fill(),
+          Height = Dim.Fill(),
+        };
+
+        var apiKeyLabel = new Label
+        {
+          Text = "API key:",
+          X = 0,
+          Y = 0,
+        };
+
+        var apiKeyField = new TextField
+        {
+          X = 0,
+          Y = 1,
+          Width = Dim.Fill(),
+          Secret = true,
+          Text = apiKey,
+        };
+
+        var apiKeyError = new Label
+        {
+          X = 0,
+          Y = 2,
+          Width = Dim.Fill(),
+          Visible = false,
+        };
+        apiKeyError.SetScheme(new Scheme(Theme.Semantic.Error));
+
+        apiKeyField.TextChanged += (_, _) =>
+        {
+          apiKey = apiKeyField.Text ?? string.Empty;
+          apiKeyError.Visible = false;
+        };
+
+        var modelLabel = new Label
+        {
+          Text = "Model:",
+          X = 0,
+          Y = 4,
+        };
+
+        var modelField = new TextField
+        {
+          X = 0,
+          Y = 5,
+          Width = Dim.Fill(),
+          Text = model,
+        };
+
+        modelField.TextChanged += (_, _) =>
+        {
+          model = modelField.Text ?? string.Empty;
+        };
+
+        container.Add(apiKeyLabel, apiKeyField, apiKeyError, modelLabel, modelField);
+        return container;
+      },
+      () =>
+      {
+        // Validation: for non-Ollama, API key must be non-empty
+        if (selectedProvider != LlmProviderType.Ollama && string.IsNullOrWhiteSpace(apiKey))
+        {
+          // Find and show the error label within the content area
+          SpectreHelpers.Error("API key is required for this provider.");
+          return false;
+        }
+
+        return true;
+      }));
+
+    // Step 3: Confirm
+    steps.Add(new WizardStep(
+      "Confirm",
+      () =>
+      {
+        var container = new View
+        {
+          Width = Dim.Fill(),
+          Height = Dim.Fill(),
+        };
+
+        var maskedKey = string.IsNullOrWhiteSpace(apiKey)
+            ? "(not set)"
+            : apiKey.Length <= 4 ? apiKey : apiKey[..4] + "****";
+
+        var providerLabel = new Label
+        {
+          Text = $"Provider:  {selectedProvider}",
+          X = 0,
+          Y = 0,
+        };
+
+        var modelLabel = new Label
+        {
+          Text = $"Model:     {model}",
+          X = 0,
+          Y = 1,
+        };
+
+        var keyLabel = new Label
+        {
+          Text = $"API Key:   {maskedKey}",
+          X = 0,
+          Y = 2,
+        };
+
+        var infoLabel = new Label
+        {
+          Text = "Press Done to save and activate this provider.",
+          X = 0,
+          Y = 4,
+        };
+        infoLabel.SetScheme(new Scheme(Theme.Semantic.Muted));
+
+        container.Add(providerLabel, modelLabel, keyLabel, infoLabel);
+        return container;
+      }));
+
+    using var wizard = new WizardDialog(
+      "Provider Setup",
+      steps,
+      doneButtonText: "Done",
+      hasUnsavedData: () => !string.IsNullOrWhiteSpace(apiKey));
+
+    var result = wizard.Show();
+
+    if (!result.Completed)
+    {
+      SpectreHelpers.Cancelled();
+      return;
+    }
+
+    var finalApiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey;
+    await ActivateAndSaveProvider(selectedProvider, finalApiKey, model, ct);
+  }
+
+  private async Task ActivateAndSaveProvider(
+    LlmProviderType providerType,
+    string? apiKey,
+    string model,
+    CancellationToken ct)
+  {
     var profile = new ProviderProfile(providerType, apiKey, model);
     await _providerConfigStore.SaveAsync(profile, ct);
 

@@ -46,8 +46,11 @@ internal sealed class WizardDialog : IDisposable
   private readonly string _title;
   private readonly IReadOnlyList<WizardStep> _steps;
   private readonly int _totalSteps;
+  private readonly string _doneButtonText;
+  private readonly Func<bool>? _hasUnsavedData;
 
   private int _currentStep;
+  private int _minStep = 1;
   private bool _completed;
 
   // UI elements — initialized in Show()
@@ -64,8 +67,11 @@ internal sealed class WizardDialog : IDisposable
   /// </summary>
   /// <param name="title">The dialog title shown in the border.</param>
   /// <param name="steps">The ordered list of wizard steps. Must contain at least one step.</param>
+  /// <param name="doneButtonText">Text for the final step's action button (default "Done").</param>
+  /// <param name="hasUnsavedData">Optional function that returns true when the wizard has unsaved data.
+  /// When provided and returning true, cancelling will prompt for confirmation.</param>
   /// <exception cref="ArgumentException">Thrown when <paramref name="steps"/> is empty.</exception>
-  internal WizardDialog(string title, IReadOnlyList<WizardStep> steps)
+  internal WizardDialog(string title, IReadOnlyList<WizardStep> steps, string doneButtonText = "Done", Func<bool>? hasUnsavedData = null)
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(title);
     ArgumentNullException.ThrowIfNull(steps);
@@ -78,17 +84,29 @@ internal sealed class WizardDialog : IDisposable
     _title = title;
     _steps = steps;
     _totalSteps = steps.Count;
+    _doneButtonText = doneButtonText;
+    _hasUnsavedData = hasUnsavedData;
   }
 
   /// <summary>
   /// Shows the wizard modally. Blocks until the user completes or cancels.
   /// </summary>
+  /// <param name="startStep">The 1-based step index to start on (default 1).
+  /// The Back button is hidden on this step, preventing navigation before it.</param>
   /// <returns>A <see cref="WizardResult"/> indicating whether the wizard was completed
   /// and which step was last active.</returns>
-  internal WizardResult Show()
+  /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="startStep"/>
+  /// is less than 1 or greater than the number of steps.</exception>
+  internal WizardResult Show(int startStep = 1)
   {
+    if (startStep < 1 || startStep > _totalSteps)
+    {
+      throw new ArgumentOutOfRangeException(nameof(startStep));
+    }
+
     _completed = false;
     _currentStep = 0;
+    _minStep = startStep;
 
     _dialog = new Dialog
     {
@@ -142,8 +160,8 @@ internal sealed class WizardDialog : IDisposable
     _dialog.AddButton(_backButton);
     _dialog.AddButton(_nextButton);
 
-    // Initialize to step 1
-    GoToStep(1);
+    // Initialize to the starting step
+    GoToStep(startStep);
 
     // Run modally
     TguiApp.Run(_dialog);
@@ -162,11 +180,11 @@ internal sealed class WizardDialog : IDisposable
     // Update step indicator text
     _stepLabel.Text = $"Step {step} of {_totalSteps}: {_steps[step - 1].Title}";
 
-    // Show/hide Back button (hidden on step 1)
-    _backButton.Visible = step > 1;
+    // Show/hide Back button (hidden on the minimum step)
+    _backButton.Visible = step > _minStep;
 
-    // Change Next text to "Done" on the final step
-    _nextButton.Text = step == _totalSteps ? "Done" : "Next >";
+    // Change Next text to done button text on the final step
+    _nextButton.Text = step == _totalSteps ? _doneButtonText : "Next >";
 
     // Swap content area children
     _contentArea.RemoveAll();
@@ -181,6 +199,16 @@ internal sealed class WizardDialog : IDisposable
   private void OnCancel(object? sender, CommandEventArgs args)
   {
     args.Handled = true; // Prevent default Dialog close behavior
+
+    if (_hasUnsavedData is not null && _hasUnsavedData())
+    {
+      var result = MessageBox.Query(TguiApp.Instance, "Discard Changes", "Discard changes?", "No", "Yes");
+      if (result != 1)
+      {
+        return; // User chose not to discard
+      }
+    }
+
     _completed = false;
     TguiApp.RequestStop();
   }
@@ -188,7 +216,7 @@ internal sealed class WizardDialog : IDisposable
   private void OnBack(object? sender, CommandEventArgs args)
   {
     args.Handled = true; // Prevent default Dialog close behavior
-    if (_currentStep > 1)
+    if (_currentStep > _minStep)
     {
       GoToStep(_currentStep - 1);
     }

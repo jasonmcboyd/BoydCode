@@ -12,6 +12,11 @@ internal sealed class BoydCodeToplevel : Runnable
   public InputSeparatorView Separator { get; }
   public ChatStatusBar StatusBar { get; }
 
+  /// <summary>
+  /// Callback to dismiss an active modal window. Returns true if a modal was dismissed.
+  /// </summary>
+  internal Func<bool>? TryDismissModal { get; set; }
+
   public BoydCodeToplevel()
   {
     // Status bar at bottom (1 row)
@@ -61,6 +66,11 @@ internal sealed class BoydCodeToplevel : Runnable
   // Global key routing - forward scroll keys to ConversationView
   protected override bool OnKeyDown(Key key)
   {
+    if (key == Key.Esc && TryDismissModal?.Invoke() == true)
+    {
+      return true;
+    }
+
     if (key == Key.PageUp)
     {
       ConversationView.ScrollPageUp();

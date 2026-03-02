@@ -429,6 +429,8 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
       _modalWindow = window;
       _toplevel.Add(window);
       _toplevel.ActivityBar.SetState(ActivityState.Modal);
+      textView.CanFocus = true;
+      textView.SetFocus();
     });
   }
 
@@ -447,6 +449,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
       _modalWindow.Dispose();
       _modalWindow = null;
       _toplevel.ActivityBar.SetState(ActivityState.Idle);
+      _toplevel.InputView.SetFocus();
     }
   }
 
@@ -491,6 +494,14 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     _sessionActive = true;
     Current = this;
     _toplevel = new BoydCodeToplevel();
+
+    // Wire modal dismissal callback
+    _toplevel.TryDismissModal = () =>
+    {
+      if (_modalWindow is null) return false;
+      DismissCurrentModal();
+      return true;
+    };
 
     // Wire ChatInputView cancel events to activity bar
     _toplevel.InputView.CancelHintRequested += () =>

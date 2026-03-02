@@ -12,6 +12,9 @@ using BoydCode.Domain.Tools;
 using BoydCode.Presentation.Console.Terminal;
 using Microsoft.Extensions.Options;
 using Spectre.Console;
+using Terminal.Gui.Drawing;
+using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
 
@@ -633,7 +636,7 @@ public sealed class ContextSlashCommand : ISlashCommand
         return;
       }
 
-      // Render preview inline and token savings
+      // Render preview and token savings
       var afterTokens = summaryText.Length / 4;
 
       if (afterTokens > availableTokens)
@@ -641,21 +644,7 @@ public sealed class ContextSlashCommand : ISlashCommand
         SpectreHelpers.Warning($"Summary exceeds budget ({afterTokens:N0} > {availableTokens:N0} tokens). Applying it may leave limited space for new conversation turns.");
       }
 
-      SpectreHelpers.OutputLine();
-      SpectreHelpers.OutputMarkup("[bold]Summary Preview[/]");
-      SpectreHelpers.OutputLine();
-      foreach (var line in summaryText.Split('\n'))
-      {
-        SpectreHelpers.OutputMarkup($"  {Markup.Escape(line)}");
-      }
-      SpectreHelpers.OutputMarkup(string.Format(
-          CultureInfo.InvariantCulture,
-          "  [dim]{0} messages \u2192 1 summary message (estimated {1:N0} \u2192 {2:N0} tokens)[/]",
-          messagesToSummarize.Count,
-          beforeTokens,
-          afterTokens));
-
-      // Non-interactive mode: auto-apply
+      // Non-interactive mode: auto-apply (no preview)
       if (!_ui.IsInteractive)
       {
         ApplySummary(conversation, summaryText, recentExchange, originalMessages);
@@ -667,14 +656,44 @@ public sealed class ContextSlashCommand : ISlashCommand
         return;
       }
 
-      // Interactive: present choice
-      var choice = SpectreHelpers.Select(
-          "What would you like to do?",
-          SummarizeChoices);
-
-      switch (choice)
+      // TUI mode: show preview window
+      var spectreUi = _ui as SpectreUserInterface;
+      SummarizeChoice choice;
+      if (spectreUi?.Toplevel is not null)
       {
-        case "Apply":
+        choice = await ShowSummaryPreviewAsync(
+            spectreUi, summaryText, messagesToSummarize.Count, beforeTokens, afterTokens);
+      }
+      else
+      {
+        // Spectre fallback: render inline preview + selection prompt
+        SpectreHelpers.OutputLine();
+        SpectreHelpers.OutputMarkup("[bold]Summary Preview[/]");
+        SpectreHelpers.OutputLine();
+        foreach (var line in summaryText.Split('\n'))
+        {
+          SpectreHelpers.OutputMarkup($"  {Markup.Escape(line)}");
+        }
+        SpectreHelpers.OutputMarkup(string.Format(
+            CultureInfo.InvariantCulture,
+            "  [dim]{0} messages \u2192 1 summary message (estimated {1:N0} \u2192 {2:N0} tokens)[/]",
+            messagesToSummarize.Count,
+            beforeTokens,
+            afterTokens));
+
+        var selectedChoice = SpectreHelpers.Select("What would you like to do?", SummarizeChoices);
+        choice = selectedChoice switch
+        {
+          "Apply" => new SummarizeChoice(SummarizeAction.Apply),
+          "Fork conversation" => new SummarizeChoice(SummarizeAction.Fork),
+          "Revise" => new SummarizeChoice(SummarizeAction.Revise, SpectreHelpers.PromptNonEmpty("Revision [green]instructions[/]:")),
+          _ => new SummarizeChoice(SummarizeAction.Cancel),
+        };
+      }
+
+      switch (choice.Action)
+      {
+        case SummarizeAction.Apply:
           ApplySummary(conversation, summaryText, recentExchange, originalMessages);
           await _conversationLogger.LogContextSummarizeAsync(
               summaryText, focusTopic,
@@ -683,19 +702,230 @@ public sealed class ContextSlashCommand : ISlashCommand
               ct);
           return;
 
-        case "Fork conversation":
+        case SummarizeAction.Fork:
           await HandleForkAsync(session, summaryText, focusTopic, ct);
           return;
 
-        case "Revise":
-          revisionFeedback = SpectreHelpers.PromptNonEmpty("Revision [green]instructions[/]:");
+        case SummarizeAction.Revise:
+          revisionFeedback = choice.RevisionText;
           continue;
 
-        case "Cancel":
+        case SummarizeAction.Cancel:
           SpectreHelpers.Cancelled();
           return;
       }
     }
+  }
+
+  // ──────────────────────────────────────────────
+  //  SUMMARIZE — TUI TYPES + PREVIEW WINDOW
+  // ──────────────────────────────────────────────
+
+  private enum SummarizeAction { Apply, Fork, Cancel, Revise }
+
+  private sealed record SummarizeChoice(SummarizeAction Action, string? RevisionText = null);
+
+  private static Task<SummarizeChoice> ShowSummaryPreviewAsync(
+      SpectreUserInterface spectreUi,
+      string summaryText,
+      int messageCount,
+      int beforeTokens,
+      int afterTokens)
+  {
+    var tcs = new TaskCompletionSource<SummarizeChoice>();
+
+    TguiApp.Invoke(() =>
+    {
+      var toplevel = spectreUi.Toplevel!;
+
+      var window = new Window
+      {
+        Title = "Summary Preview",
+        X = Pos.Center(),
+        Y = Pos.Center(),
+        Width = Dim.Percent(80),
+        Height = Dim.Percent(70),
+        BorderStyle = LineStyle.Rounded,
+      };
+      window.Border?.SetScheme(Theme.Modal.BorderScheme);
+
+      // Read-only summary text
+      var textView = new TextView
+      {
+        Text = summaryText,
+        ReadOnly = true,
+        X = 1,
+        Y = 0,
+        Width = Dim.Fill(1),
+        Height = Dim.Fill(5),
+      };
+      textView.CanFocus = true;
+
+      // Dim rule separator
+      var ruleLabel = new Label
+      {
+        X = 1,
+        Y = Pos.Bottom(textView) + 1,
+        Width = Dim.Fill(1),
+        Height = 1,
+      };
+
+      // Use a custom drawing handler for the rule to fill the width dynamically
+      ruleLabel.DrawingContent += (_, _) =>
+      {
+        var w = ruleLabel.Viewport.Width;
+        if (w > 0)
+        {
+          ruleLabel.Move(0, 0);
+          ruleLabel.SetAttribute(new global::Terminal.Gui.Drawing.Attribute(ColorName16.DarkGray, global::Terminal.Gui.Drawing.Color.None));
+          ruleLabel.AddStr(new string(Theme.Symbols.Rule, w));
+        }
+      };
+
+      // Token savings label
+      var tokenLabel = new Label
+      {
+        Text = string.Format(
+            CultureInfo.InvariantCulture,
+            "{0} messages \u2192 1 summary (estimated {1:N0} \u2192 {2:N0} tokens)",
+            messageCount,
+            beforeTokens,
+            afterTokens),
+        X = 1,
+        Y = Pos.Bottom(ruleLabel),
+        Width = Dim.Fill(1),
+        Height = 1,
+      };
+      tokenLabel.SetScheme(new Scheme(new global::Terminal.Gui.Drawing.Attribute(ColorName16.DarkGray, global::Terminal.Gui.Drawing.Color.None)));
+
+      // Button bar container (swappable for Revise input)
+      var buttonBar = new View
+      {
+        X = 0,
+        Y = Pos.AnchorEnd(2),
+        Width = Dim.Fill(),
+        Height = 2,
+      };
+
+      var cancelButton = new Button { Text = "Cancel" };
+      var reviseButton = new Button { Text = "Revise" };
+      var forkButton = new Button { Text = "Fork" };
+      var applyButton = new Button { Text = "Apply", IsDefault = true };
+
+      // Lay out buttons horizontally with spacing
+      cancelButton.X = 2;
+      cancelButton.Y = 0;
+      reviseButton.X = Pos.Right(cancelButton) + 2;
+      reviseButton.Y = 0;
+      forkButton.X = Pos.Right(reviseButton) + 2;
+      forkButton.Y = 0;
+      applyButton.X = Pos.Right(forkButton) + 2;
+      applyButton.Y = 0;
+
+      buttonBar.Add(cancelButton, reviseButton, forkButton, applyButton);
+
+      void DismissWindow()
+      {
+        TguiApp.Invoke(() =>
+        {
+          toplevel.Remove(window);
+          window.Dispose();
+          toplevel.InputView.SetFocus();
+        });
+      }
+
+      cancelButton.Accepting += (_, e) =>
+      {
+        e.Handled = true;
+        tcs.TrySetResult(new SummarizeChoice(SummarizeAction.Cancel));
+        DismissWindow();
+      };
+
+      applyButton.Accepting += (_, e) =>
+      {
+        e.Handled = true;
+        tcs.TrySetResult(new SummarizeChoice(SummarizeAction.Apply));
+        DismissWindow();
+      };
+
+      forkButton.Accepting += (_, e) =>
+      {
+        e.Handled = true;
+        tcs.TrySetResult(new SummarizeChoice(SummarizeAction.Fork));
+        DismissWindow();
+      };
+
+      reviseButton.Accepting += (_, e) =>
+      {
+        e.Handled = true;
+
+        // Swap button bar to revision input mode
+        buttonBar.RemoveAll();
+
+        var instructionLabel = new Label
+        {
+          Text = "Revision instructions:",
+          X = 1,
+          Y = 0,
+          Width = Dim.Auto(),
+          Height = 1,
+        };
+
+        var revisionField = new TextField
+        {
+          X = 1,
+          Y = 1,
+          Width = Dim.Fill(20),
+          Text = string.Empty,
+        };
+
+        var revCancelButton = new Button { Text = "Cancel" };
+        revCancelButton.X = Pos.Right(revisionField) + 1;
+        revCancelButton.Y = 1;
+
+        var submitButton = new Button { Text = "Submit", IsDefault = true };
+        submitButton.X = Pos.Right(revCancelButton) + 1;
+        submitButton.Y = 1;
+
+        revCancelButton.Accepting += (_, cancelArgs) =>
+        {
+          cancelArgs.Handled = true;
+          tcs.TrySetResult(new SummarizeChoice(SummarizeAction.Cancel));
+          DismissWindow();
+        };
+
+        submitButton.Accepting += (_, submitArgs) =>
+        {
+          submitArgs.Handled = true;
+          var revisionText = revisionField.Text?.Trim() ?? string.Empty;
+          if (revisionText.Length > 0)
+          {
+            tcs.TrySetResult(new SummarizeChoice(SummarizeAction.Revise, revisionText));
+            DismissWindow();
+          }
+        };
+
+        buttonBar.Add(instructionLabel, revisionField, revCancelButton, submitButton);
+        revisionField.SetFocus();
+      };
+
+      // Handle Esc to cancel
+      window.KeyDown += (_, keyArgs) =>
+      {
+        if (keyArgs == Key.Esc)
+        {
+          keyArgs.Handled = true;
+          tcs.TrySetResult(new SummarizeChoice(SummarizeAction.Cancel));
+          DismissWindow();
+        }
+      };
+
+      window.Add(textView, ruleLabel, tokenLabel, buttonBar);
+      toplevel.Add(window);
+      textView.SetFocus();
+    });
+
+    return tcs.Task;
   }
 
   private static string BuildSummarizeSystemPrompt(string? focusTopic, string? revisionFeedback, int availableTokens)

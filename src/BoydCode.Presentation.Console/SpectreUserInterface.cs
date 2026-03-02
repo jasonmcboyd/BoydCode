@@ -2,9 +2,11 @@ using System.Text;
 using BoydCode.Application.Interfaces;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
+using Attribute = Terminal.Gui.Drawing.Attribute;
 
 #pragma warning disable CS0618 // Application.Invoke/Init/Shutdown/RequestStop - using legacy static API during Terminal.Gui migration
 
@@ -29,6 +31,8 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   private BoydCodeToplevel? _toplevel;
 
   // Modal overlay
+  private static readonly Scheme ModalBorderScheme = new(
+    new Attribute(ColorName16.Blue, global::Terminal.Gui.Drawing.Color.None));
   private Window? _modalWindow;
 
   // Streaming token batching
@@ -366,7 +370,7 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
   public void RenderWelcome(string model, string workingDirectory)
   {
     // Render to stdout BEFORE Terminal.Gui takes over (called before ActivateLayout)
-    AnsiConsole.Write(new FigletText("BoydCode").Color(Color.Blue));
+    AnsiConsole.Write(new FigletText("BoydCode").Color(Spectre.Console.Color.Blue));
     AnsiConsole.MarkupLine("[bold]AI Coding Assistant with JEA-Constrained PowerShell[/]");
     AnsiConsole.MarkupLine($"Model: [cyan]{Markup.Escape(model)}[/]");
     AnsiConsole.MarkupLine($"Working directory: [cyan]{Markup.Escape(workingDirectory)}[/]");
@@ -406,22 +410,48 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
       if (_toplevel is null) return;
       DismissCurrentModal();
 
+      var fullContent = content + "\n\nEsc to dismiss";
+      var lines = fullContent.Split('\n');
+
+      var maxLineWidth = 0;
+      foreach (var line in lines)
+      {
+        if (line.Length > maxLineWidth)
+          maxLineWidth = line.Length;
+      }
+
+      var availableWidth = _toplevel.Viewport.Width;
+      var availableHeight = _toplevel.Viewport.Height;
+
+      // Content width + chrome: 1 border + 1 padding offset each side = 4
+      var desiredWidth = maxLineWidth + 4;
+      var maxWidth = Math.Max(40, (int)(availableWidth * 0.9));
+      var windowWidth = Math.Min(desiredWidth, maxWidth);
+
+      // Content height + chrome: 1 border top + 1 border bottom = 2
+      var desiredHeight = lines.Length + 2;
+      var maxHeight = Math.Max(5, (int)(availableHeight * 0.9));
+      var windowHeight = Math.Min(desiredHeight, maxHeight);
+
       var window = new Window
       {
         Title = title,
-        X = 2,
-        Y = 1,
-        Width = Dim.Fill(2),
-        Height = Dim.Fill(2),
+        X = Pos.Center(),
+        Y = Pos.Center(),
+        Width = windowWidth,
+        Height = windowHeight,
+        BorderStyle = LineStyle.Rounded,
       };
+
+      window.Border?.SetScheme(ModalBorderScheme);
 
       var textView = new TextView
       {
-        Text = content,
+        Text = fullContent,
         ReadOnly = true,
-        X = 0,
+        X = 1,
         Y = 0,
-        Width = Dim.Fill(),
+        Width = Dim.Fill(1),
         Height = Dim.Fill(),
       };
 

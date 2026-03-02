@@ -268,13 +268,13 @@ All indentation uses spaces, never tabs.
 
 All panels use consistent internal padding:
 
-| Panel Type        | Padding                | Spectre API             |
-|-------------------|------------------------|-------------------------|
-| Modal overlay     | `Padding(2, 1)`        | 2 horizontal, 1 vertical|
-| Tool preview      | `Padding(1, 0)`        | 1 horizontal, 0 vertical|
-| Conversation msg  | `Padding(0, 0)`        | No padding (borderless) |
-| Crash panel       | `Padding(1, 1, 1, 1)`  | 1 on all sides          |
-| Info display      | `Padding(1, 0)`        | 1 horizontal, 0 vertical|
+| Panel Type        | Horizontal | Vertical | Implementation                              |
+|-------------------|------------|----------|---------------------------------------------|
+| Modal overlay     | 2          | 1        | 1 from Window border + 1 from content offset|
+| Tool preview      | 1          | 0        | Content offset within conversation view      |
+| Conversation msg  | 0          | 0        | No padding (borderless)                      |
+| Crash panel       | 1          | 1        | Spectre Panel (rendered outside TUI)         |
+| Info display      | 1          | 0        | Content offset                               |
 
 ### 4.4 Grid Column Spacing
 
@@ -289,28 +289,28 @@ All panels use consistent internal padding:
 
 ### 5.1 Three Permitted Borders
 
-| Style          | Spectre API              | Usage                            |
-|----------------|--------------------------|----------------------------------|
-| Rounded        | `BoxBorder.Rounded`      | Modal overlays, tool previews, detail panels |
-| None           | `BoxBorder.None`         | Conversation messages (invisible container) |
-| Simple (Table) | `TableBorder.Simple`     | All data tables                  |
+| Style          | Usage                                          | Implementation                    |
+|----------------|------------------------------------------------|-----------------------------------|
+| Rounded        | Modal overlays, tool call badges, detail panels| `LineStyle.Rounded` (Terminal.Gui)|
+| None           | Conversation messages (invisible container)    | No border                         |
+| Simple (Table) | All data tables                                | Column-aligned text               |
 
 ### 5.2 Border Colors
 
-| Context            | Border Color    | Spectre API         |
-|--------------------|-----------------|---------------------|
-| Modal overlay      | Default (white) | (no `.BorderColor()`)  |
-| Tool preview       | Dim grey        | `.BorderColor(Color.Grey)` |
-| Error panel        | Red             | `.BorderColor(Color.Red)` |
-| All other panels   | Default (white) | (no `.BorderColor()`)  |
+| Context            | Color (semantic) | Implementation                                      |
+|--------------------|------------------|-----------------------------------------------------|
+| Modal overlay      | Accent (blue)    | `Border.SetScheme(new Scheme(new Attribute(Blue)))` |
+| Tool call badge    | Muted (grey)     | Native drawing with `DarkGray` attribute             |
+| Crash panel        | Error (red)      | Spectre `Color.Red` (rendered outside TUI)           |
+| All other panels   | Default (white)  | Inherited from parent scheme                         |
 
 ### 5.3 Rules (Horizontal Lines)
 
-| Context            | Style                  | Spectre API                        |
-|--------------------|------------------------|------------------------------------|
-| Section divider    | Dim, left-justified    | `new Rule("[bold]{title}[/]").LeftJustified().RuleStyle("dim")` |
-| Layout separator   | Dim, no title          | `new Rule().RuleStyle("dim")` (static, between Activity and StatusBar) |
-| Banner separator   | Dim, no title          | `new Rule().RuleStyle("dim")`      |
+| Context            | Style                   | Implementation                  |
+|--------------------|-------------------------|---------------------------------|
+| Section divider    | Dim, left-justified     | Native drawing with dim rule    |
+| Layout separator   | Dim, no title           | Dim `─` characters (static)     |
+| Banner separator   | Dim, no title           | Dim `─` characters              |
 
 ---
 

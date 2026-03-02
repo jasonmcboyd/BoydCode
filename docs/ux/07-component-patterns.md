@@ -477,72 +477,61 @@ to configuration and information while the AI continues working.
 ```
 +-- Help ---------------------------------------------------+
 |                                                            |
-|  Command          Description                              |
-|  -------          -----------                              |
-|  /help            Show this help                           |
-|  /project <sub>   Manage projects                          |
-|  /provider <sub>  Manage LLM providers                     |
-|  /jea <sub>           Manage JEA security profiles         |
-|  /conversations <sub> Manage sessions                      |
-|  /context <sub>       View/manage context window           |
-|  /expand              Show last tool output                |
-|  /quit            Exit BoydCode                            |
+|  /quit                   Exit the session (also: /exit)    |
+|  /project                Manage projects                   |
+|    create [name]           Create a new project            |
+|    list                    List all projects               |
+|    ...                                                     |
+|  /provider               Manage LLM providers              |
+|    ...                                                     |
+|  /jea                    Manage JEA profiles               |
+|    ...                                                     |
+|  /context                View and manage conversation ...  |
+|    ...                                                     |
+|  /conversations          Manage conversations and ...      |
+|    ...                                                     |
+|  /expand                 Show full output from the ...     |
+|  /agent                  Manage agent definitions          |
+|    ...                                                     |
+|  /help                   Show available commands           |
 |                                                            |
-|  [dim]Esc to dismiss[/]                                    |
-|                                                            |
-+------------------------------------------------------------+
-```
-
-### Mockup (80 columns) -- /project show
-
-```
-+-- my-project ---------------------------------------------+
-|                                                            |
-|  Provider  Gemini          Engine   InProcess               |
-|  Docker    python:3.12     Branch   main                   |
-|                                                            |
-|  -- Directories ---                                        |
-|  Path                          Access                      |
-|  C:\Users\jason\src\app        ReadWrite                   |
-|  C:\Users\jason\src\lib        ReadOnly                    |
-|                                                            |
-|  -- System Prompt ---                                      |
-|  You are a Python expert working on the app project.       |
-|                                                            |
-|  [dim]Esc to dismiss[/]                                    |
+|  Esc to dismiss                                            |
 |                                                            |
 +------------------------------------------------------------+
 ```
 
-### Mockup (120 columns) -- /project show
+### Mockup -- /project show
+
+The window is sized to fit its content and centered on screen:
 
 ```
-+-- my-project -------------------------------------------------------------------------------------------------+
-|                                                                                                                |
-|  Provider  Gemini                                Engine   InProcess                                            |
-|  Docker    python:3.12-slim                      Branch   main                                                 |
-|                                                                                                                |
-|  -- Directories ---                                                                                            |
-|  Path                                            Access                                                        |
-|  C:\Users\jason\source\repos\app                 ReadWrite                                                     |
-|  C:\Users\jason\source\repos\lib                 ReadOnly                                                      |
-|                                                                                                                |
-|  -- System Prompt ---                                                                                          |
-|  You are a Python expert working on the app project. Focus on clean code and type safety.                      |
-|                                                                                                                |
-|  [dim]Esc to dismiss[/]                                                                                        |
-|                                                                                                                |
-+----------------------------------------------------------------------------------------------------------------+
++-- my-project ------------------------------------------+
+|                                                         |
+|  Provider  Gemini          Engine   InProcess            |
+|  Docker    python:3.12     Branch   main                |
+|                                                         |
+|  -- Directories ---                                     |
+|  Path                          Access                   |
+|  C:\Users\jason\src\app        ReadWrite                |
+|  C:\Users\jason\src\lib        ReadOnly                 |
+|                                                         |
+|  -- System Prompt ---                                   |
+|  You are a Python expert working on the app project.    |
+|                                                         |
+|  Esc to dismiss                                         |
+|                                                         |
++---------------------------------------------------------+
 ```
 
 ### When to Use
 
 Read-only slash commands that do not need interactive prompts:
 - `/help`
-- `/project show`, `/project list`
-- `/provider show`, `/provider list`
-- `/conversations list`, `/conversations show <id>`
-- `/jea list`, `/jea show <name>`, `/jea effective`
+- `/project show`
+- `/provider show`
+- `/conversations show <id>`
+- `/jea show <name>`, `/jea effective`
+- `/agent show <name>`
 - `/context show`
 - `/expand`
 
@@ -560,17 +549,28 @@ Read-only slash commands that do not need interactive prompts:
 
 ### Rendering
 
-A rounded-border window with bold title in the header. The window expands
-to fill available width. Content has 2-character horizontal padding and
-1-character vertical padding. A `[dim]Esc to dismiss[/]` hint appears at
-the bottom of the content.
+`ShowModal(title, content)` opens a Terminal.Gui `Window` overlay centered on
+screen and sized to fit its content. The window width and height are computed
+from the content string (longest line + chrome, line count + chrome), capped
+at 90% of the terminal dimensions. If the content exceeds available space,
+the `TextView` scrolls.
+
+Inside the window, a read-only `TextView` displays the content with 1-char
+offset from each edge (`X = 1`, `Width = Dim.Fill(1)`), giving 2 characters
+of total horizontal padding (1 from the window border + 1 from the offset).
+The window border provides 1 character of vertical padding.
+
+`ShowModal` appends `"\n\nEsc to dismiss"` to every modal's content.
 
 ### Style Tokens
 
-- `BoxBorder.Rounded` border
-- `[bold]` for panel header
-- `Padding(2, 1)`
-- `[dim]Esc to dismiss[/]` at bottom of content
+References `06-style-tokens.md`:
+
+- **Border**: Rounded style, accent (blue) color (see 5.1, 5.2)
+- **Padding**: 2-char horizontal, 1-char vertical (see 4.3)
+- **Sizing**: Sized to content, centered, capped at 90% of terminal
+- **Dismiss hint**: "Esc to dismiss" appended to content
+- **Content**: Read-only `TextView` (scrollable if content exceeds window)
 
 ### Accessibility
 

@@ -227,54 +227,67 @@ public sealed class ConversationsSlashCommand : ISlashCommand
       return;
     }
 
-    SpectreHelpers.OutputLine();
+    var sections = new List<DetailSection>();
 
-    // Info rows
-    SpectreHelpers.OutputMarkup($"  [dim]{"Session",-14}[/][cyan]{Markup.Escape(session.Id)}[/]");
+    // Info section
+    var infoRows = new List<DetailRow>
+    {
+      new("Session", session.Id),
+    };
+
     if (session.Name is not null)
     {
-      SpectreHelpers.OutputMarkup($"  [dim]{"Name",-14}[/][cyan]{Markup.Escape(session.Name)}[/]");
+      infoRows.Add(new DetailRow("Name", session.Name));
     }
-    SpectreHelpers.OutputMarkup(
-      $"  [dim]{"Created",-14}[/][cyan]{session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}[/]" +
-      $"    [dim]{"Last used",-12}[/][cyan]{session.LastAccessedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}[/]");
-    SpectreHelpers.OutputMarkup(
-      $"  [dim]{"Project",-14}[/][cyan]{Markup.Escape(session.ProjectName ?? "(none)")}[/]" +
-      $"    [dim]{"Messages",-12}[/][cyan]{session.Conversation.Messages.Count.ToString(CultureInfo.InvariantCulture)}[/]");
-    SpectreHelpers.OutputMarkup($"  [dim]{"Directory",-14}[/][cyan]{Markup.Escape(session.WorkingDirectory)}[/]");
 
-    // Show first 5 messages as preview
+    infoRows.Add(new DetailRow("Created",
+      session.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)));
+    infoRows.Add(new DetailRow("Last used",
+      session.LastAccessedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)));
+    infoRows.Add(new DetailRow("Project", session.ProjectName ?? "(none)",
+      Style: session.ProjectName is null ? DetailValueStyle.Muted : DetailValueStyle.Auto));
+    infoRows.Add(new DetailRow("Messages",
+      session.Conversation.Messages.Count.ToString(CultureInfo.InvariantCulture)));
+    infoRows.Add(new DetailRow("Directory", session.WorkingDirectory));
+
+    sections.Add(new DetailSection(null, infoRows));
+
+    // Recent messages section
     var messages = session.Conversation.Messages;
     if (messages.Count > 0)
     {
-      SpectreHelpers.OutputLine();
-      SpectreHelpers.OutputMarkup("  [dim]Recent messages[/]");
-      SpectreHelpers.OutputLine();
+      var messageRows = new List<DetailRow>();
 
-      var previewMessages = messages.Take(5);
-      foreach (var msg in previewMessages)
+      foreach (var msg in messages.Take(5))
       {
         var roleLabel = msg.Role switch
         {
-          MessageRole.User => "[blue]user[/]",
-          MessageRole.Assistant => "[green]assistant[/]",
-          _ => "[dim]system[/]",
+          MessageRole.User => "user",
+          MessageRole.Assistant => "assistant",
+          _ => "system",
         };
 
         var text = GetMessageText(msg, 120);
-        SpectreHelpers.OutputMarkup($"    {roleLabel}: {Markup.Escape(text)}");
+        messageRows.Add(new DetailRow($"{roleLabel}:", text, Style: DetailValueStyle.Default));
       }
 
       if (messages.Count > 5)
       {
         var remaining = messages.Count - 5;
-        SpectreHelpers.OutputMarkup($"    [dim]... {remaining.ToString(CultureInfo.InvariantCulture)} more message(s)[/]");
+        messageRows.Add(new DetailRow("",
+          $"... {remaining.ToString(CultureInfo.InvariantCulture)} more message(s)",
+          Style: DetailValueStyle.Muted));
       }
+
+      sections.Add(new DetailSection("Recent messages", messageRows));
     }
 
-    SpectreHelpers.OutputLine();
-    SpectreHelpers.OutputMarkup($"  [dim]Resume with:[/] boydcode --resume {Markup.Escape(session.Id)}");
-    SpectreHelpers.OutputLine();
+    // Resume hint section
+    sections.Add(new DetailSection(null, [
+      new DetailRow("Resume with", $"boydcode --resume {session.Id}", Style: DetailValueStyle.Muted),
+    ]));
+
+    _ui.ShowDetailModal($"Conversation: {sessionId}", sections);
   }
 
   private async Task HandleRenameAsync(string[] tokens, CancellationToken ct)

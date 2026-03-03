@@ -210,9 +210,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
         item =>
         {
           if (item is null) return;
-          var filePath = GetProfileFilePath(item.Name);
-          var content = BuildProfileDetailText(item, filePath);
-          _ui.ShowModal(item.Name, content);
+          ShowProfileDetailModal(item);
         },
         IsPrimary: true),
       new(
@@ -311,10 +309,7 @@ public sealed partial class JeaSlashCommand : ISlashCommand
       return;
     }
 
-    var filePath = GetProfileFilePath(name);
-    var content = BuildProfileDetailText(profile, filePath);
-
-    _ui.ShowModal(profile.Name, content);
+    ShowProfileDetailModal(profile);
   }
 
   // ──────────────────────────────────────────────
@@ -1224,32 +1219,43 @@ public sealed partial class JeaSlashCommand : ISlashCommand
 
     var effective = await _composer.ComposeAsync(profileNames, ct);
 
-    SpectreHelpers.OutputLine();
-    SpectreHelpers.OutputMarkup($"  [bold]Language mode:[/]  {effective.LanguageMode}");
-    SpectreHelpers.OutputMarkup($"  [bold]Commands:[/]       {effective.AllowedCommands.Count}");
+    var sections = new List<DetailSection>();
 
+    // Info section
+    sections.Add(new DetailSection(null, [
+      new DetailRow("Language mode", effective.LanguageMode.ToString()),
+      new DetailRow("Command count",
+        effective.AllowedCommands.Count.ToString(CultureInfo.InvariantCulture)),
+    ]));
+
+    // Allowed commands section
     if (effective.AllowedCommands.Count > 0)
     {
-      SpectreHelpers.Section("Allowed commands");
-      foreach (var command in effective.AllowedCommands)
-      {
-        SpectreHelpers.OutputMarkup($"    [green]\u2713[/] {Markup.Escape(command)}");
-      }
+      var commandRows = effective.AllowedCommands
+        .Select(cmd => new DetailRow(
+          $"{Theme.Symbols.Check} {cmd}", "", Style: DetailValueStyle.Success))
+        .ToList();
+
+      sections.Add(new DetailSection("Allowed commands", commandRows));
     }
 
+    // Modules section
     if (effective.Modules.Count > 0)
     {
-      SpectreHelpers.Section("Modules");
-      foreach (var module in effective.Modules)
-      {
-        SpectreHelpers.OutputMarkup($"    {Markup.Escape(module)}");
-      }
+      var moduleRows = effective.Modules
+        .Select(mod => new DetailRow(mod, ""))
+        .ToList();
+
+      sections.Add(new DetailSection("Modules", moduleRows));
     }
 
-    SpectreHelpers.OutputLine();
-    var sources = string.Join(", ", sourceProfiles.Select(Markup.Escape));
-    SpectreHelpers.OutputMarkup($"  [dim]Source profiles: {sources}[/]");
-    SpectreHelpers.OutputLine();
+    // Source profiles footer
+    var sourcesText = string.Join(", ", sourceProfiles);
+    sections.Add(new DetailSection(null, [
+      new DetailRow("Source profiles", sourcesText, Style: DetailValueStyle.Muted),
+    ]));
+
+    _ui.ShowDetailModal("Effective JEA", sections);
   }
 
   // ──────────────────────────────────────────────
@@ -1435,47 +1441,56 @@ public sealed partial class JeaSlashCommand : ISlashCommand
     return true;
   }
 
-  private static string BuildProfileDetailText(JeaProfile profile, string filePath)
+  private void ShowProfileDetailModal(JeaProfile profile)
   {
-    var lines = new List<string>
-        {
-            $"Language mode:  {profile.LanguageMode}",
-        };
+    var filePath = GetProfileFilePath(profile.Name);
+    var sections = new List<DetailSection>();
 
+    // Info section
+    sections.Add(new DetailSection(null, [
+      new DetailRow("Name", profile.Name),
+      new DetailRow("Scope", "User"),
+      new DetailRow("Language mode", profile.LanguageMode.ToString()),
+    ]));
+
+    // Allowed commands section
     if (profile.AllowedCommands.Count > 0)
     {
-      lines.Add("");
-      lines.Add("Allowed commands:");
-      foreach (var command in profile.AllowedCommands)
-      {
-        lines.Add($"  \u2713 {command}");
-      }
+      var commandRows = profile.AllowedCommands
+        .Select(cmd => new DetailRow(
+          $"{Theme.Symbols.Check} {cmd}", "", Style: DetailValueStyle.Success))
+        .ToList();
+
+      sections.Add(new DetailSection("Allowed commands", commandRows));
     }
 
+    // Denied commands section
     if (profile.DeniedCommands.Count > 0)
     {
-      lines.Add("");
-      lines.Add("Denied commands:");
-      foreach (var command in profile.DeniedCommands)
-      {
-        lines.Add($"  x {command}");
-      }
+      var denyRows = profile.DeniedCommands
+        .Select(cmd => new DetailRow(
+          $"{Theme.Symbols.Cross} {cmd}", "", Style: DetailValueStyle.Error))
+        .ToList();
+
+      sections.Add(new DetailSection("Denied commands", denyRows));
     }
 
+    // Modules section
     if (profile.Modules.Count > 0)
     {
-      lines.Add("");
-      lines.Add("Modules:");
-      foreach (var module in profile.Modules)
-      {
-        lines.Add($"  {module}");
-      }
+      var moduleRows = profile.Modules
+        .Select(mod => new DetailRow(mod, ""))
+        .ToList();
+
+      sections.Add(new DetailSection("Modules", moduleRows));
     }
 
-    lines.Add("");
-    lines.Add($"File: {filePath}");
+    // File path footer
+    sections.Add(new DetailSection(null, [
+      new DetailRow("File", filePath, Style: DetailValueStyle.Muted),
+    ]));
 
-    return string.Join("\n", lines);
+    _ui.ShowDetailModal(profile.Name, sections);
   }
 
   private static string GetProfileFilePath(string name)

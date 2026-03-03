@@ -158,8 +158,17 @@ internal sealed class DetailModalView : View
 
   private static Attribute GetValueAttribute(DetailRow row)
   {
-    // Multi-line text content uses Default (white); data values use Info (cyan)
-    return row.IsMultiLine ? Theme.Semantic.Default : Theme.Semantic.Info;
+    return row.Style switch
+    {
+      DetailValueStyle.Success => Theme.Semantic.Success,
+      DetailValueStyle.Warning => Theme.Semantic.Warning,
+      DetailValueStyle.Error => Theme.Semantic.Error,
+      DetailValueStyle.Muted => Theme.Semantic.Muted,
+      DetailValueStyle.Default => Theme.Semantic.Default,
+      DetailValueStyle.Info => Theme.Semantic.Info,
+      // Auto: multi-line text content uses Default (white); data values use Info (cyan)
+      _ => row.IsMultiLine ? Theme.Semantic.Default : Theme.Semantic.Info,
+    };
   }
 
   private static int ComputeLabelColumnWidth(IReadOnlyList<DetailSection> sections)

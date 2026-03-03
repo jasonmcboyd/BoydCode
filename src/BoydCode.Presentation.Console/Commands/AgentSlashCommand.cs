@@ -50,7 +50,8 @@ public sealed class AgentSlashCommand : ISlashCommand
         HandleShow(argument);
         break;
       default:
-        SpectreHelpers.OutputMarkup($"[red]Unknown subcommand '{Markup.Escape(subcommand)}'. Use /agent list or /agent show <name>.[/]");
+        SpectreHelpers.Error($"Unknown subcommand '{subcommand}'.");
+        SpectreHelpers.Usage("/agent list|show <name>");
         break;
     }
 
@@ -161,30 +162,39 @@ public sealed class AgentSlashCommand : ISlashCommand
   {
     if (string.IsNullOrEmpty(name))
     {
-      SpectreHelpers.OutputMarkup("[red]Usage: /agent show <name>[/]");
+      SpectreHelpers.Error("Usage: /agent show <name>");
       return;
     }
 
     var agent = _agentRegistry.GetByName(name);
     if (agent is null)
     {
-      SpectreHelpers.OutputMarkup($"[red]Agent '{Markup.Escape(name)}' not found.[/]");
+      SpectreHelpers.Error($"Agent '{name}' not found.");
       return;
     }
 
-    var instructions = agent.Instructions.Length > 500
-        ? string.Concat(agent.Instructions.AsSpan(0, 500), "...")
-        : agent.Instructions;
+    var sections = new List<DetailSection>();
 
-    var content =
-      $"Name:         {agent.Name}\n" +
-      $"Description:  {agent.Description}\n" +
-      $"Scope:        {agent.Scope}\n" +
-      $"Model:        {agent.ModelOverride ?? "default"}\n" +
-      $"Max Turns:    {agent.MaxTurns?.ToString(CultureInfo.InvariantCulture) ?? "default (25)"}\n" +
-      $"Source:       {agent.SourcePath}\n\n" +
-      $"Instructions:\n{instructions}";
+    // Info section
+    var infoRows = new List<DetailRow>
+    {
+      new("Name", agent.Name),
+      new("Description", agent.Description, Style: DetailValueStyle.Default),
+      new("Scope", agent.Scope.ToString()),
+      new("Model", agent.ModelOverride ?? "default",
+        Style: agent.ModelOverride is null ? DetailValueStyle.Muted : DetailValueStyle.Auto),
+      new("Max Turns", agent.MaxTurns?.ToString(CultureInfo.InvariantCulture) ?? "default (25)",
+        Style: agent.MaxTurns is null ? DetailValueStyle.Muted : DetailValueStyle.Auto),
+      new("Source", agent.SourcePath),
+    };
 
-    _ui.ShowModal($"Agent: {agent.Name}", content);
+    sections.Add(new DetailSection(null, infoRows));
+
+    // Instructions section: full text, no truncation (window scrolls)
+    sections.Add(new DetailSection("Instructions", [
+      new DetailRow("", agent.Instructions, IsMultiLine: true),
+    ]));
+
+    _ui.ShowDetailModal($"Agent: {agent.Name}", sections);
   }
 }

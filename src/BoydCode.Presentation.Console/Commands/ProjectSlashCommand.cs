@@ -6,7 +6,6 @@ using BoydCode.Application.Services;
 using BoydCode.Domain.Configuration;
 using BoydCode.Domain.Entities;
 using BoydCode.Domain.Enums;
-using BoydCode.Domain.LlmRequests;
 using BoydCode.Domain.SlashCommands;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
@@ -838,39 +837,38 @@ public sealed partial class ProjectSlashCommand : ISlashCommand
         && !project.RequireContainer
         && project.Execution is null;
 
-    SpectreHelpers.OutputLine();
+    var sections = new List<DetailSection>();
 
-    // Info rows
+    // Info section
     var isAmbient = name.Equals(Project.AmbientProjectName, StringComparison.OrdinalIgnoreCase);
     var displayName = isAmbient ? $"{project.Name} (ambient)" : project.Name;
-    SpectreHelpers.OutputMarkup($"  [dim]{"Project",-14}[/][cyan]{Markup.Escape(displayName)}[/]");
-    SpectreHelpers.OutputMarkup(
-      $"  [dim]{"Created",-14}[/][cyan]{project.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}[/]" +
-      $"    [dim]{"Last used",-12}[/][cyan]{project.LastAccessedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}[/]");
 
-    if (project.Execution is not null)
+    var infoRows = new List<DetailRow>
     {
-      SpectreHelpers.OutputMarkup($"  [dim]{"Engine",-14}[/][cyan]{Markup.Escape(project.Execution.Mode.ToString())}[/]");
-    }
+      new("Project", displayName),
+      new("Created", project.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
+      new("Last used", project.LastAccessedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
+    };
 
     if (project.DockerImage is not null)
     {
-      SpectreHelpers.OutputMarkup($"  [dim]{"Docker",-14}[/][cyan]{Markup.Escape(project.DockerImage)}[/]");
+      infoRows.Add(new DetailRow("Docker image", project.DockerImage));
     }
 
     if (project.DockerImage is not null || project.RequireContainer)
     {
       var containerStatus = project.RequireContainer ? "Required" : "Optional";
-      SpectreHelpers.OutputMarkup($"  [dim]{"Container",-14}[/]{containerStatus}");
+      var containerStyle = project.RequireContainer ? DetailValueStyle.Success : DetailValueStyle.Warning;
+      infoRows.Add(new DetailRow("Container", containerStatus, Style: containerStyle));
     }
 
-    // Directories
+    sections.Add(new DetailSection(null, infoRows));
+
+    // Directories section
     if (project.Directories.Count > 0)
     {
-      SpectreHelpers.OutputLine();
-      SpectreHelpers.OutputMarkup("  [dim]Directories[/]");
-
       var resolvedDirs = _directoryResolver.Resolve(project.Directories);
+      var dirRows = new List<DetailRow>();
 
       foreach (var dir in resolvedDirs)
       {
@@ -886,60 +884,57 @@ public sealed partial class ProjectSlashCommand : ISlashCommand
           _ => "--",
         };
 
-        SpectreHelpers.OutputMarkup($"    - {Markup.Escape(dir.Path),-40} {accessLabel,-12} {gitInfo}");
+        var dirStyle = dir.AccessLevel == DirectoryAccessLevel.ReadOnly
+            ? DetailValueStyle.Warning
+            : DetailValueStyle.Success;
+
+        dirRows.Add(new DetailRow($"- {dir.Path}", $"{accessLabel}  {gitInfo}", Style: dirStyle));
       }
+
+      sections.Add(new DetailSection("Directories", dirRows));
     }
 
-    // Meta prompt
-    SpectreHelpers.OutputLine();
-    SpectreHelpers.OutputMarkup("  [dim]Meta prompt[/]");
-    SpectreHelpers.OutputLine();
-    var fullMetaPrompt = MetaPrompt.Build(_activeEngine.Mode, _activeEngine.Engine?.GetAvailableCommands() ?? []);
-    foreach (var line in fullMetaPrompt.Trim().Split('\n'))
-    {
-      var trimmed = line.TrimEnd('\r');
-      SpectreHelpers.OutputMarkup(trimmed.Length > 0
-          ? $"    {Markup.Escape(trimmed.TrimStart())}"
-          : "");
-    }
-
-    // System prompt
-    SpectreHelpers.OutputLine();
-    SpectreHelpers.OutputMarkup("  [dim]System prompt[/]");
-    SpectreHelpers.OutputLine();
-
+    // System prompt section
     if (project.SystemPrompt is not null)
     {
-      SpectreHelpers.OutputMarkup($"    {Markup.Escape(project.SystemPrompt)}");
+      sections.Add(new DetailSection("System prompt", [
+        new DetailRow("Custom prompt", project.SystemPrompt, IsMultiLine: true),
+      ]));
     }
     else
     {
-      SpectreHelpers.OutputMarkup($"    [dim](default)[/] {Markup.Escape(Project.DefaultSystemPrompt)}");
+      sections.Add(new DetailSection("System prompt", [
+        new DetailRow("(default)", Project.DefaultSystemPrompt, IsMultiLine: true, Style: DetailValueStyle.Muted),
+      ]));
     }
 
-    // JEA profiles
+    // JEA profiles section
     if (project.Execution?.JeaProfiles is { Count: > 0 })
     {
-      SpectreHelpers.OutputLine();
-      SpectreHelpers.OutputMarkup("  [dim]JEA profiles[/]");
-      var profiles = string.Join(", ", project.Execution.JeaProfiles.Select(p => $"[cyan]{Markup.Escape(p)}[/]"));
-      SpectreHelpers.OutputMarkup($"  {profiles}");
+      var profileNames = string.Join(", ", project.Execution.JeaProfiles);
+      sections.Add(new DetailSection("JEA profiles", [
+        new DetailRow("Assigned", profileNames),
+      ]));
     }
 
-    SpectreHelpers.OutputLine();
-
-    // Stale settings footer
+    // Stale settings warning
     if (string.Equals(project.Name, _activeProject.Name, StringComparison.OrdinalIgnoreCase)
         && _ui.StaleSettingsWarning is not null)
     {
-      SpectreHelpers.OutputMarkup($"  [yellow]* {Markup.Escape(_ui.StaleSettingsWarning)}[/]");
-      SpectreHelpers.OutputLine();
+      sections.Add(new DetailSection(null, [
+        new DetailRow("*", _ui.StaleSettingsWarning, Style: DetailValueStyle.Warning),
+      ]));
     }
 
+    // Minimal tip
     if (isMinimal)
     {
-      SpectreHelpers.OutputMarkup($"  [dim]Tip: Use /project edit {Markup.Escape(project.Name)} to configure settings.[/]");
+      sections.Add(new DetailSection(null, [
+        new DetailRow("Tip", $"Use /project edit {project.Name} to configure settings.", Style: DetailValueStyle.Muted),
+      ]));
     }
+
+    _ui.ShowDetailModal(project.Name, sections);
   }
 
   // ──────────────────────────────────────────────

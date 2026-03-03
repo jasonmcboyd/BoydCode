@@ -196,11 +196,16 @@ public sealed class ProviderSlashCommand : ISlashCommand
       return;
     }
 
-    var content = $"Provider: {providerType}\n" +
-        $"Status:   not active\n" +
-        $"Model:    {ProviderDefaults.DefaultModelFor(providerType)}";
+    var sections = new List<DetailSection>
+    {
+      new(null, [
+        new DetailRow("Provider", providerType.ToString()),
+        new DetailRow("Status", "not active", Style: DetailValueStyle.Muted),
+        new DetailRow("Model", ProviderDefaults.DefaultModelFor(providerType)),
+      ]),
+    };
 
-    _ui.ShowModal(providerType.ToString(), content);
+    _ui.ShowDetailModal(providerType.ToString(), sections);
   }
 
   private static void DismissListWindow(
@@ -528,12 +533,17 @@ public sealed class ProviderSlashCommand : ISlashCommand
     var config = _activeProvider.Config!;
     var capabilities = _activeProvider.Provider!.Capabilities;
 
-    var content =
-      $"Provider:       {config.ProviderType}\n" +
-      $"Model:          {config.Model}\n" +
-      $"Context window: {capabilities.MaxContextWindowTokens.ToString("N0", CultureInfo.InvariantCulture)} tokens";
+    var sections = new List<DetailSection>
+    {
+      new(null, [
+        new DetailRow("Provider", config.ProviderType.ToString()),
+        new DetailRow("Model", config.Model),
+        new DetailRow("Context window",
+          capabilities.MaxContextWindowTokens.ToString("N0", CultureInfo.InvariantCulture) + " tokens"),
+      ]),
+    };
 
-    _ui.ShowModal("Active Provider", content);
+    _ui.ShowDetailModal("Active Provider", sections);
   }
 
   private async Task HandleRemoveAsync(string[] tokens, CancellationToken ct)

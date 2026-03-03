@@ -3,6 +3,7 @@ using BoydCode.Application.Interfaces;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using TguiApp = Terminal.Gui.App.Application;
@@ -532,6 +533,171 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     });
   }
 
+  public void ShowHelpModal(IReadOnlyList<HelpCommandGroup> commandGroups)
+  {
+    InvokeOnUiThread(() =>
+    {
+      if (_toplevel is null) return;
+      DismissCurrentModal();
+
+      var availableWidth = _toplevel.Viewport.Width;
+      var availableHeight = _toplevel.Viewport.Height;
+
+      // Compute content width from command groups
+      var maxContentWidth = ComputeHelpContentWidth(commandGroups);
+
+      // Add space for filter field placeholder + chrome
+      var filterHintWidth = "Filter commands...".Length + 4;
+      maxContentWidth = Math.Max(maxContentWidth, filterHintWidth);
+
+      // Content width + chrome: 1 border + 1 padding offset each side = 4
+      var desiredWidth = maxContentWidth + 4;
+      var maxWidth = Math.Max(40, (int)(availableWidth * 0.9));
+      var windowWidth = Math.Min(desiredWidth, maxWidth);
+
+      // Content height: filter(1) + blank(1) + help lines + blank(1) + hint(1) + chrome(2)
+      var helpLines = BuildHelpContent(commandGroups, null);
+      var helpLineCount = helpLines.Split('\n').Length;
+      var desiredHeight = 1 + 1 + helpLineCount + 1 + 1 + 2;
+      var maxHeight = Math.Max(5, (int)(availableHeight * 0.9));
+      var windowHeight = Math.Min(desiredHeight, maxHeight);
+
+      var window = new Window
+      {
+        Title = "Help",
+        X = Pos.Center(),
+        Y = Pos.Center(),
+        Width = windowWidth,
+        Height = windowHeight,
+        BorderStyle = LineStyle.Rounded,
+      };
+
+      window.Border?.SetScheme(Theme.Modal.BorderScheme);
+
+      // Filter text field at the top
+      var filterField = new TextField
+      {
+        X = 1,
+        Y = 0,
+        Width = Dim.Fill(1),
+        Height = 1,
+        Text = "",
+      };
+
+      // Help content (read-only)
+      var textView = new TextView
+      {
+        Text = helpLines,
+        ReadOnly = true,
+        X = 1,
+        Y = 2,
+        Width = Dim.Fill(1),
+        Height = Dim.Fill(2),
+      };
+
+      // Hint label at the bottom
+      var hintLabel = new Label
+      {
+        Text = Theme.Text.EscToDismiss,
+        X = 2,
+        Y = Pos.AnchorEnd(1),
+        Width = Dim.Fill(),
+        Height = 1,
+      };
+
+      hintLabel.SetScheme(new Scheme(Theme.Semantic.Muted));
+
+      // Re-filter on text change
+      filterField.TextChanged += (_, _) =>
+      {
+        var filter = filterField.Text?.Trim();
+        var filtered = BuildHelpContent(commandGroups, string.IsNullOrEmpty(filter) ? null : filter);
+        textView.Text = filtered;
+
+        // Update hint based on filter state
+        if (string.IsNullOrEmpty(filter))
+        {
+          hintLabel.Text = Theme.Text.EscToDismiss;
+        }
+        else
+        {
+          hintLabel.Text = "Esc: clear filter  Esc Esc: dismiss";
+        }
+      };
+
+      // Two-press Esc: first clears filter, second dismisses
+      window.KeyDown += (_, keyArgs) =>
+      {
+        if (keyArgs == Key.Esc)
+        {
+          var currentFilter = filterField.Text?.Trim();
+          if (!string.IsNullOrEmpty(currentFilter))
+          {
+            filterField.Text = "";
+            keyArgs.Handled = true;
+          }
+          // If filter is empty, let it fall through to TryDismissModal
+        }
+      };
+
+      window.Add(filterField, textView, hintLabel);
+      _modalWindow = window;
+      _toplevel.Add(window);
+      _toplevel.ActivityBar.SetState(ActivityState.Modal);
+      filterField.CanFocus = true;
+      filterField.SetFocus();
+    });
+  }
+
+  public void ShowContextModal(ContextUsageData data)
+  {
+    InvokeOnUiThread(() =>
+    {
+      if (_toplevel is null) return;
+      DismissCurrentModal();
+
+      var availableWidth = _toplevel.Viewport.Width;
+      var availableHeight = _toplevel.Viewport.Height;
+
+      var desiredWidth = 80 + 4; // 80 content + chrome
+      var maxWidth = Math.Max(40, (int)(availableWidth * 0.9));
+      var windowWidth = Math.Min(desiredWidth, maxWidth);
+
+      var contentHeight = ContextUsageView.MeasureContentHeight();
+      // Content height + chrome (1 border top + 1 border bottom)
+      var desiredHeight = contentHeight + 2;
+      var maxHeight = Math.Max(5, (int)(availableHeight * 0.9));
+      var windowHeight = Math.Min(desiredHeight, maxHeight);
+
+      var window = new Window
+      {
+        Title = "Context Usage",
+        X = Pos.Center(),
+        Y = Pos.Center(),
+        Width = windowWidth,
+        Height = windowHeight,
+        BorderStyle = LineStyle.Rounded,
+      };
+
+      window.Border?.SetScheme(Theme.Modal.BorderScheme);
+
+      var contextView = new ContextUsageView(data)
+      {
+        X = 0,
+        Y = 0,
+        Width = Dim.Fill(),
+        Height = Dim.Fill(),
+      };
+
+      window.Add(contextView);
+      _modalWindow = window;
+      _toplevel.Add(window);
+      _toplevel.ActivityBar.SetState(ActivityState.Modal);
+      contextView.CanFocus = true;
+      contextView.SetFocus();
+    });
+  }
+
   public void DismissModal()
   {
     InvokeOnUiThread(() => DismissCurrentModal());
@@ -739,6 +905,63 @@ public sealed class SpectreUserInterface : IUserInterface, IDisposable
     var hintWidth = Theme.Text.EscToDismiss.Length + 2;
 
     return Math.Max(Math.Max(singleLineWidth, maxSectionTitleLen), hintWidth);
+  }
+
+  private static string BuildHelpContent(IReadOnlyList<HelpCommandGroup> groups, string? filter)
+  {
+    var sb = new StringBuilder();
+    var matchCount = 0;
+
+    foreach (var group in groups)
+    {
+      if (filter is not null)
+      {
+        var groupMatches = group.Prefix.Contains(filter, StringComparison.OrdinalIgnoreCase)
+            || group.Description.Contains(filter, StringComparison.OrdinalIgnoreCase)
+            || group.Subcommands.Any(s =>
+                s.Usage.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                || s.Description.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+        if (!groupMatches) continue;
+      }
+
+      matchCount++;
+      sb.Append(group.Prefix.PadRight(Theme.Layout.CommandPad));
+      sb.AppendLine(group.Description);
+
+      foreach (var sub in group.Subcommands)
+      {
+        sb.Append("  ");
+        sb.Append(sub.Usage.PadRight(Theme.Layout.CommandPad - 2));
+        sb.AppendLine(sub.Description);
+      }
+    }
+
+    if (matchCount == 0)
+    {
+      return "No matching commands.";
+    }
+
+    return sb.ToString().TrimEnd();
+  }
+
+  private static int ComputeHelpContentWidth(IReadOnlyList<HelpCommandGroup> groups)
+  {
+    var maxWidth = 0;
+
+    foreach (var group in groups)
+    {
+      var lineWidth = Theme.Layout.CommandPad + group.Description.Length;
+      if (lineWidth > maxWidth) maxWidth = lineWidth;
+
+      foreach (var sub in group.Subcommands)
+      {
+        var subWidth = 2 + (Theme.Layout.CommandPad - 2) + sub.Description.Length;
+        if (subWidth > maxWidth) maxWidth = subWidth;
+      }
+    }
+
+    return maxWidth;
   }
 
   private ActivityState CurrentActivityState()

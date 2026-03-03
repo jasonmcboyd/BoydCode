@@ -1,5 +1,20 @@
 namespace BoydCode.Application.Interfaces;
 
+public sealed record HelpCommandGroup(string Prefix, string Description, IReadOnlyList<HelpSubcommand> Subcommands);
+public sealed record HelpSubcommand(string Usage, string Description);
+
+public sealed record ContextUsageData(
+  string ProviderName, string ModelName,
+  int TotalUsed, int ContextLimit,
+  int SystemPromptTokens, int MetaPromptTokens, int SessionPromptTokens,
+  int ToolTokensTotal, int MessageTokensTotal,
+  int FreeTokens, int BufferTokens,
+  int UserTextCount, int UserTextTokens,
+  int AssistantTextCount, int AssistantTextTokens,
+  int ToolCallCount, int ToolCallTokens,
+  int ToolResultCount, int ToolResultTokens,
+  int TotalMessageCount, string ToolName);
+
 public interface IUserInterface
 {
   bool IsInteractive { get; }
@@ -30,6 +45,8 @@ public interface IUserInterface
   void ExpandLastToolOutput();
   void ShowModal(string title, string content);
   void ShowDetailModal(string title, IReadOnlyList<DetailSection> sections);
+  void ShowHelpModal(IReadOnlyList<HelpCommandGroup> commandGroups);
+  void ShowContextModal(ContextUsageData data);
   void DismissModal();
   bool IsModalActive { get; }
   IDisposable BeginCancellationMonitor(Action onCancelRequested);

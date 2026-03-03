@@ -156,14 +156,41 @@ public sealed class ContextSlashCommand : ISlashCommand
     var totalUsed = systemPromptTokens + toolTokensTotal + messageTokensTotal;
     var freeTokens = Math.Max(0, contextLimit - totalUsed - bufferTokens);
 
+    var providerName = _activeProvider.Config?.ProviderType.ToString() ?? "unknown";
+    var modelName = _activeProvider.Config?.Model ?? "unknown";
+
+    var totalMessageCount = messageBreakdown.UserTextCount
+        + messageBreakdown.AssistantTextCount
+        + messageBreakdown.ToolCallCount
+        + messageBreakdown.ToolResultCount;
+
+    // ── TUI modal path ────────────────────────────
+
+    var spectreUi = _ui as SpectreUserInterface;
+    if (spectreUi?.Toplevel is not null)
+    {
+      var data = new ContextUsageData(
+        providerName, modelName,
+        totalUsed, contextLimit,
+        systemPromptTokens, metaPromptTokens, sessionPromptTokens,
+        toolTokensTotal, messageTokensTotal,
+        freeTokens, bufferTokens,
+        messageBreakdown.UserTextCount, messageBreakdown.UserTextTokens,
+        messageBreakdown.AssistantTextCount, messageBreakdown.AssistantTextTokens,
+        messageBreakdown.ToolCallCount, messageBreakdown.ToolCallTokens,
+        messageBreakdown.ToolResultCount, messageBreakdown.ToolResultTokens,
+        totalMessageCount, shellTool.Name);
+
+      _ui.ShowContextModal(data);
+      return;
+    }
+
+    // ── Fallback: inline Spectre markup ───────────
+
     var usagePercent = contextLimit > 0
         ? (double)totalUsed / contextLimit * 100
         : 0;
 
-    // ── Header line ───────────────────────────────
-
-    var providerName = _activeProvider.Config?.ProviderType.ToString() ?? "unknown";
-    var modelName = _activeProvider.Config?.Model ?? "unknown";
     var usageColor = usagePercent switch
     {
       < 50 => "green",
@@ -183,12 +210,8 @@ public sealed class ContextSlashCommand : ISlashCommand
         SpectreHelpers.FormatPercent(usagePercent)));
     SpectreHelpers.OutputLine();
 
-    // ── Stacked bar ───────────────────────────────
-
     RenderStackedBar(systemPromptTokens, toolTokensTotal, messageTokensTotal, freeTokens, bufferTokens, contextLimit);
     SpectreHelpers.OutputLine();
-
-    // ── Legend ─────────────────────────────────────
 
     SpectreHelpers.OutputMarkup("  [bold]Estimated usage by category[/]");
     RenderLegend("\u25a0", "blue", "System prompt", systemPromptTokens, contextLimit);
@@ -198,8 +221,6 @@ public sealed class ContextSlashCommand : ISlashCommand
     RenderLegend("\u25a0", "darkorange", "Compact buffer", bufferTokens, contextLimit);
     SpectreHelpers.OutputLine();
 
-    // ── System prompt breakdown ───────────────────
-
     SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [blue bold]System prompt[/] [dim]\u00b7[/] {0} tokens",
@@ -207,13 +228,6 @@ public sealed class ContextSlashCommand : ISlashCommand
     RenderTreeLine(false, "Meta prompt", string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(metaPromptTokens)));
     RenderTreeLine(true, "Session prompt", string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(sessionPromptTokens)));
     SpectreHelpers.OutputLine();
-
-    // ── Message breakdown ─────────────────────────
-
-    var totalMessageCount = messageBreakdown.UserTextCount
-        + messageBreakdown.AssistantTextCount
-        + messageBreakdown.ToolCallCount
-        + messageBreakdown.ToolResultCount;
 
     SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
@@ -233,8 +247,6 @@ public sealed class ContextSlashCommand : ISlashCommand
         CultureInfo.InvariantCulture, "{0} results, {1} tokens",
         messageBreakdown.ToolResultCount, SpectreHelpers.FormatCompact(messageBreakdown.ToolResultTokens)));
     SpectreHelpers.OutputLine();
-
-    // ── Tool inventory ────────────────────────────
 
     SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,

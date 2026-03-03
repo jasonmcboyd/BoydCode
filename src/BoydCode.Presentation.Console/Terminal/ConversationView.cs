@@ -1,5 +1,6 @@
 using System.Text;
 using Terminal.Gui.ViewBase;
+using Attribute = Terminal.Gui.Drawing.Attribute;
 
 #pragma warning disable IDE0060 // Remove unused parameter - context is required by the override signature
 
@@ -180,10 +181,26 @@ internal sealed class ConversationView : View
       contentY = blockBottom;
     }
 
+    DrawScrollIndicator(viewportWidth, viewportHeight);
+
     return true;
   }
 
   // ----- Private helpers -----
+
+  private void DrawScrollIndicator(int viewportWidth, int viewportHeight)
+  {
+    if (_totalHeight <= viewportHeight) return;
+
+    var bottomLine = Math.Min(_scrollOffset + viewportHeight, _totalHeight);
+    var text = $"{bottomLine}/{_totalHeight}";
+    var x = viewportWidth - text.Length - 1;
+    if (x < 0) return;
+
+    SetAttribute(Theme.Semantic.Muted);
+    Move(x, viewportHeight - 1);
+    AddStr(text);
+  }
 
   private void RecalculateAllHeights(int width)
   {

@@ -28,10 +28,40 @@ public sealed class HelpSlashCommand : ISlashCommand
       return Task.FromResult(false);
     }
 
-    var sb = new StringBuilder();
+    var groups = BuildCommandGroups();
 
-    // Built-in commands (not in registry -- they live in the AgentOrchestrator loop)
-    AppendCommand(sb, "/quit", "Exit the session (also: /exit)");
+    if (_ui.IsInteractive)
+    {
+      _ui.ShowHelpModal(groups);
+    }
+    else
+    {
+      // Non-TUI fallback: build string and show plain modal
+      var sb = new StringBuilder();
+      foreach (var group in groups)
+      {
+        sb.Append(group.Prefix.PadRight(24));
+        sb.AppendLine(group.Description);
+        foreach (var sub in group.Subcommands)
+        {
+          sb.Append("  ");
+          sb.Append(sub.Usage.PadRight(22));
+          sb.AppendLine(sub.Description);
+        }
+      }
+
+      _ui.ShowModal("Help", sb.ToString().TrimEnd());
+    }
+
+    return Task.FromResult(true);
+  }
+
+  private List<HelpCommandGroup> BuildCommandGroups()
+  {
+    var groups = new List<HelpCommandGroup>();
+
+    // /quit first
+    groups.Add(new HelpCommandGroup("/quit", "Exit the session (also: /exit)", []));
 
     // Registered commands (skip /help -- rendered last)
     foreach (var descriptor in _registry.GetAllDescriptors())
@@ -41,31 +71,16 @@ public sealed class HelpSlashCommand : ISlashCommand
         continue;
       }
 
-      AppendCommand(sb, descriptor.Prefix, descriptor.Description);
+      var subcommands = descriptor.Subcommands
+          .Select(s => new HelpSubcommand(s.Usage, s.Description))
+          .ToList();
 
-      foreach (var sub in descriptor.Subcommands)
-      {
-        AppendSubcommand(sb, sub.Usage, sub.Description);
-      }
+      groups.Add(new HelpCommandGroup(descriptor.Prefix, descriptor.Description, subcommands));
     }
 
     // /help always last
-    AppendCommand(sb, "/help", "Show available commands");
+    groups.Add(new HelpCommandGroup("/help", "Show available commands", []));
 
-    _ui.ShowModal("Help", sb.ToString().TrimEnd());
-    return Task.FromResult(true);
-  }
-
-  private static void AppendCommand(StringBuilder sb, string command, string description)
-  {
-    sb.Append(command.PadRight(24));
-    sb.AppendLine(description);
-  }
-
-  private static void AppendSubcommand(StringBuilder sb, string usage, string description)
-  {
-    sb.Append("  ");
-    sb.Append(usage.PadRight(22));
-    sb.AppendLine(description);
+    return groups;
   }
 }

@@ -9,6 +9,7 @@ using BoydCode.Domain.LlmResponses;
 using BoydCode.Domain.Tools;
 using BoydCode.Presentation.Console;
 using BoydCode.Presentation.Console.Commands;
+using BoydCode.Presentation.Console.Terminal;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -572,28 +573,28 @@ public sealed class ContextSlashCommandTests
   [Fact]
   public void FormatCompact_Zero_ReturnsZero()
   {
-    SpectreHelpers.FormatCompact(0).Should().Be("0");
+    TokenFormatting.FormatCompact(0).Should().Be("0");
   }
 
   [Fact]
   public void FormatCompact_BelowThousand_ReturnsPlainNumber()
   {
-    SpectreHelpers.FormatCompact(500).Should().Be("500");
-    SpectreHelpers.FormatCompact(999).Should().Be("999");
+    TokenFormatting.FormatCompact(500).Should().Be("500");
+    TokenFormatting.FormatCompact(999).Should().Be("999");
   }
 
   [Fact]
   public void FormatCompact_Thousands_FormatsWithK()
   {
-    SpectreHelpers.FormatCompact(1000).Should().Be("1.0k");
-    SpectreHelpers.FormatCompact(1500).Should().Be("1.5k");
-    SpectreHelpers.FormatCompact(159300).Should().Be("159.3k");
+    TokenFormatting.FormatCompact(1000).Should().Be("1.0k");
+    TokenFormatting.FormatCompact(1500).Should().Be("1.5k");
+    TokenFormatting.FormatCompact(159300).Should().Be("159.3k");
   }
 
   [Fact]
   public void FormatCompact_Millions_FormatsWithM()
   {
-    SpectreHelpers.FormatCompact(1500000).Should().Be("1.5M");
+    TokenFormatting.FormatCompact(1500000).Should().Be("1.5M");
   }
 
   // ---------------------------------------------------------------------------
@@ -603,19 +604,19 @@ public sealed class ContextSlashCommandTests
   [Fact]
   public void FormatPercent_SmallValue_FormatsOneDecimal()
   {
-    SpectreHelpers.FormatPercent(0.096).Should().Be("0.1%");
+    TokenFormatting.FormatPercent(0.096).Should().Be("0.1%");
   }
 
   [Fact]
   public void FormatPercent_Zero_FormatsAsZeroPointZero()
   {
-    SpectreHelpers.FormatPercent(0.0).Should().Be("0.0%");
+    TokenFormatting.FormatPercent(0.0).Should().Be("0.0%");
   }
 
   [Fact]
   public void FormatPercent_LargeValue_FormatsOneDecimal()
   {
-    SpectreHelpers.FormatPercent(79.65).Should().Be("79.7%");
+    TokenFormatting.FormatPercent(79.65).Should().Be("79.7%");
   }
 
   // ---------------------------------------------------------------------------

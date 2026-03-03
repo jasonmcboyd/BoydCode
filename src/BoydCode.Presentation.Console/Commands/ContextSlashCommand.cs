@@ -205,9 +205,9 @@ public sealed class ContextSlashCommand : ISlashCommand
         Markup.Escape(providerName),
         Markup.Escape(modelName),
         usageColor,
-        SpectreHelpers.FormatCompact(totalUsed),
-        SpectreHelpers.FormatCompact(contextLimit),
-        SpectreHelpers.FormatPercent(usagePercent)));
+        TokenFormatting.FormatCompact(totalUsed),
+        TokenFormatting.FormatCompact(contextLimit),
+        TokenFormatting.FormatPercent(usagePercent)));
     SpectreHelpers.OutputLine();
 
     RenderStackedBar(systemPromptTokens, toolTokensTotal, messageTokensTotal, freeTokens, bufferTokens, contextLimit);
@@ -224,35 +224,35 @@ public sealed class ContextSlashCommand : ISlashCommand
     SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [blue bold]System prompt[/] [dim]\u00b7[/] {0} tokens",
-        SpectreHelpers.FormatCompact(systemPromptTokens)));
-    RenderTreeLine(false, "Meta prompt", string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(metaPromptTokens)));
-    RenderTreeLine(true, "Session prompt", string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(sessionPromptTokens)));
+        TokenFormatting.FormatCompact(systemPromptTokens)));
+    RenderTreeLine(false, "Meta prompt", string.Format(CultureInfo.InvariantCulture, "{0} tokens", TokenFormatting.FormatCompact(metaPromptTokens)));
+    RenderTreeLine(true, "Session prompt", string.Format(CultureInfo.InvariantCulture, "{0} tokens", TokenFormatting.FormatCompact(sessionPromptTokens)));
     SpectreHelpers.OutputLine();
 
     SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [green bold]Messages[/] [dim]\u00b7[/] {0} messages, {1} tokens",
         totalMessageCount.ToString(CultureInfo.InvariantCulture),
-        SpectreHelpers.FormatCompact(messageTokensTotal)));
+        TokenFormatting.FormatCompact(messageTokensTotal)));
     RenderTreeLine(false, "User text", string.Format(
         CultureInfo.InvariantCulture, "{0} messages, {1} tokens",
-        messageBreakdown.UserTextCount, SpectreHelpers.FormatCompact(messageBreakdown.UserTextTokens)));
+        messageBreakdown.UserTextCount, TokenFormatting.FormatCompact(messageBreakdown.UserTextTokens)));
     RenderTreeLine(false, "Assistant text", string.Format(
         CultureInfo.InvariantCulture, "{0} messages, {1} tokens",
-        messageBreakdown.AssistantTextCount, SpectreHelpers.FormatCompact(messageBreakdown.AssistantTextTokens)));
+        messageBreakdown.AssistantTextCount, TokenFormatting.FormatCompact(messageBreakdown.AssistantTextTokens)));
     RenderTreeLine(false, "Tool calls", string.Format(
         CultureInfo.InvariantCulture, "{0} calls, {1} tokens",
-        messageBreakdown.ToolCallCount, SpectreHelpers.FormatCompact(messageBreakdown.ToolCallTokens)));
+        messageBreakdown.ToolCallCount, TokenFormatting.FormatCompact(messageBreakdown.ToolCallTokens)));
     RenderTreeLine(true, "Tool results", string.Format(
         CultureInfo.InvariantCulture, "{0} results, {1} tokens",
-        messageBreakdown.ToolResultCount, SpectreHelpers.FormatCompact(messageBreakdown.ToolResultTokens)));
+        messageBreakdown.ToolResultCount, TokenFormatting.FormatCompact(messageBreakdown.ToolResultTokens)));
     SpectreHelpers.OutputLine();
 
     SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "  [mediumpurple1 bold]Tools[/] [dim]\u00b7[/] 1 tool, {0} tokens",
-        SpectreHelpers.FormatCompact(toolTokensTotal)));
-    RenderTreeLine(true, shellTool.Name, string.Format(CultureInfo.InvariantCulture, "{0} tokens", SpectreHelpers.FormatCompact(toolTokensTotal)));
+        TokenFormatting.FormatCompact(toolTokensTotal)));
+    RenderTreeLine(true, shellTool.Name, string.Format(CultureInfo.InvariantCulture, "{0} tokens", TokenFormatting.FormatCompact(toolTokensTotal)));
 
     SpectreHelpers.OutputLine();
   }
@@ -333,8 +333,8 @@ public sealed class ContextSlashCommand : ISlashCommand
   private static void RenderLegend(string indicator, string color, string label, int tokens, int contextLimit)
   {
     var percent = contextLimit > 0 ? (double)tokens / contextLimit * 100 : 0;
-    var tokenStr = SpectreHelpers.FormatCompact(tokens);
-    var percentStr = SpectreHelpers.FormatPercent(percent);
+    var tokenStr = TokenFormatting.FormatCompact(tokens);
+    var percentStr = TokenFormatting.FormatPercent(percent);
     SpectreHelpers.OutputMarkup(string.Format(
         CultureInfo.InvariantCulture,
         "    [{0}]{1}[/] {2,-18}{3,8} tokens  ({4})",

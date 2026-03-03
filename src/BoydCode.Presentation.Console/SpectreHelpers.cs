@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
-using System.Globalization;
 using BoydCode.Presentation.Console.Terminal;
 using Spectre.Console;
 using Spectre.Console.Rendering;
@@ -346,23 +345,6 @@ internal static class SpectreHelpers
       ResumeLayout();
     }
   }
-
-  // ──────────────────────────────────────────────
-  //  COMPACT FORMATTING
-  // ──────────────────────────────────────────────
-
-  internal static string FormatCompact(int value)
-  {
-    return value switch
-    {
-      >= 1_000_000 => $"{value / 1_000_000.0:F1}M",
-      >= 1_000 => $"{value / 1_000.0:F1}k",
-      _ => value.ToString(CultureInfo.InvariantCulture),
-    };
-  }
-
-  internal static string FormatPercent(double value) =>
-    $"{value:F1}%";
 
   // ──────────────────────────────────────────────
   //  TEXT HELPERS
